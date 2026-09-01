@@ -5,7 +5,8 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 
 from config import GEMINI_API_KEY, GEMINI_MODEL, SCRIPT_LANGUAGE, VIDEO_DURATION_TARGET
 
@@ -168,11 +169,18 @@ class Script:
 
 class ScriptEngine:
     def __init__(self):
-        genai.configure(api_key=GEMINI_API_KEY)
-        self.model = genai.GenerativeModel(
-            GEMINI_MODEL,
-            system_instruction=SCRIPT_SYSTEM_PROMPT,
+        self.client = genai.Client(api_key=GEMINI_API_KEY)
+
+    def _gen(self, prompt: str, system: str | None = None) -> str:
+        config = genai_types.GenerateContentConfig(
+            system_instruction=system,
+        ) if system else None
+        response = self.client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents=prompt,
+            config=config,
         )
+        return response.text
 
     def generate(self, topic: str) -> Script:
         prompt = (
@@ -183,8 +191,8 @@ class ScriptEngine:
             "Include at least 6 sections, 2 open loops, and multiple [PAUSE], [SFX], [MUSIC] cues."
         )
         logger.info("Generating script for: %s", topic)
-        response = self.model.generate_content(prompt)
-        raw = self._extract_json(response.text)
+        text = self._gen(prompt, system=SCRIPT_SYSTEM_PROMPT)
+        raw = self._extract_json(text)
         return self._parse(topic, raw)
 
     def _extract_json(self, text: str) -> dict:
@@ -209,9 +217,9 @@ class ScriptEngine:
             f"(cinematic, dramatic, matching the mood).\n\n{sections_text}\n\n"
             "Return JSON: [{\"section\": \"name\", \"keywords\": [\"kw1\", \"kw2\"]}]"
         )
-        resp = self.model.generate_content(prompt)
+        resp_text = self._gen(prompt)
         try:
-            raw = self._extract_json(resp.text)
+            raw = self._extract_json(resp_text)
             if isinstance(raw, list):
                 return raw
         except Exception:

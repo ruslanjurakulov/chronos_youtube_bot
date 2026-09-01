@@ -1,12 +1,12 @@
-google-generativeai>=0.7.0
+google-genai>=0.8.0
 google-api-python-client>=2.100.0
 google-auth-httplib2>=0.2.0
 google-auth-oauthlib>=1.2.0
 edge-tts>=6.1.9
 openai-whisper>=20231117
-moviepy>=1.0.3
+moviepy==1.0.3
 pydub>=0.25.1
-audioop-lts>=0.2.1  # Python 3.13 uchun audioop backport
+audioop-lts>=0.2.1
 Pillow>=10.0.0
 requests>=2.31.0
 python-dotenv>=1.0.0
