@@ -131,17 +131,39 @@ def run(
     return video_path
 
 
+def list_channels():
+    """Prints all YouTube channels for the authenticated account."""
+    uploader = YouTubeUploader()
+    channels = uploader.list_channels()
+    if not channels:
+        print("Hech qanday kanal topilmadi.")
+        return
+    print("\nSizning YouTube kanallaringiz:")
+    print("-" * 60)
+    for ch in channels:
+        print(f"  ID   : {ch['id']}")
+        print(f"  Nom  : {ch['name']}")
+        print(f"  URL  : {ch['url']}")
+        print("-" * 60)
+    print("\nKerakli kanal ID sini .env fayliga qo'ying:")
+    print("  YOUTUBE_CHANNEL_ID=UC...")
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Chronos YouTube Bot")
     parser.add_argument("--niche", default="history mysteries", help="Video niche/topic area")
     parser.add_argument("--topic", default=None, help="Override topic manually")
     parser.add_argument("--privacy", default=YOUTUBE_PRIVACY, choices=["private", "unlisted", "public"])
     parser.add_argument("--no-upload", action="store_true", help="Skip YouTube upload")
+    parser.add_argument("--list-channels", action="store_true", help="Show all YouTube channels and exit")
     args = parser.parse_args()
 
-    run(
-        niche=args.niche,
-        topic=args.topic,
-        privacy=args.privacy,
-        skip_upload=args.no_upload,
-    )
+    if args.list_channels:
+        list_channels()
+    else:
+        run(
+            niche=args.niche,
+            topic=args.topic,
+            privacy=args.privacy,
+            skip_upload=args.no_upload,
+        )

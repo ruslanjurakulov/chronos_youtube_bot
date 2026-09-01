@@ -56,5 +56,11 @@ SUBTITLE_POSITION = ("center", 0.80)
 # YouTube Upload
 YOUTUBE_CATEGORY_ID = "28"  # Science & Technology
 YOUTUBE_PRIVACY = os.getenv("YOUTUBE_PRIVACY", "private")  # private | unlisted | public
-YOUTUBE_SCOPES = ["https://www.googleapis.com/auth/youtube.upload"]
-YOUTUBE_TOKEN_FILE = BASE_DIR / "youtube_token.json"
+YOUTUBE_CHANNEL_ID = os.getenv("YOUTUBE_CHANNEL_ID", "")   # set this after running --list-channels
+YOUTUBE_SCOPES = [
+    "https://www.googleapis.com/auth/youtube.upload",
+    "https://www.googleapis.com/auth/youtube.readonly",
+]
+# Separate token per channel so you can switch between two channels
+_channel_suffix = f"_{YOUTUBE_CHANNEL_ID}" if YOUTUBE_CHANNEL_ID else ""
+YOUTUBE_TOKEN_FILE = BASE_DIR / f"youtube_token{_channel_suffix}.json"
