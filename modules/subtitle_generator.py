@@ -1,0 +1,111 @@
+"""Stage 5: Whisper Subtitles — word-by-word animated captions (MrBeast / Hormozi style)."""
+
+import logging
+from pathlib import Path
+
+import whisper
+
+from config import OUTPUT_DIR, SUBTITLE_COLOR, SUBTITLE_FONT, SUBTITLE_FONT_SIZE, SUBTITLE_STROKE_COLOR, SUBTITLE_STROKE_WIDTH
+
+logger = logging.getLogger(__name__)
+
+# Highlight color cycles word-by-word
+HIGHLIGHT_COLOR = "#FFD700"   # gold / yellow
+WORD_COLOR = "white"
+
+# Whisper model size: "tiny" | "base" | "small" | "medium" | "large"
+WHISPER_MODEL = "base"
+
+
+class SubtitleGenerator:
+    def __init__(self, topic_slug: str):
+        self.slug = topic_slug
+        self.work_dir = OUTPUT_DIR / topic_slug / "subtitles"
+        self.work_dir.mkdir(parents=True, exist_ok=True)
+        self._model: whisper.Whisper | None = None
+
+    def _get_model(self) -> whisper.Whisper:
+        if self._model is None:
+            logger.info("Loading Whisper model '%s'...", WHISPER_MODEL)
+            self._model = whisper.load_model(WHISPER_MODEL)
+        return self._model
+
+    def transcribe(self, audio_path: Path) -> list[dict]:
+        """
+        Returns word-level timestamps:
+        [{"word": str, "start": float, "end": float}, ...]
+        """
+        model = self._get_model()
+        result = model.transcribe(
+            str(audio_path),
+            word_timestamps=True,
+            verbose=False,
+        )
+        words = []
+        for seg in result.get("segments", []):
+            for w in seg.get("words", []):
+                words.append({
+                    "word": w["word"].strip(),
+                    "start": w["start"],
+                    "end": w["end"],
+                })
+        logger.info("Transcribed %d words", len(words))
+        return words
+
+    def to_srt(self, words: list[dict], out_path: Path | None = None) -> Path:
+        """Write standard .srt subtitle file (3-4 words per line)."""
+        out_path = out_path or self.work_dir / "subtitles.srt"
+        lines = []
+        chunk_size = 4
+        idx = 1
+        for i in range(0, len(words), chunk_size):
+            chunk = words[i:i + chunk_size]
+            start = chunk[0]["start"]
+            end = chunk[-1]["end"]
+            text = " ".join(w["word"] for w in chunk)
+            lines.append(f"{idx}")
+            lines.append(f"{_srt_time(start)} --> {_srt_time(end)}")
+            lines.append(text)
+            lines.append("")
+            idx += 1
+        out_path.write_text("\n".join(lines), encoding="utf-8")
+        logger.info("SRT written: %s", out_path)
+        return out_path
+
+    def word_clips(self, words: list[dict], video_w: int, video_h: int) -> list[dict]:
+        """
+        Returns clip specs for the compositor to render animated word captions.
+        Each entry: {word, start, end, x, y, color, highlight}
+        Highlighted word = current word being spoken.
+        """
+        specs = []
+        chunk_size = 4
+        for i in range(0, len(words), chunk_size):
+            chunk = words[i:i + chunk_size]
+            line_text = " ".join(w["word"] for w in chunk)
+            for j, w in enumerate(chunk):
+                specs.append({
+                    "word": w["word"],
+                    "line": line_text,
+                    "word_index_in_line": j,
+                    "chunk_words": [c["word"] for c in chunk],
+                    "start": w["start"],
+                    "end": w["end"],
+                    "x": video_w / 2,
+                    "y": int(video_h * 0.82),
+                    "color": WORD_COLOR,
+                    "highlight_color": HIGHLIGHT_COLOR,
+                    "font": SUBTITLE_FONT,
+                    "font_size": SUBTITLE_FONT_SIZE,
+                    "stroke_color": SUBTITLE_STROKE_COLOR,
+                    "stroke_width": SUBTITLE_STROKE_WIDTH,
+                })
+        return specs
+
+
+def _srt_time(seconds: float) -> str:
+    h = int(seconds // 3600)
+    m = int((seconds % 3600) // 60)
+    s = int(seconds % 60)
+    ms = int((seconds % 1) * 1000)
+    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
