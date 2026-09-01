@@ -17,6 +17,11 @@ import re
 import sys
 from pathlib import Path
 
+# Ensure required directories exist before any imports that may reference them
+Path("logs").mkdir(exist_ok=True)
+Path("history").mkdir(exist_ok=True)
+Path("output").mkdir(exist_ok=True)
+
 from config import OUTPUT_DIR, YOUTUBE_PRIVACY
 from modules.audio_mixer import AudioMixer
 from modules.compositor import Compositor
