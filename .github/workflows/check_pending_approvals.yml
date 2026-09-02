@@ -1,0 +1,42 @@
+name: Check Pending Approvals
+
+on:
+  schedule:
+    # Every 6 hours (00:00, 06:00, 12:00, 18:00 UTC). This is a nudge to a
+    # human, not a pipeline step — a run can sit at HUMAN_APPROVAL for a
+    # while by design (see modules/pipeline_stages.py), but it shouldn't sit
+    # there unnoticed. Daily is too slow to catch it promptly; hourly is
+    # noisier than a "someone needs to look at this" notification warrants.
+    # The check itself is nearly free (one local JSON read, no external
+    # API calls), so running it 4x/day costs nothing worth optimizing away.
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore history state (chronos.db, topic_vectors.npz, topics.json, pipeline_runs.json)
+        uses: actions/cache/restore@v4
+        with:
+          path: history
+          key: chronos-history-${{ github.run_number }}
+          restore-keys: chronos-history-
+
+      - name: Check pending approvals
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: python tools/check_pending_approvals.py
