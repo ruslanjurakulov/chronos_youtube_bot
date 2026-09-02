@@ -3,9 +3,15 @@ integration added alongside tools/run_intelligence_poll.py's producer side
 (_try_queued_topic / pick_topic checking ContentPlanner before spending a
 Gemini call).
 
-OriginalityEngine and TopicRecommender are mocked out (their own behavior is
-covered by tests/test_originality_engine.py and tests/test_topic_recommender.py
+OriginalityEngine, TopicRecommender, and PerformanceAnalyzer are mocked out
+(their own behavior is covered by tests/test_originality_engine.py,
+tests/test_topic_recommender.py, and tests/test_performance_analyzer.py
 respectively) so these tests isolate the queue-check control flow itself.
+Crucially, PerformanceAnalyzer must be mocked here even though this file
+doesn't test its output: an unmocked PerformanceAnalyzer() constructs a
+real default StateStore(), which opens/creates the actual project
+history/chronos.db file as a side effect — exactly what these tests use a
+tempdir for everything else to avoid.
 ContentPlanner is real, tempdir-backed — its own dedup/lifecycle behavior is
 already covered by tests/test_content_planner.py, but exercising the real
 thing here proves the integration actually calls it correctly (real
@@ -63,6 +69,9 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
         fake_recommender = MagicMock()
         fake_recommender.suggest_topics_as_prompt_text.return_value = ""
 
+        fake_performance_analyzer = MagicMock()
+        fake_performance_analyzer.analyze_videos_as_prompt_text.return_value = ""
+
         gen_mock = MagicMock()
         gen_mock.text = gemini_text
 
@@ -70,6 +79,7 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
         self._patch("modules.topic_manager.generate_with_retry", return_value=gen_mock)
         self._patch("modules.topic_manager.OriginalityEngine", return_value=fake_originality)
         self._patch("modules.topic_manager.TopicRecommender", return_value=fake_recommender)
+        self._patch("modules.topic_manager.PerformanceAnalyzer", return_value=fake_performance_analyzer)
         self._patch("modules.topic_manager.ContentPlanner", side_effect=lambda: ContentPlanner(store_path=self.calendar_path))
 
         from modules.topic_manager import TopicManager
@@ -130,6 +140,9 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
         fake_recommender = MagicMock()
         fake_recommender.suggest_topics_as_prompt_text.return_value = ""
 
+        fake_performance_analyzer = MagicMock()
+        fake_performance_analyzer.analyze_videos_as_prompt_text.return_value = ""
+
         gen_mock = MagicMock()
         gen_mock.text = "Gemini Fallback"
 
@@ -137,6 +150,7 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
              patch("modules.topic_manager.generate_with_retry", return_value=gen_mock), \
              patch("modules.topic_manager.OriginalityEngine", return_value=fake_originality), \
              patch("modules.topic_manager.TopicRecommender", return_value=fake_recommender), \
+             patch("modules.topic_manager.PerformanceAnalyzer", return_value=fake_performance_analyzer), \
              patch("modules.topic_manager.ContentPlanner", side_effect=RuntimeError("disk full")):
             from modules.topic_manager import TopicManager
             tm = TopicManager()  # must not raise
@@ -144,6 +158,44 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
             topic = tm.pick_topic("history mysteries")
 
         self.assertEqual(topic, "Gemini Fallback")
+
+    def test_performance_context_is_appended_to_the_gemini_prompt(self):
+        result = OriginalityResult(is_duplicate=False, needs_review=False, closest_match=None, semantic_score=0.0, lexical_score=0.0)
+        tm = self._make_manager(originality_check_result=result, gemini_text="Gemini's Pick")
+        tm.performance_analyzer.analyze_videos_as_prompt_text.return_value = (
+            "Past video performance, for context only -- not a formula to copy:\n"
+            '- "Ancient Rome Secrets" (The Fall of Rome) — 100.0 views/day'
+        )
+
+        with patch("modules.topic_manager.generate_with_retry", return_value=MagicMock(text="Gemini's Pick")) as gen_mock:
+            tm.pick_topic("history mysteries")
+
+        prompt_used = gen_mock.call_args[0][2]
+        self.assertIn("Ancient Rome Secrets", prompt_used)
+        self.assertIn("not a formula to copy", prompt_used)
+
+    def test_performance_analyzer_construction_failure_degrades_gracefully(self):
+        fake_originality = MagicMock()
+        fake_originality.check.return_value = OriginalityResult(is_duplicate=False, needs_review=False, closest_match=None, semantic_score=0.0, lexical_score=0.0)
+
+        fake_recommender = MagicMock()
+        fake_recommender.suggest_topics_as_prompt_text.return_value = ""
+
+        gen_mock = MagicMock()
+        gen_mock.text = "Gemini's Pick"
+
+        with patch("modules.topic_manager.make_client", return_value=MagicMock()), \
+             patch("modules.topic_manager.generate_with_retry", return_value=gen_mock), \
+             patch("modules.topic_manager.OriginalityEngine", return_value=fake_originality), \
+             patch("modules.topic_manager.TopicRecommender", return_value=fake_recommender), \
+             patch("modules.topic_manager.PerformanceAnalyzer", side_effect=RuntimeError("disk full")), \
+             patch("modules.topic_manager.ContentPlanner", side_effect=lambda: ContentPlanner(store_path=self.calendar_path)):
+            from modules.topic_manager import TopicManager
+            tm = TopicManager()  # must not raise
+            self.assertIsNone(tm.performance_analyzer)
+            topic = tm.pick_topic("history mysteries")
+
+        self.assertEqual(topic, "Gemini's Pick")
 
 
 if __name__ == "__main__":

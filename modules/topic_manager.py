@@ -9,6 +9,7 @@ from config import GEMINI_MODEL, TOPIC_HISTORY_FILE, SCRIPT_LANGUAGE
 from modules.content_planner import ContentPlanner
 from modules.gemini_client import generate_with_retry, make_client
 from modules.originality_engine import OriginalityEngine
+from modules.performance_analyzer import PerformanceAnalyzer
 from modules.topic_recommender import TopicRecommender
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,7 @@ class TopicManager:
         self.originality = OriginalityEngine()
         self.recommender = self._safe_make_recommender()
         self.content_planner = self._safe_make_content_planner()
+        self.performance_analyzer = self._safe_make_performance_analyzer()
 
     def _safe_make_recommender(self) -> TopicRecommender | None:
         """TopicRecommender degrades gracefully on its own (empty DB, a
@@ -48,6 +50,21 @@ class TopicManager:
             logger.warning(
                 "Failed to construct ContentPlanner (%s: %s) — proceeding without "
                 "the queued-topic check",
+                type(e).__name__, e,
+            )
+            return None
+
+    def _safe_make_performance_analyzer(self) -> PerformanceAnalyzer | None:
+        """Same rationale as _safe_make_recommender: PerformanceAnalyzer's own
+        methods already degrade to "" / [] on internal failure, but a
+        construction failure isn't covered by that guarantee.
+        """
+        try:
+            return PerformanceAnalyzer()
+        except Exception as e:
+            logger.warning(
+                "Failed to construct PerformanceAnalyzer (%s: %s) — proceeding without "
+                "past-performance context in the topic prompt",
                 type(e).__name__, e,
             )
             return None
@@ -105,6 +122,15 @@ class TopicManager:
             suggestions = self.recommender.suggest_topics_as_prompt_text()
             if suggestions:
                 prompt += f"\n\n{suggestions}"
+        # Same feedback-loop spirit as the recommender block above, but for
+        # what actually happened after publishing rather than what's
+        # currently trending: real past-performance numbers, offered as
+        # context, never as a directive (see PerformanceAnalyzer's own
+        # "Honesty-preserving framing" docstring section).
+        if self.performance_analyzer is not None:
+            performance_context = self.performance_analyzer.analyze_videos_as_prompt_text()
+            if performance_context:
+                prompt += f"\n\n{performance_context}"
         response = generate_with_retry(self.client, GEMINI_MODEL, prompt)
         return response.text.strip().strip('"').strip("'")
 
