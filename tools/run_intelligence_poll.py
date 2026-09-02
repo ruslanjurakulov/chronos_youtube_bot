@@ -2,7 +2,7 @@
 """Scheduled entry point for the intelligence layer — see
 .github/workflows/intelligence_poll.yml.
 
-Runs two independent passes, each defensive on its own: one bad video, one
+Runs three independent passes, each defensive on its own: one bad video, one
 bad API response, or one entire sub-system being down must never abort the
 rest of the poll.
 
@@ -10,6 +10,10 @@ rest of the poll.
      monitoring, and trending videos (see modules/intelligence_poller.py).
   2. Comment fetch + classify + demand aggregation for recently published
      videos (StateStore.list_videos() — never a hardcoded list).
+  3. Feed TopicRecommender's resulting suggestions into ContentPlanner's
+     queue — this is the producer side of the content-planning loop;
+     modules/topic_manager.py is the consumer side (checks the queue
+     before spending a Gemini call on a fresh topic).
 
 This script does not decide *when* to run — that's the workflow's cron
 schedule. It only does the work once invoked.
@@ -37,8 +41,10 @@ logger = logging.getLogger("intelligence_poll")
 from modules.audience_demand import AudienceDemandEngine
 from modules.comment_fetcher import CommentFetcher
 from modules.comment_intelligence import classify_comments
+from modules.content_planner import ContentPlanner
 from modules.intelligence_poller import IntelligencePoller
 from modules.state_store import StateStore
+from modules.topic_recommender import TopicRecommender
 
 
 def _competitor_channel_ids() -> list[str]:
@@ -115,9 +121,46 @@ def poll_comments_for_recent_videos(store: StateStore, limit: int = 10) -> None:
     logger.info("Persisted %d/%d demand signal(s)", written, len(signals))
 
 
+def enqueue_topic_suggestions(limit: int = 5) -> int:
+    """Feeds TopicRecommender's ranked suggestions into ContentPlanner's
+    queue, so a future pick_topic() call can consume one directly instead
+    of spending a Gemini call. Runs after the analytics/competitor/trend
+    and comment/demand passes above so it sees the freshest persisted data.
+
+    Never raises: TopicRecommender().suggest_topics() already degrades to
+    [] on any internal failure, and ContentPlanner's own dedup means
+    re-running this poll repeatedly against an unchanged database just
+    reuses existing queued entries rather than growing the queue unbounded.
+    """
+    try:
+        opportunities = TopicRecommender().suggest_topics(limit=limit)
+    except Exception as e:
+        logger.warning("TopicRecommender failed (%s: %s) — nothing enqueued this run", type(e).__name__, e)
+        return 0
+    if not opportunities:
+        return 0
+
+    try:
+        planner = ContentPlanner()
+    except Exception as e:
+        logger.warning("Failed to construct ContentPlanner (%s: %s) — nothing enqueued this run", type(e).__name__, e)
+        return 0
+
+    enqueued = 0
+    for opp in opportunities:
+        try:
+            planner.enqueue_opportunity(opp)
+            enqueued += 1
+        except Exception as e:
+            logger.warning("Failed to enqueue suggestion %r (%s: %s) — skipping", opp.topic, type(e).__name__, e)
+    logger.info("Content planner: %d/%d suggestion(s) enqueued (existing queued duplicates are reused, not duplicated)", enqueued, len(opportunities))
+    return enqueued
+
+
 def main():
     parser = argparse.ArgumentParser(description="Chronos intelligence poll")
     parser.add_argument("--skip-comments", action="store_true", help="Skip the comment fetch/classify pass")
+    parser.add_argument("--skip-planning", action="store_true", help="Skip feeding suggestions into the content planner queue")
     args = parser.parse_args()
 
     logger.info("=== Intelligence poll starting ===")
@@ -139,6 +182,11 @@ def main():
             poll_comments_for_recent_videos(store)
     else:
         logger.info("Comment polling skipped (--skip-comments)")
+
+    if not args.skip_planning:
+        enqueue_topic_suggestions()
+    else:
+        logger.info("Content planning skipped (--skip-planning)")
 
     logger.info("=== Intelligence poll done ===")
 

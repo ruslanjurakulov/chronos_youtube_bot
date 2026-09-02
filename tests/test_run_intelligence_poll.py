@@ -11,6 +11,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from modules.comment_intelligence import CommentClassification
+from modules.content_opportunity import ContentOpportunity
+from modules.content_planner import ContentPlanner
 from modules.state_store import StateStore
 from tools import run_intelligence_poll as mod
 
@@ -93,6 +95,68 @@ class PollCommentsForRecentVideosTestCase(unittest.TestCase):
             mod.poll_comments_for_recent_videos(self.store)
 
         self.assertTrue(any("flagged" in msg for msg in cm.output))
+
+
+class EnqueueTopicSuggestionsTestCase(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.calendar_path = Path(self._tmpdir.name) / "test_calendar.json"
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def test_no_suggestions_enqueues_nothing(self):
+        fake_recommender = MagicMock()
+        fake_recommender.suggest_topics.return_value = []
+        with patch.object(mod, "TopicRecommender", return_value=fake_recommender):
+            written = mod.enqueue_topic_suggestions()
+        self.assertEqual(written, 0)
+
+    def test_recommender_failure_degrades_to_zero(self):
+        with patch.object(mod, "TopicRecommender", side_effect=RuntimeError("boom")):
+            written = mod.enqueue_topic_suggestions()  # must not raise
+        self.assertEqual(written, 0)
+
+    def test_planner_construction_failure_degrades_to_zero(self):
+        fake_recommender = MagicMock()
+        fake_recommender.suggest_topics.return_value = [
+            ContentOpportunity(topic="A Real Suggestion", score=0.8, source="trend", rationale="high view velocity")
+        ]
+        with patch.object(mod, "TopicRecommender", return_value=fake_recommender), \
+             patch.object(mod, "ContentPlanner", side_effect=RuntimeError("disk full")):
+            written = mod.enqueue_topic_suggestions()  # must not raise
+        self.assertEqual(written, 0)
+
+    def test_real_suggestions_are_enqueued(self):
+        fake_recommender = MagicMock()
+        fake_recommender.suggest_topics.return_value = [
+            ContentOpportunity(topic="A Real Suggestion", score=0.8, source="trend", rationale="high view velocity"),
+            ContentOpportunity(topic="Another One", score=0.6, source="demand", rationale="mentioned 5 times"),
+        ]
+        with patch.object(mod, "TopicRecommender", return_value=fake_recommender), \
+             patch.object(mod, "ContentPlanner", lambda: ContentPlanner(store_path=self.calendar_path)):
+            written = mod.enqueue_topic_suggestions()
+
+        self.assertEqual(written, 2)
+        planner = ContentPlanner(store_path=self.calendar_path)
+        entries = planner.list_entries(status="queued")
+        self.assertEqual({e.topic for e in entries}, {"A Real Suggestion", "Another One"})
+        self.assertTrue(all(e.source.startswith("content_opportunity:") for e in entries))
+
+    def test_repeated_polls_reuse_queued_duplicates_not_grow_unbounded(self):
+        fake_recommender = MagicMock()
+        fake_recommender.suggest_topics.return_value = [
+            ContentOpportunity(topic="Same Suggestion Every Time", score=0.8, source="trend", rationale="consistently trending")
+        ]
+        with patch.object(mod, "TopicRecommender", return_value=fake_recommender), \
+             patch.object(mod, "ContentPlanner", lambda: ContentPlanner(store_path=self.calendar_path)):
+            mod.enqueue_topic_suggestions()
+            mod.enqueue_topic_suggestions()
+            mod.enqueue_topic_suggestions()
+
+        planner = ContentPlanner(store_path=self.calendar_path)
+        entries = planner.list_entries(status="queued")
+        self.assertEqual(len(entries), 1)
 
 
 if __name__ == "__main__":

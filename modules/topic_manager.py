@@ -6,6 +6,7 @@ from datetime import datetime
 from pathlib import Path
 
 from config import GEMINI_MODEL, TOPIC_HISTORY_FILE, SCRIPT_LANGUAGE
+from modules.content_planner import ContentPlanner
 from modules.gemini_client import generate_with_retry, make_client
 from modules.originality_engine import OriginalityEngine
 from modules.topic_recommender import TopicRecommender
@@ -22,6 +23,7 @@ class TopicManager:
         self.client = make_client()
         self.originality = OriginalityEngine()
         self.recommender = self._safe_make_recommender()
+        self.content_planner = self._safe_make_content_planner()
 
     def _safe_make_recommender(self) -> TopicRecommender | None:
         """TopicRecommender degrades gracefully on its own (empty DB, a
@@ -35,6 +37,17 @@ class TopicManager:
             logger.warning(
                 "Failed to construct TopicRecommender (%s: %s) — proceeding without "
                 "trend/demand suggestions in the topic prompt",
+                type(e).__name__, e,
+            )
+            return None
+
+    def _safe_make_content_planner(self) -> ContentPlanner | None:
+        try:
+            return ContentPlanner()
+        except Exception as e:
+            logger.warning(
+                "Failed to construct ContentPlanner (%s: %s) — proceeding without "
+                "the queued-topic check",
                 type(e).__name__, e,
             )
             return None
@@ -95,8 +108,62 @@ class TopicManager:
         response = generate_with_retry(self.client, GEMINI_MODEL, prompt)
         return response.text.strip().strip('"').strip("'")
 
+    def _try_queued_topic(self) -> str | None:
+        """Check modules/content_planner.py's queue before spending a Gemini
+        call on a fresh topic. A queued entry (enqueued elsewhere — e.g. from
+        TopicRecommender suggestions fed in by the intelligence poller) still
+        goes through the same OriginalityEngine check as a Gemini-generated
+        candidate would: real duplicate topics don't get a pass just because
+        they came from the queue.
+
+        A queued entry that's accepted is marked "published" in the planner
+        immediately (optimistic — this happens at *pick* time, not at actual
+        upload success). This is a deliberate simplification: threading the
+        entry id through the rest of main.py's run just to mark it at the
+        real moment of publish would be a much larger, more invasive change
+        for a queue of non-scarce suggestions — if a run fails downstream,
+        the same topic can simply be re-suggested or re-enqueued later.
+        A hard-blocked duplicate is marked "skipped" (not left queued
+        forever) and topic selection falls through to Gemini generation.
+
+        Returns None (falls through to Gemini generation) if the planner is
+        unavailable, the queue is empty, or the queued topic is hard-blocked.
+        """
+        if self.content_planner is None:
+            return None
+
+        entry = self.content_planner.next_topic()
+        if entry is None:
+            return None
+
+        result = self._safe_originality_check(entry.topic)
+        if result is not None and result.is_duplicate:
+            logger.warning(
+                "Queued topic '%s' (entry %s) hard-blocked as duplicate of '%s' — skipping it, falling back to Gemini",
+                entry.topic, entry.entry_id, result.closest_match,
+            )
+            self.content_planner.mark_skipped(entry.entry_id, reason="hard-blocked as duplicate by originality check")
+            return None
+
+        if result is not None and result.needs_review:
+            logger.warning(
+                "Queued topic '%s' flagged for review as near-duplicate of '%s' — using anyway",
+                entry.topic, result.closest_match,
+            )
+
+        self.content_planner.mark_published(entry.entry_id)
+        logger.info("Using queued topic from content planner: '%s' (source=%s)", entry.topic, entry.source)
+        return entry.topic
+
     def pick_topic(self, niche: str = "history mysteries") -> str:
-        """Ask Gemini for a fresh, viral topic not in history.
+        """Pick a topic for the next video.
+
+        Checks modules/content_planner.py's queue first (see
+        _try_queued_topic) — a queued suggestion, once it clears the same
+        originality check a fresh one would, is used directly and no Gemini
+        call is spent picking a topic at all. Only when the queue is empty
+        or its candidate is rejected does this fall through to asking
+        Gemini for a fresh one.
 
         The exact-string exclusion list handles topics Gemini has already
         seen; OriginalityEngine additionally catches paraphrased/reworded
@@ -105,6 +172,11 @@ class TopicManager:
         flagged-for-review near-duplicate is logged but still used, since
         the threshold is a starting point, not a validated cutoff.
         """
+        queued_topic = self._try_queued_topic()
+        if queued_topic is not None:
+            logger.info("Selected topic: %s", queued_topic)
+            return queued_topic
+
         topic = None
         for attempt in range(1, MAX_TOPIC_ATTEMPTS + 1):
             candidate = self._generate_topic(niche)
