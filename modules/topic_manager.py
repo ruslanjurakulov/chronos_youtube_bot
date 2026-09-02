@@ -5,9 +5,8 @@ import logging
 from datetime import datetime
 from pathlib import Path
 
-from google import genai
-
-from config import GEMINI_API_KEY, GEMINI_MODEL, TOPIC_HISTORY_FILE, SCRIPT_LANGUAGE
+from config import GEMINI_MODEL, TOPIC_HISTORY_FILE, SCRIPT_LANGUAGE
+from modules.gemini_client import generate_with_retry, make_client
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +15,7 @@ class TopicManager:
     def __init__(self):
         TOPIC_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
         self.history = self._load()
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        self.client = make_client()
 
     def _load(self) -> dict:
         if TOPIC_HISTORY_FILE.exists():
@@ -39,10 +38,7 @@ class TopicManager:
             "Pick ONE brand-new, highly engaging topic for a 5-minute YouTube video. "
             "Return ONLY the topic title — no explanation, no numbering."
         )
-        response = self.client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-        )
+        response = generate_with_retry(self.client, GEMINI_MODEL, prompt)
         topic = response.text.strip().strip('"').strip("'")
         logger.info("Selected topic: %s", topic)
         return topic

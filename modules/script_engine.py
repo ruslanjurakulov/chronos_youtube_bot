@@ -5,10 +5,10 @@ import logging
 import re
 from dataclasses import dataclass, field
 
-from google import genai
 from google.genai import types as genai_types
 
-from config import GEMINI_API_KEY, GEMINI_MODEL, SCRIPT_LANGUAGE, VIDEO_DURATION_TARGET
+from config import GEMINI_MODEL, SCRIPT_LANGUAGE, VIDEO_DURATION_TARGET
+from modules.gemini_client import generate_with_retry, make_client
 
 logger = logging.getLogger(__name__)
 
@@ -169,17 +169,13 @@ class Script:
 
 class ScriptEngine:
     def __init__(self):
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
+        self.client = make_client()
 
     def _gen(self, prompt: str, system: str | None = None) -> str:
         config = genai_types.GenerateContentConfig(
             system_instruction=system,
         ) if system else None
-        response = self.client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents=prompt,
-            config=config,
-        )
+        response = generate_with_retry(self.client, GEMINI_MODEL, prompt, config)
         return response.text
 
     def generate(self, topic: str) -> Script:

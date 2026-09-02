@@ -32,6 +32,9 @@ TOPIC_HISTORY_FILE = HISTORY_DIR / "topics.json"
 
 # Script Engine
 GEMINI_MODEL = "gemini-3.6-flash"
+# Transient 503/429 retries. Daily-quota 429s are not retried — see gemini_client.
+GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "5"))
+GEMINI_RETRY_MAX_DELAY = float(os.getenv("GEMINI_RETRY_MAX_DELAY", "60"))
 SCRIPT_LANGUAGE = os.getenv("SCRIPT_LANGUAGE", "English")
 VIDEO_DURATION_TARGET = int(os.getenv("VIDEO_DURATION_TARGET", "300"))  # seconds
 
