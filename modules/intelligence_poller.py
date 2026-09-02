@@ -42,6 +42,14 @@ from datetime import date, datetime, timedelta
 logger = logging.getLogger(__name__)
 
 
+def _isoformat(value) -> str:
+    """Best-effort conversion of a VideoSnapshot's published_at to a string
+    state_store's TEXT columns can hold. Falls back to str() rather than
+    raising, since a malformed timestamp shouldn't be the reason a whole
+    snapshot fails to persist."""
+    return value.isoformat() if hasattr(value, "isoformat") else str(value)
+
+
 class IntelligencePoller:
     """Runs the analytics/competitor/trend intelligence modules and persists
     their results via StateStore. The single entry point future scheduled
@@ -82,6 +90,9 @@ class IntelligencePoller:
             from modules.trend_detector import TrendDetector
 
             self.trend_detector = TrendDetector()
+
+        self._last_competitor_snapshots_written = 0
+        self._last_trending_snapshots_written = 0
 
     # -- own-channel analytics -------------------------------------------
 
@@ -144,29 +155,94 @@ class IntelligencePoller:
 
     # -- competitors --------------------------------------------------------
 
+    def _persist_competitor_snapshots(self, results: dict) -> int:
+        """Writes each channel's VideoSnapshots (and their view_velocity) into
+        state_store.competitor_snapshots. Previously this data was computed
+        and immediately discarded — nothing downstream could ever see it.
+        One bad snapshot (unexpected field shape, a state_store failure) is
+        logged and skipped rather than aborting the rest.
+        """
+        from modules.competitor_monitor import view_velocity
+
+        polled_date = date.today().isoformat()
+        written = 0
+        for channel_id, snapshots in results.items():
+            for snapshot in snapshots:
+                try:
+                    velocity = view_velocity(snapshot)
+                    self.state_store.record_competitor_snapshot(
+                        video_id=snapshot.video_id,
+                        channel_id=snapshot.channel_id or channel_id,
+                        polled_date=polled_date,
+                        title=snapshot.title,
+                        view_count=snapshot.view_count,
+                        like_count=snapshot.like_count,
+                        comment_count=snapshot.comment_count,
+                        published_at=_isoformat(snapshot.published_at),
+                        view_velocity=velocity,
+                    )
+                    written += 1
+                except Exception:
+                    logger.warning(
+                        "Failed to persist competitor snapshot (channel=%s); skipping", channel_id, exc_info=True
+                    )
+        return written
+
     def poll_competitors(self, channel_ids: list) -> dict:
         """Thin entry point around `CompetitorMonitor.poll`. Returns whatever
         it gets back; on any failure, logs a warning and returns `{}` rather
-        than raising.
+        than raising. As a side effect, persists every snapshot returned via
+        `StateStore.record_competitor_snapshot` — see `_persist_competitor_snapshots`.
         """
         try:
-            return self.competitor_monitor.poll(channel_ids)
+            results = self.competitor_monitor.poll(channel_ids)
         except Exception:
             logger.warning("Competitor poll failed; returning empty result", exc_info=True)
+            self._last_competitor_snapshots_written = 0
             return {}
+        self._last_competitor_snapshots_written = self._persist_competitor_snapshots(results)
+        return results
 
     # -- trends ---------------------------------------------------------
+
+    def _persist_trending_snapshots(self, snapshots: list, region_code: str, category_id) -> int:
+        """Writes each trending VideoSnapshot into state_store.trending_snapshots.
+        Same discard-on-persist-failure defensiveness as competitor snapshots.
+        """
+        polled_date = date.today().isoformat()
+        written = 0
+        for snapshot in snapshots:
+            try:
+                self.state_store.record_trending_snapshot(
+                    video_id=snapshot.video_id,
+                    polled_date=polled_date,
+                    title=snapshot.title,
+                    view_count=snapshot.view_count,
+                    like_count=snapshot.like_count,
+                    comment_count=snapshot.comment_count,
+                    published_at=_isoformat(snapshot.published_at),
+                    region_code=region_code,
+                    category_id=category_id or "",
+                )
+                written += 1
+            except Exception:
+                logger.warning("Failed to persist trending snapshot; skipping", exc_info=True)
+        return written
 
     def poll_trends(self, region_code: str = "US", category_id=None) -> list:
         """Thin entry point around `TrendDetector.trending`. Returns whatever
         it gets back; on any failure, logs a warning and returns `[]` rather
-        than raising.
+        than raising. As a side effect, persists every snapshot returned via
+        `StateStore.record_trending_snapshot` — see `_persist_trending_snapshots`.
         """
         try:
-            return self.trend_detector.trending(region_code=region_code, category_id=category_id)
+            results = self.trend_detector.trending(region_code=region_code, category_id=category_id)
         except Exception:
             logger.warning("Trend poll failed; returning empty result", exc_info=True)
+            self._last_trending_snapshots_written = 0
             return []
+        self._last_trending_snapshots_written = self._persist_trending_snapshots(results, region_code, category_id)
+        return results
 
     # -- orchestration --------------------------------------------------
 
@@ -186,5 +262,7 @@ class IntelligencePoller:
         return {
             "own_metrics_written": own_metrics_written,
             "competitor_channels_polled": len(competitor_results),
+            "competitor_snapshots_written": self._last_competitor_snapshots_written if channel_ids else 0,
             "trending_videos_found": len(trending_videos),
+            "trending_snapshots_written": self._last_trending_snapshots_written,
         }

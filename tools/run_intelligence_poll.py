@@ -19,6 +19,7 @@ import argparse
 import logging
 import os
 import sys
+from datetime import date
 from pathlib import Path
 
 Path("logs").mkdir(exist_ok=True)
@@ -92,9 +93,26 @@ def poll_comments_for_recent_videos(store: StateStore, limit: int = 10) -> None:
     if not all_records:
         return
     signals = AudienceDemandEngine().analyze(all_records)
-    if signals:
-        top = [(s.topic_phrase, s.mention_count) for s in signals[:5]]
-        logger.info("Audience demand — top requested topics: %s", top)
+    if not signals:
+        return
+
+    top = [(s.topic_phrase, s.mention_count) for s in signals[:5]]
+    logger.info("Audience demand — top requested topics: %s", top)
+
+    polled_date = date.today().isoformat()
+    written = 0
+    for signal in signals:
+        try:
+            store.record_demand_signal(
+                topic_phrase=signal.topic_phrase,
+                mention_count=signal.mention_count,
+                polled_date=polled_date,
+                example_comment_ids=",".join(str(i) for i in signal.example_comment_ids),
+            )
+            written += 1
+        except Exception as e:
+            logger.warning("Failed to persist demand signal %r (%s: %s) — skipping", signal.topic_phrase, type(e).__name__, e)
+    logger.info("Persisted %d/%d demand signal(s)", written, len(signals))
 
 
 def main():

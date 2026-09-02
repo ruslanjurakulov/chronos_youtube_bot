@@ -118,6 +118,90 @@ class StateStoreTestCase(unittest.TestCase):
             self.assertEqual(store.metrics_history("does-not-exist"), [])
             self.assertEqual(store.list_videos(), [])
 
+    # -- competitor snapshots -------------------------------------------------
+
+    def test_competitor_snapshot_insert_and_list(self):
+        with StateStore(self.db_path) as store:
+            store.record_competitor_snapshot(
+                video_id="c1", channel_id="UCabc", polled_date="2026-01-01",
+                title="Rival video", view_count=1000, view_velocity=41.7,
+            )
+            rows = store.list_competitor_snapshots()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["video_id"], "c1")
+            self.assertEqual(rows[0]["view_velocity"], 41.7)
+
+    def test_competitor_snapshot_upsert_same_date(self):
+        with StateStore(self.db_path) as store:
+            store.record_competitor_snapshot(video_id="c1", channel_id="UCabc", polled_date="2026-01-01", view_count=1000)
+            store.record_competitor_snapshot(video_id="c1", channel_id="UCabc", polled_date="2026-01-01", view_count=2000)
+            rows = store.list_competitor_snapshots()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["view_count"], 2000)
+
+    def test_competitor_snapshot_filters_by_channel(self):
+        with StateStore(self.db_path) as store:
+            store.record_competitor_snapshot(video_id="c1", channel_id="UCabc", polled_date="2026-01-01")
+            store.record_competitor_snapshot(video_id="c2", channel_id="UCdef", polled_date="2026-01-01")
+            rows = store.list_competitor_snapshots(channel_id="UCabc")
+            self.assertEqual([r["video_id"] for r in rows], ["c1"])
+
+    def test_competitor_snapshot_filters_by_since(self):
+        with StateStore(self.db_path) as store:
+            store.record_competitor_snapshot(video_id="c1", channel_id="UCabc", polled_date="2026-01-01")
+            store.record_competitor_snapshot(video_id="c2", channel_id="UCabc", polled_date="2026-01-05")
+            rows = store.list_competitor_snapshots(since="2026-01-03")
+            self.assertEqual([r["video_id"] for r in rows], ["c2"])
+
+    # -- trending snapshots -----------------------------------------------------
+
+    def test_trending_snapshot_insert_and_list(self):
+        with StateStore(self.db_path) as store:
+            store.record_trending_snapshot(video_id="t1", polled_date="2026-01-01", title="Trending!", region_code="US")
+            rows = store.list_trending_snapshots()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["region_code"], "US")
+
+    def test_trending_snapshot_same_video_multiple_regions(self):
+        with StateStore(self.db_path) as store:
+            store.record_trending_snapshot(video_id="t1", polled_date="2026-01-01", region_code="US")
+            store.record_trending_snapshot(video_id="t1", polled_date="2026-01-01", region_code="GB")
+            rows = store.list_trending_snapshots()
+            self.assertEqual(len(rows), 2)
+
+    def test_trending_snapshot_upsert_same_video_date_region(self):
+        with StateStore(self.db_path) as store:
+            store.record_trending_snapshot(video_id="t1", polled_date="2026-01-01", region_code="US", view_count=100)
+            store.record_trending_snapshot(video_id="t1", polled_date="2026-01-01", region_code="US", view_count=200)
+            rows = store.list_trending_snapshots()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["view_count"], 200)
+
+    # -- demand signals -----------------------------------------------------
+
+    def test_demand_signal_insert_and_list(self):
+        with StateStore(self.db_path) as store:
+            store.record_demand_signal(topic_phrase="cover Genghis Khan", mention_count=5, polled_date="2026-01-01", example_comment_ids="0,3,7")
+            rows = store.list_demand_signals()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["mention_count"], 5)
+
+    def test_demand_signal_append_only_no_upsert(self):
+        # Unlike the snapshot tables, repeated polls on the same date are
+        # NOT collapsed — each poll's clustering result is kept.
+        with StateStore(self.db_path) as store:
+            store.record_demand_signal(topic_phrase="cover Genghis Khan", mention_count=5, polled_date="2026-01-01")
+            store.record_demand_signal(topic_phrase="cover Genghis Khan", mention_count=7, polled_date="2026-01-01")
+            rows = store.list_demand_signals()
+            self.assertEqual(len(rows), 2)
+
+    def test_demand_signal_filters_by_since(self):
+        with StateStore(self.db_path) as store:
+            store.record_demand_signal(topic_phrase="a", mention_count=1, polled_date="2026-01-01")
+            store.record_demand_signal(topic_phrase="b", mention_count=1, polled_date="2026-01-05")
+            rows = store.list_demand_signals(since="2026-01-03")
+            self.assertEqual([r["topic_phrase"] for r in rows], ["b"])
+
 
 if __name__ == "__main__":
     unittest.main()
