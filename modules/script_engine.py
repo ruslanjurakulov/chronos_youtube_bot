@@ -10,6 +10,7 @@ from google.genai import types as genai_types
 
 from config import GEMINI_MODEL, SCRIPT_LANGUAGE, VIDEO_DURATION_TARGET
 from modules.gemini_client import generate_with_retry, make_client
+from modules.research_engine import ResearchBrief
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,45 @@ class Script:
         return path
 
 
+def _format_research_notes(research_brief: "ResearchBrief | None") -> str:
+    """Render a ResearchBrief into an appendable prompt section.
+
+    Returns "" when no brief was supplied (the default, backward-compatible
+    path). When a brief IS supplied, this deliberately does NOT tell Gemini
+    the facts are verified — research_engine.py's own output is unverified
+    LLM recall self-rated by confidence, and that honesty framing has to
+    carry through here too, so the script generator treats these as
+    inspiration to build a narrative from and not as ground truth to narrate
+    confidently.
+    """
+    if research_brief is None:
+        return ""
+
+    lines = [
+        "\n\nResearch notes (unverified, use as inspiration — verify anything "
+        "presented as fact in the final script):",
+    ]
+
+    if research_brief.key_facts:
+        for fact in research_brief.key_facts:
+            line = f"- [{fact.confidence}] {fact.claim}"
+            if fact.caveat:
+                line += f" (caveat: {fact.caveat})"
+            lines.append(line)
+    else:
+        lines.append("- (no key facts recalled)")
+
+    if research_brief.open_questions:
+        lines.append("Open questions (unresolved, do not assert as fact):")
+        for question in research_brief.open_questions:
+            lines.append(f"- {question}")
+
+    if research_brief.suggested_angle:
+        lines.append(f"Suggested editorial angle: {research_brief.suggested_angle}")
+
+    return "\n".join(lines)
+
+
 class ScriptEngine:
     def __init__(self):
         self.client = make_client()
@@ -268,7 +308,15 @@ class ScriptEngine:
         response = generate_with_retry(self.client, GEMINI_MODEL, prompt, config)
         return response.text
 
-    def generate(self, topic: str) -> Script:
+    def generate(self, topic: str, research_brief: "ResearchBrief | None" = None) -> Script:
+        prompt = self._build_prompt(topic, research_brief)
+        logger.info("Generating script for: %s", topic)
+        text = self._gen(prompt, system=SCRIPT_SYSTEM_PROMPT)
+        raw = self._extract_json(text)
+        return self._parse(topic, raw)
+
+    @staticmethod
+    def _build_prompt(topic: str, research_brief: "ResearchBrief | None" = None) -> str:
         prompt = (
             f"Topic: {topic}\n"
             f"Language: {SCRIPT_LANGUAGE}\n"
@@ -276,10 +324,8 @@ class ScriptEngine:
             "Write the full viral YouTube script JSON now. "
             "Include at least 6 sections, 2 open loops, and multiple [PAUSE], [SFX], [MUSIC] cues."
         )
-        logger.info("Generating script for: %s", topic)
-        text = self._gen(prompt, system=SCRIPT_SYSTEM_PROMPT)
-        raw = self._extract_json(text)
-        return self._parse(topic, raw)
+        prompt += _format_research_notes(research_brief)
+        return prompt
 
     def _extract_json(self, text: str) -> dict:
         text = re.sub(r"^```(?:json)?\s*", "", text.strip(), flags=re.MULTILINE)
