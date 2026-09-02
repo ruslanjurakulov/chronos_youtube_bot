@@ -4,6 +4,15 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Limit BLAS/OpenMP thread pools before numpy (and Whisper/Torch) load.
+# Without this, OpenBLAS tries to allocate per-thread buffers for every core
+# and dies with "Memory allocation still failed after 10 retries" on Windows.
+# config is the first project import in main.py, so setting these here lands
+# before any numpy import. Override with BLAS_THREADS in .env if needed.
+_blas_threads = os.getenv("BLAS_THREADS", "1")
+for _var in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "MKL_NUM_THREADS"):
+    os.environ.setdefault(_var, _blas_threads)
+
 BASE_DIR = Path(__file__).parent
 
 # API Keys
