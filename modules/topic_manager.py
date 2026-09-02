@@ -8,6 +8,7 @@ from pathlib import Path
 from config import GEMINI_MODEL, TOPIC_HISTORY_FILE, SCRIPT_LANGUAGE
 from modules.gemini_client import generate_with_retry, make_client
 from modules.originality_engine import OriginalityEngine
+from modules.topic_recommender import TopicRecommender
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +21,23 @@ class TopicManager:
         self.history = self._load()
         self.client = make_client()
         self.originality = OriginalityEngine()
+        self.recommender = self._safe_make_recommender()
+
+    def _safe_make_recommender(self) -> TopicRecommender | None:
+        """TopicRecommender degrades gracefully on its own (empty DB, a
+        broken store, etc. all return "" rather than raising), but its
+        constructor is not exercised by that guarantee — so failing to
+        construct it at all must not stop topic selection from working.
+        """
+        try:
+            return TopicRecommender()
+        except Exception as e:
+            logger.warning(
+                "Failed to construct TopicRecommender (%s: %s) — proceeding without "
+                "trend/demand suggestions in the topic prompt",
+                type(e).__name__, e,
+            )
+            return None
 
     def _load(self) -> dict:
         if TOPIC_HISTORY_FILE.exists():
@@ -66,6 +84,14 @@ class TopicManager:
             "Pick ONE brand-new, highly engaging topic for a 5-minute YouTube video. "
             "Return ONLY the topic title — no explanation, no numbering."
         )
+        # This is the feedback loop: real persisted trend/competitor/demand
+        # data (when any exists — see TopicRecommender) offered as optional
+        # inspiration, never as a directive. Gemini still makes the actual
+        # call; this only gives it more to work with.
+        if self.recommender is not None:
+            suggestions = self.recommender.suggest_topics_as_prompt_text()
+            if suggestions:
+                prompt += f"\n\n{suggestions}"
         response = generate_with_retry(self.client, GEMINI_MODEL, prompt)
         return response.text.strip().strip('"').strip("'")
 
