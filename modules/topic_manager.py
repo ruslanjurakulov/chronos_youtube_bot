@@ -43,13 +43,21 @@ class TopicManager:
         logger.info("Selected topic: %s", topic)
         return topic
 
-    def register_topic(self, topic: str, video_path: str = ""):
+    def register_topic(
+        self,
+        topic: str,
+        video_path: str = "",
+        video_id: str | None = None,
+        video_url: str | None = None,
+    ):
         """Mark topic as used after successful video creation."""
         self.history["used_topics"].append(topic)
         self.history["sessions"].append({
             "topic": topic,
             "date": datetime.utcnow().isoformat(),
             "video": str(video_path),
+            "video_id": video_id,
+            "video_url": video_url,
         })
         self._save()
-        logger.info("Topic registered: %s", topic)
+        logger.info("Topic registered: %s (video_id=%s)", topic, video_id)

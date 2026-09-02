@@ -101,7 +101,7 @@ class YouTubeUploader:
         script: Script,
         thumbnail_path: Path | None = None,
         privacy: str | None = None,
-    ) -> str:
+    ) -> dict:
         privacy = privacy or YOUTUBE_PRIVACY
         tags = self._trim_tags(script.tags)
 
@@ -158,4 +158,4 @@ class YouTubeUploader:
             except Exception as e:
                 logger.warning("Thumbnail xatosi: %s", e)
 
-        return video_url
+        return {"id": video_id, "url": video_url}

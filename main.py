@@ -141,19 +141,21 @@ def run(
     # The video is already on disk by this point, so no upload failure may cost
     # us the topic registration — otherwise a bad channel ID or an expired token
     # means the same topic gets picked again next run despite the finished file.
+    video_id, video_url = None, None
     if not skip_upload:
         try:
             uploader = YouTubeUploader()
-            url = uploader.upload(video_path, script, thumbnail_path=thumb_a, privacy=privacy)
-            logger.info("YouTube URL: %s", url)
-            print(f"\n✓ Published: {url}")
+            uploaded = uploader.upload(video_path, script, thumbnail_path=thumb_a, privacy=privacy)
+            video_id, video_url = uploaded["id"], uploaded["url"]
+            logger.info("YouTube URL: %s", video_url)
+            print(f"\n✓ Published: {video_url}")
         except Exception as e:
             logger.error("YouTube upload failed (%s): %s", type(e).__name__, e)
             print(f"\n✓ Video saved, upload failed: {video_path}")
     else:
         print(f"\n✓ Video saved (upload skipped): {video_path}")
 
-    topic_mgr.register_topic(topic, video_path)
+    topic_mgr.register_topic(topic, video_path, video_id=video_id, video_url=video_url)
 
     logger.info("=== Done ===")
     return video_path
