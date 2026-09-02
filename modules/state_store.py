@@ -38,6 +38,51 @@ CREATE TABLE IF NOT EXISTS metrics_snapshots (
 
 CREATE INDEX IF NOT EXISTS idx_metrics_video_date
     ON metrics_snapshots (video_id, snapshot_date);
+
+CREATE TABLE IF NOT EXISTS competitor_snapshots (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id       TEXT NOT NULL,
+    channel_id     TEXT NOT NULL,
+    title          TEXT,
+    view_count     INTEGER,
+    like_count     INTEGER,
+    comment_count  INTEGER,
+    published_at   TEXT,
+    polled_date    TEXT NOT NULL,
+    view_velocity  REAL,
+    UNIQUE (video_id, polled_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_competitor_channel_date
+    ON competitor_snapshots (channel_id, polled_date);
+
+CREATE TABLE IF NOT EXISTS trending_snapshots (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id       TEXT NOT NULL,
+    title          TEXT,
+    view_count     INTEGER,
+    like_count     INTEGER,
+    comment_count  INTEGER,
+    published_at   TEXT,
+    region_code    TEXT,
+    category_id    TEXT,
+    polled_date    TEXT NOT NULL,
+    UNIQUE (video_id, polled_date, region_code)
+);
+
+CREATE INDEX IF NOT EXISTS idx_trending_date
+    ON trending_snapshots (polled_date);
+
+CREATE TABLE IF NOT EXISTS demand_signals (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic_phrase          TEXT NOT NULL,
+    mention_count         INTEGER NOT NULL,
+    example_comment_ids   TEXT,
+    polled_date           TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_demand_date
+    ON demand_signals (polled_date);
 """
 
 
@@ -203,4 +248,160 @@ class StateStore:
             """,
             (video_id,),
         ).fetchall()
+        return [dict(row) for row in rows]
+
+    # -- competitor snapshots -------------------------------------------------
+
+    def record_competitor_snapshot(
+        self,
+        video_id: str,
+        channel_id: str,
+        polled_date: str,
+        title: str = "",
+        view_count: int = 0,
+        like_count: int = 0,
+        comment_count: int = 0,
+        published_at: str = "",
+        view_velocity: float = 0.0,
+    ):
+        """Insert or replace a competitor video's snapshot for a given poll date.
+
+        One row per (video_id, polled_date) — a re-poll for the same date
+        overwrites rather than accumulating duplicates, same pattern as
+        record_metrics_snapshot.
+        """
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO competitor_snapshots
+                    (video_id, channel_id, title, view_count, like_count,
+                     comment_count, published_at, polled_date, view_velocity)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(video_id, polled_date) DO UPDATE SET
+                    channel_id=excluded.channel_id,
+                    title=excluded.title,
+                    view_count=excluded.view_count,
+                    like_count=excluded.like_count,
+                    comment_count=excluded.comment_count,
+                    published_at=excluded.published_at,
+                    view_velocity=excluded.view_velocity
+                """,
+                (video_id, channel_id, title, view_count, like_count,
+                 comment_count, published_at, polled_date, view_velocity),
+            )
+
+    def list_competitor_snapshots(
+        self, channel_id: str | None = None, since: str | None = None, limit: int = 200
+    ) -> list[dict]:
+        """List competitor snapshots, most recently polled first.
+
+        `channel_id` restricts to one channel; `since` (ISO date) restricts to
+        snapshots polled on or after that date.
+        """
+        clauses, params = [], []
+        if channel_id:
+            clauses.append("channel_id = ?")
+            params.append(channel_id)
+        if since:
+            clauses.append("polled_date >= ?")
+            params.append(since)
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM competitor_snapshots {where} ORDER BY polled_date DESC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    # -- trending snapshots -----------------------------------------------------
+
+    def record_trending_snapshot(
+        self,
+        video_id: str,
+        polled_date: str,
+        title: str = "",
+        view_count: int = 0,
+        like_count: int = 0,
+        comment_count: int = 0,
+        published_at: str = "",
+        region_code: str = "",
+        category_id: str = "",
+    ):
+        """Insert or replace a trending-video snapshot for a given poll date.
+
+        One row per (video_id, polled_date, region_code) — the same video can
+        legitimately trend in more than one region on the same day.
+        """
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO trending_snapshots
+                    (video_id, title, view_count, like_count, comment_count,
+                     published_at, region_code, category_id, polled_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(video_id, polled_date, region_code) DO UPDATE SET
+                    title=excluded.title,
+                    view_count=excluded.view_count,
+                    like_count=excluded.like_count,
+                    comment_count=excluded.comment_count,
+                    published_at=excluded.published_at,
+                    category_id=excluded.category_id
+                """,
+                (video_id, title, view_count, like_count, comment_count,
+                 published_at, region_code, category_id, polled_date),
+            )
+
+    def list_trending_snapshots(self, since: str | None = None, limit: int = 200) -> list[dict]:
+        """List trending-video snapshots, most recently polled first."""
+        if since:
+            rows = self.conn.execute(
+                "SELECT * FROM trending_snapshots WHERE polled_date >= ? "
+                "ORDER BY polled_date DESC LIMIT ?",
+                (since, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM trending_snapshots ORDER BY polled_date DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    # -- audience demand signals ------------------------------------------------
+
+    def record_demand_signal(
+        self,
+        topic_phrase: str,
+        mention_count: int,
+        polled_date: str,
+        example_comment_ids: str = "",
+    ):
+        """Append one audience-demand signal from a poll run.
+
+        Unlike the snapshot tables above, this is a plain append log (no
+        upsert) — each poll run's clustering can legitimately produce a
+        different representative phrase for a similar underlying request,
+        and collapsing that here would lose signal a downstream reader might
+        want (e.g. trending phrasing over time).
+        """
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO demand_signals (topic_phrase, mention_count, example_comment_ids, polled_date)
+                VALUES (?, ?, ?, ?)
+                """,
+                (topic_phrase, mention_count, example_comment_ids, polled_date),
+            )
+
+    def list_demand_signals(self, since: str | None = None, limit: int = 200) -> list[dict]:
+        """List audience-demand signals, most recently polled first."""
+        if since:
+            rows = self.conn.execute(
+                "SELECT * FROM demand_signals WHERE polled_date >= ? "
+                "ORDER BY polled_date DESC LIMIT ?",
+                (since, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM demand_signals ORDER BY polled_date DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
         return [dict(row) for row in rows]

@@ -117,6 +117,24 @@ class IntelligencePollerTestCase(unittest.TestCase):
         competitor_monitor.poll.assert_called_once_with(["chan1"])
         self.assertEqual(result, {"chan1": [snapshot]})
 
+    def test_poll_competitors_persists_snapshot_with_view_velocity(self):
+        snapshot = VideoSnapshot(
+            video_id="cv2", channel_id="chan1", title="Rival",
+            published_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+            view_count=1000, like_count=50, comment_count=5,
+        )
+        competitor_monitor = MagicMock()
+        competitor_monitor.poll.return_value = {"chan1": [snapshot]}
+        poller = self._make_poller(competitor_monitor=competitor_monitor)
+
+        poller.poll_competitors(["chan1"])
+
+        rows = self.store.list_competitor_snapshots(channel_id="chan1")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["video_id"], "cv2")
+        self.assertEqual(rows[0]["view_count"], 1000)
+        self.assertGreater(rows[0]["view_velocity"], 0)
+
     def test_poll_competitors_returns_empty_dict_on_failure(self):
         competitor_monitor = MagicMock()
         competitor_monitor.poll.side_effect = RuntimeError("quota exceeded")
@@ -146,6 +164,24 @@ class IntelligencePollerTestCase(unittest.TestCase):
 
         trend_detector.trending.assert_called_once_with(region_code="US", category_id="24")
         self.assertEqual(result, [snapshot])
+
+    def test_poll_trends_persists_snapshot(self):
+        snapshot = VideoSnapshot(
+            video_id="tv2", channel_id="chan2", title="Trending",
+            published_at=datetime(2026, 8, 2, tzinfo=timezone.utc),
+            view_count=99999, like_count=5000, comment_count=200,
+        )
+        trend_detector = MagicMock()
+        trend_detector.trending.return_value = [snapshot]
+        poller = self._make_poller(trend_detector=trend_detector)
+
+        poller.poll_trends(region_code="US", category_id="24")
+
+        rows = self.store.list_trending_snapshots()
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["video_id"], "tv2")
+        self.assertEqual(rows[0]["region_code"], "US")
+        self.assertEqual(rows[0]["category_id"], "24")
 
     def test_poll_trends_returns_empty_list_on_failure(self):
         trend_detector = MagicMock()
@@ -185,12 +221,20 @@ class IntelligencePollerTestCase(unittest.TestCase):
         competitor_monitor.poll.assert_called_once_with(["chanA", "chanB"])
         trend_detector.trending.assert_called_once()
 
+        # trend_detector's mock returns bare MagicMocks (not real VideoSnapshot
+        # instances), which is deliberate here — it proves persistence failing
+        # on unexpected shapes is caught and skipped rather than propagating,
+        # not that anything got written. See test_poll_trends_returns_mock_data_on_success
+        # and test_poll_competitors_returns_mock_data_on_success below for the
+        # positive persistence path with real VideoSnapshot data.
         self.assertEqual(
             summary,
             {
                 "own_metrics_written": 1,
                 "competitor_channels_polled": 2,
+                "competitor_snapshots_written": 0,
                 "trending_videos_found": 3,
+                "trending_snapshots_written": 0,
             },
         )
 
