@@ -1,0 +1,210 @@
+"""Tests for modules/intelligence_poller.py.
+
+Uses a real StateStore against a tempdir SQLite file (to exercise the real
+write path) plus fake/mock AnalyticsClient, CompetitorMonitor, and
+TrendDetector so no live API calls are ever made.
+"""
+
+import tempfile
+import unittest
+from datetime import datetime, timezone
+from pathlib import Path
+from unittest.mock import MagicMock
+
+from modules.intelligence_poller import IntelligencePoller
+from modules.state_store import StateStore
+from modules.video_snapshot import VideoSnapshot
+
+
+class IntelligencePollerTestCase(unittest.TestCase):
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.db_path = Path(self._tmpdir.name) / "test_chronos.db"
+        self.store = StateStore(self.db_path)
+
+    def tearDown(self):
+        self.store.close()
+        self._tmpdir.cleanup()
+
+    def _make_poller(self, analytics_client=None, competitor_monitor=None, trend_detector=None):
+        return IntelligencePoller(
+            state_store=self.store,
+            analytics_client=analytics_client if analytics_client is not None else MagicMock(),
+            competitor_monitor=competitor_monitor if competitor_monitor is not None else MagicMock(),
+            trend_detector=trend_detector if trend_detector is not None else MagicMock(),
+        )
+
+    # -- poll_own_channel_metrics -----------------------------------------
+
+    def test_poll_own_channel_metrics_writes_snapshot_per_video(self):
+        self.store.record_video(video_id="v1", title="First", published_at="2026-01-01T00:00:00")
+        self.store.record_video(video_id="v2", title="Second", published_at="2026-01-02T00:00:00")
+
+        analytics = MagicMock()
+        analytics.video_performance.return_value = {
+            "views": 100,
+            "likes": 10,
+            "comments": 2,
+            "estimatedMinutesWatched": 50.0,
+            "averageViewDuration": 30.0,
+        }
+        poller = self._make_poller(analytics_client=analytics)
+
+        written = poller.poll_own_channel_metrics(days=None)
+
+        self.assertEqual(written, 2)
+        self.assertEqual(analytics.video_performance.call_count, 2)
+        for video_id in ("v1", "v2"):
+            latest = self.store.latest_metrics(video_id)
+            self.assertIsNotNone(latest)
+            self.assertEqual(latest["views"], 100)
+            self.assertEqual(latest["likes"], 10)
+            self.assertEqual(latest["comment_count"], 2)
+            self.assertEqual(latest["watch_time_minutes"], 50.0)
+            self.assertEqual(latest["average_view_duration_seconds"], 30.0)
+
+    def test_poll_own_channel_metrics_one_failure_does_not_stop_others(self):
+        self.store.record_video(video_id="good1", title="Good1", published_at="2026-01-01T00:00:00")
+        self.store.record_video(video_id="bad", title="Bad", published_at="2026-01-02T00:00:00")
+        self.store.record_video(video_id="good2", title="Good2", published_at="2026-01-03T00:00:00")
+
+        def side_effect(video_id, start_date, end_date):
+            if video_id == "bad":
+                raise RuntimeError("simulated API failure (e.g. video too new)")
+            return {"views": 5, "likes": 1, "comments": 0}
+
+        analytics = MagicMock()
+        analytics.video_performance.side_effect = side_effect
+        poller = self._make_poller(analytics_client=analytics)
+
+        written = poller.poll_own_channel_metrics(days=None)
+
+        # Two of three videos succeeded; the failing one contributed nothing
+        # but did not abort the loop.
+        self.assertEqual(written, 2)
+        self.assertEqual(analytics.video_performance.call_count, 3)
+        self.assertIsNotNone(self.store.latest_metrics("good1"))
+        self.assertIsNotNone(self.store.latest_metrics("good2"))
+        self.assertIsNone(self.store.latest_metrics("bad"))
+
+    def test_poll_own_channel_metrics_empty_store_is_zero_without_error(self):
+        analytics = MagicMock()
+        poller = self._make_poller(analytics_client=analytics)
+
+        written = poller.poll_own_channel_metrics()
+
+        self.assertEqual(written, 0)
+        analytics.video_performance.assert_not_called()
+
+    # -- poll_competitors -------------------------------------------------
+
+    def test_poll_competitors_returns_mock_data_on_success(self):
+        snapshot = VideoSnapshot(
+            video_id="cv1",
+            channel_id="chan1",
+            title="Competitor Video",
+            published_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+            view_count=1000,
+            like_count=50,
+            comment_count=5,
+        )
+        competitor_monitor = MagicMock()
+        competitor_monitor.poll.return_value = {"chan1": [snapshot]}
+        poller = self._make_poller(competitor_monitor=competitor_monitor)
+
+        result = poller.poll_competitors(["chan1"])
+
+        competitor_monitor.poll.assert_called_once_with(["chan1"])
+        self.assertEqual(result, {"chan1": [snapshot]})
+
+    def test_poll_competitors_returns_empty_dict_on_failure(self):
+        competitor_monitor = MagicMock()
+        competitor_monitor.poll.side_effect = RuntimeError("quota exceeded")
+        poller = self._make_poller(competitor_monitor=competitor_monitor)
+
+        result = poller.poll_competitors(["chan1"])
+
+        self.assertEqual(result, {})
+
+    # -- poll_trends --------------------------------------------------------
+
+    def test_poll_trends_returns_mock_data_on_success(self):
+        snapshot = VideoSnapshot(
+            video_id="tv1",
+            channel_id="chan2",
+            title="Trending Video",
+            published_at=datetime(2026, 8, 2, tzinfo=timezone.utc),
+            view_count=99999,
+            like_count=5000,
+            comment_count=200,
+        )
+        trend_detector = MagicMock()
+        trend_detector.trending.return_value = [snapshot]
+        poller = self._make_poller(trend_detector=trend_detector)
+
+        result = poller.poll_trends(region_code="US", category_id="24")
+
+        trend_detector.trending.assert_called_once_with(region_code="US", category_id="24")
+        self.assertEqual(result, [snapshot])
+
+    def test_poll_trends_returns_empty_list_on_failure(self):
+        trend_detector = MagicMock()
+        trend_detector.trending.side_effect = RuntimeError("network error")
+        poller = self._make_poller(trend_detector=trend_detector)
+
+        result = poller.poll_trends()
+
+        self.assertEqual(result, [])
+
+    # -- run_all -----------------------------------------------------------
+
+    def test_run_all_calls_all_three_and_returns_summary_shape(self):
+        # run_all() uses poll_own_channel_metrics()'s default `days=1` window,
+        # so the fixture video must be recently published to be picked up.
+        recent_published_at = datetime.now().isoformat()
+        self.store.record_video(video_id="v1", title="First", published_at=recent_published_at)
+
+        analytics = MagicMock()
+        analytics.video_performance.return_value = {"views": 10, "likes": 1, "comments": 0}
+
+        competitor_monitor = MagicMock()
+        competitor_monitor.poll.return_value = {"chanA": [], "chanB": []}
+
+        trend_detector = MagicMock()
+        trend_detector.trending.return_value = [MagicMock(), MagicMock(), MagicMock()]
+
+        poller = self._make_poller(
+            analytics_client=analytics,
+            competitor_monitor=competitor_monitor,
+            trend_detector=trend_detector,
+        )
+
+        summary = poller.run_all(competitor_channel_ids=["chanA", "chanB"])
+
+        analytics.video_performance.assert_called()
+        competitor_monitor.poll.assert_called_once_with(["chanA", "chanB"])
+        trend_detector.trending.assert_called_once()
+
+        self.assertEqual(
+            summary,
+            {
+                "own_metrics_written": 1,
+                "competitor_channels_polled": 2,
+                "trending_videos_found": 3,
+            },
+        )
+
+    def test_run_all_without_competitor_channel_ids_skips_competitor_poll(self):
+        competitor_monitor = MagicMock()
+        trend_detector = MagicMock()
+        trend_detector.trending.return_value = []
+        poller = self._make_poller(competitor_monitor=competitor_monitor, trend_detector=trend_detector)
+
+        summary = poller.run_all()
+
+        competitor_monitor.poll.assert_not_called()
+        self.assertEqual(summary["competitor_channels_polled"], 0)
+
+
+if __name__ == "__main__":
+    unittest.main()
