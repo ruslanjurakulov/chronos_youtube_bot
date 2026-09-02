@@ -8,3 +8,9 @@ __pycache__/
 *.pyc
 *.pyo
 .DS_Store
+
+# Synthesized audio — regenerated on demand by tools/generate_assets.py.
+# Commit real recordings as .mp3 instead; the loaders check mp3 before wav,
+# so a committed .mp3 always overrides the generated fallback.
+assets/sfx/*.wav
+assets/music/*.wav

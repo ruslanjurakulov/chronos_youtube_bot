@@ -31,6 +31,7 @@ from modules.subtitle_generator import SubtitleGenerator
 from modules.thumbnail_generator import ThumbnailGenerator
 from modules.topic_manager import TopicManager
 from modules.youtube_uploader import YouTubeUploader
+from tools.generate_assets import ensure_assets
 
 logging.basicConfig(
     level=logging.INFO,
@@ -55,6 +56,14 @@ def run(
 ):
     Path("logs").mkdir(exist_ok=True)
     logger.info("=== Chronos YouTube Bot starting ===")
+
+    # ── Stage 0: Assets
+    # SFX/music are synthesized rather than committed (17MB of WAV from 12KB of
+    # code). Existing files are never overwritten, so real recordings dropped
+    # into assets/ as .mp3 take precedence — see tools/generate_assets.py.
+    written = ensure_assets(verbose=False)
+    if written:
+        logger.info("Generated %d missing audio assets", written)
 
     # ── Stage 1: Topic
     topic_mgr = TopicManager()
