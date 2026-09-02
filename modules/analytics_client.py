@@ -1,0 +1,246 @@
+"""Stage 8 (new): YouTube Analytics client — read-only wrapper around the
+YouTube Analytics API v2 (`youtubeAnalytics`, version `v2`), built on the same
+`google-api-python-client` dependency already used by `youtube_uploader.py`.
+
+Purpose
+-------
+The rest of the pipeline (topic -> Gemini script -> TTS -> media -> subtitles
+-> thumbnails -> compositor -> YouTube upload) never reads back performance
+data once a video is uploaded. This module is a thin client for pulling
+own-channel watch-time, retention, and engagement metrics so a future stage
+can use them (e.g. to inform topic selection or thumbnail A/B decisions).
+
+OAuth scope dependency
+-----------------------
+This client reuses the OAuth token at `YOUTUBE_TOKEN_FILE` (config.py), the
+same file `YouTubeUploader` writes/refreshes. Reading Analytics data requires
+the `https://www.googleapis.com/auth/yt-analytics.readonly` scope, which is
+NOT yet present in `config.YOUTUBE_SCOPES` on `main` as of this writing —
+PR #1 ("Stage 0") adds it. This module does not add the scope itself (that
+would conflict with PR #1); it assumes the scope will exist in
+`config.YOUTUBE_SCOPES` by the time this code runs. Until PR #1 merges and a
+fresh OAuth consent is granted (a token file authorized under the old, narrower
+scope list will NOT gain the new scope automatically — it must be re-consented,
+which `_auth()` below handles by falling back to `InstalledAppFlow` when the
+stored credentials don't satisfy the requested scopes), calls in this module
+will fail with an insufficient-scope error from the API.
+
+Metric verification status (per audit's evidence-discipline requirement)
+-------------------------------------------------------------------------
+CONFIRMED available for an owner querying their own channel/video via the
+YouTube Analytics API v2 `reports.query` endpoint, per the public YouTube
+Analytics/Reporting API documentation as of this writing:
+    - views
+    - estimatedMinutesWatched
+    - averageViewDuration
+    - averageViewPercentage
+    - subscribersGained
+    - subscribersLost
+    - likes
+    - comments
+    - shares
+    - dimensions: day (for `daily_timeseries`)
+
+UNKNOWN / UNVERIFIED — CONFIRM AGAINST CURRENT API DOCS BEFORE RELYING ON IT:
+    - "dislikes": YouTube publicly hid dislike *counts* in 2021; whether the
+      Analytics API still exposes a `dislikes` metric to channel owners (and
+      whether it reflects real data or a frozen/zeroed value) could not be
+      verified by the prior audit. Do NOT assume it works — check the current
+      "Metrics" reference page (developers.google.com/youtube/analytics) and
+      test against a real channel before shipping any feature that depends on
+      it. It is intentionally NOT included in the default metric sets below.
+    - "estimatedRevenue" / "cpm" / other monetization metrics: These require
+      the additional `yt-analytics-monetary.readonly` scope (not requested
+      here) and are subject to YPP (YouTube Partner Program) eligibility and
+      revenue-sharing agreement acceptance. Not implemented in this module;
+      flagged here only so a future stage doesn't assume they "just work"
+      with the `yt-analytics.readonly` scope this module relies on.
+    - Any metric/dimension combination not explicitly listed above (e.g.
+      `insightTrafficSourceType`, `deviceType`, `country` breakdowns) is
+      simply not covered by this thin client. Adding it should mean adding a
+      typed method here, not passing raw strings from a caller.
+
+None of the above should be treated as verified just because it appears in
+this file — this comment records what a prior audit could and could not
+confirm; re-check against docs before depending on anything marked UNKNOWN.
+"""
+
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import Any
+
+from google.auth.transport.requests import Request
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+
+from config import YOUTUBE_CHANNEL_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_SCOPES, YOUTUBE_TOKEN_FILE
+
+logger = logging.getLogger(__name__)
+
+# Core metric set used by channel_summary() and video_performance(). Keep in
+# sync with the "CONFIRMED" list in the module docstring above.
+CORE_METRICS: list[str] = [
+    "views",
+    "estimatedMinutesWatched",
+    "averageViewDuration",
+    "averageViewPercentage",
+    "subscribersGained",
+    "subscribersLost",
+    "likes",
+    "comments",
+    "shares",
+]
+
+
+class AnalyticsClient:
+    """Read-only wrapper around the YouTube Analytics API v2.
+
+    Mirrors the OAuth pattern in `modules/youtube_uploader.py.YouTubeUploader._auth`
+    (same token file, same refresh/InstalledAppFlow fallback) rather than
+    importing from it, to keep this module mergeable independently of any
+    change to that shared file. Some duplication is intentional here; a
+    follow-up PR can factor out a shared `_auth()` helper once all the
+    parallel module PRs have landed.
+    """
+
+    def __init__(self):
+        self.service = self._auth()
+
+    def _auth(self):
+        creds = None
+        token_file = Path(YOUTUBE_TOKEN_FILE)
+
+        if token_file.exists():
+            creds = Credentials.from_authorized_user_file(str(token_file), YOUTUBE_SCOPES)
+
+        if not creds or not creds.valid or not set(YOUTUBE_SCOPES).issubset(set(creds.scopes or [])):
+            if creds and creds.expired and creds.refresh_token and set(YOUTUBE_SCOPES).issubset(
+                set(creds.scopes or [])
+            ):
+                creds.refresh(Request())
+            else:
+                if not Path(YOUTUBE_CLIENT_SECRET).exists():
+                    raise FileNotFoundError(
+                        f"client_secret.json topilmadi: {YOUTUBE_CLIENT_SECRET}\n"
+                        "Google Cloud Console -> APIs & Services -> Credentials dan yuklab oling."
+                    )
+                flow = InstalledAppFlow.from_client_secrets_file(
+                    YOUTUBE_CLIENT_SECRET, YOUTUBE_SCOPES
+                )
+                creds = flow.run_local_server(port=0)
+            token_file.write_text(creds.to_json())
+            logger.info("Token saqlandi: %s", token_file)
+
+        return build("youtubeAnalytics", "v2", credentials=creds)
+
+    @staticmethod
+    def _parse_report(response: dict[str, Any]) -> list[dict[str, Any]]:
+        """Turns a raw `reports.query` response into a list of row dicts keyed
+        by column name, using `columnHeaders` to map each row's positional
+        values.
+        """
+        headers = [h["name"] for h in response.get("columnHeaders", [])]
+        rows = response.get("rows", []) or []
+        return [dict(zip(headers, row)) for row in rows]
+
+    def channel_summary(
+        self,
+        start_date: str,
+        end_date: str,
+        channel_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Aggregate core metrics for a channel over [start_date, end_date]
+        (YYYY-MM-DD, inclusive). Defaults to `ids="channel==MINE"`; pass
+        `channel_id` (or rely on `config.YOUTUBE_CHANNEL_ID`) to query a
+        specific channel the authenticated user manages instead.
+
+        Returns a single flat dict of metric name -> value (one row expected,
+        since no `dimensions` is requested). Returns an empty dict if the API
+        returns no rows for the range.
+        """
+        ids = f"channel=={channel_id}" if channel_id else _default_ids()
+        response = (
+            self.service.reports()
+            .query(
+                ids=ids,
+                startDate=start_date,
+                endDate=end_date,
+                metrics=",".join(CORE_METRICS),
+            )
+            .execute()
+        )
+        rows = self._parse_report(response)
+        return rows[0] if rows else {}
+
+    def video_performance(
+        self,
+        video_id: str,
+        start_date: str,
+        end_date: str,
+    ) -> dict[str, Any]:
+        """Aggregate core metrics for a single video over [start_date, end_date]
+        (YYYY-MM-DD, inclusive). Always queries the authenticated user's own
+        channel (`ids="channel==MINE"`), filtered to `video_id`.
+
+        Returns a single flat dict of metric name -> value, or an empty dict
+        if the API returns no rows (e.g. the video had zero views in range,
+        or is not owned by the authenticated channel).
+        """
+        response = (
+            self.service.reports()
+            .query(
+                ids=_default_ids(),
+                startDate=start_date,
+                endDate=end_date,
+                metrics=",".join(CORE_METRICS),
+                filters=f"video=={video_id}",
+            )
+            .execute()
+        )
+        rows = self._parse_report(response)
+        return rows[0] if rows else {}
+
+    def daily_timeseries(
+        self,
+        start_date: str,
+        end_date: str,
+        metrics: list[str],
+    ) -> list[dict[str, Any]]:
+        """Per-day trend for the given metrics over [start_date, end_date]
+        (YYYY-MM-DD, inclusive), using `dimensions="day"`. Always queries the
+        authenticated user's own channel (`ids="channel==MINE"`).
+
+        `metrics` is caller-supplied rather than defaulted to CORE_METRICS —
+        the caller should only pass metrics they have verified are valid for
+        `dimensions=day` (not every metric supports every dimension; see the
+        module docstring's UNKNOWN/UNVERIFIED section before adding new ones).
+
+        Returns a list of dicts (one per day present in the response), each
+        containing `"day"` plus one key per requested metric. Rows are
+        returned in whatever order the API provides (YouTube Analytics
+        typically returns them sorted by day ascending, but this is not
+        re-sorted or otherwise guaranteed here).
+        """
+        response = (
+            self.service.reports()
+            .query(
+                ids=_default_ids(),
+                startDate=start_date,
+                endDate=end_date,
+                metrics=",".join(metrics),
+                dimensions="day",
+            )
+            .execute()
+        )
+        return self._parse_report(response)
+
+
+def _default_ids() -> str:
+    """`channel==MINE` unless config.YOUTUBE_CHANNEL_ID pins a specific
+    (e.g. Brand Account) channel, matching `YouTubeUploader`'s convention of
+    treating `YOUTUBE_CHANNEL_ID` as the target channel when set.
+    """
+    return f"channel=={YOUTUBE_CHANNEL_ID}" if YOUTUBE_CHANNEL_ID else "channel==MINE"
