@@ -1,41 +1,48 @@
 """Stage 6: MoviePy Compositor — assembles video clips + Ken Burns images + subtitles."""
 
 import logging
-import math
 import random
 from pathlib import Path
 
-import numpy as np
-from moviepy.editor import (
+from PIL import Image
+
+# moviepy 1.0.3 predates Pillow 10 and its PIL fallback resizer still calls
+# Image.ANTIALIAS, which Pillow 10 removed. The resizer is chosen at moviepy
+# import time, so this alias has to land first or every .resize() call dies on
+# the first frame pull — that is, inside write_videofile, after the downloads,
+# TTS and Whisper pass have all already been paid for.
+if not hasattr(Image, "ANTIALIAS"):
+    Image.ANTIALIAS = Image.LANCZOS
+
+import numpy as np  # noqa: E402
+from moviepy.editor import (  # noqa: E402
     AudioFileClip,
     ColorClip,
     CompositeVideoClip,
-    ImageClip,
     TextClip,
+    VideoClip,
     VideoFileClip,
     concatenate_videoclips,
 )
-from PIL import Image
 
-from config import (
+from config import (  # noqa: E402
     OUTPUT_DIR,
     SUBTITLE_FONT,
     SUBTITLE_FONT_SIZE,
+    SUBTITLE_HIGHLIGHT_COLOR,
     SUBTITLE_STROKE_COLOR,
     SUBTITLE_STROKE_WIDTH,
     VIDEO_FPS,
     VIDEO_HEIGHT,
     VIDEO_WIDTH,
 )
-from modules.script_engine import Script
+from modules.script_engine import Script  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
-HOOK_CUT_INTERVAL = 2.0   # seconds per clip during hook section
-STORY_CUT_INTERVAL = 5.0  # seconds per clip during story sections
-
-# Fade between clips
-CROSSFADE_DURATION = 0.4
+KEN_BURNS_ZOOM = 0.12   # fraction zoomed over a clip's life
+KEN_BURNS_PAN = 0.30    # fraction of image width traversed on a pan
+COVER_OVERSCAN = 1.15   # scale beyond canvas so panning has room to move
 
 
 class Compositor:
@@ -43,89 +50,85 @@ class Compositor:
         self.slug = topic_slug
         self.out_dir = OUTPUT_DIR / topic_slug
         self.out_dir.mkdir(parents=True, exist_ok=True)
+        # One reader per source file, not per clip slot. A 5-minute video cuts
+        # into ~60-70 slots; opening a reader for each holds that many ffmpeg
+        # subprocesses (and their frame buffers) alive until the render ends.
+        self._readers: dict[Path, VideoFileClip] = {}
 
     # ------------------------------------------------------------------ Ken Burns
 
-    def _ken_burns_clip(self, image_path: Path, duration: float) -> ImageClip:
+    def _ken_burns_clip(self, image_path: Path, duration: float) -> VideoClip:
         """Animate a still image with zoom/pan (Ken Burns effect)."""
         img = Image.open(image_path).convert("RGB")
         src_w, src_h = img.size
         target_w, target_h = VIDEO_WIDTH, VIDEO_HEIGHT
 
-        # Scale so image covers the canvas
-        scale = max(target_w / src_w, target_h / src_h) * 1.15
-        new_w = int(src_w * scale)
-        new_h = int(src_h * scale)
-        img = img.resize((new_w, new_h), Image.LANCZOS)
-        img_np = np.array(img)
+        scale = max(target_w / src_w, target_h / src_h) * COVER_OVERSCAN
+        new_w, new_h = int(src_w * scale), int(src_h * scale)
+        img_np = np.array(img.resize((new_w, new_h), Image.LANCZOS))
 
-        # Random Ken Burns style
-        styles = ["zoom_in", "zoom_out", "pan_left", "pan_right"]
-        style = random.choice(styles)
-        n_frames = int(duration * VIDEO_FPS)
+        style = random.choice(["zoom_in", "zoom_out", "pan_left", "pan_right"])
 
         def make_frame(t: float):
-            progress = t / max(duration, 0.001)
+            progress = min(1.0, t / max(duration, 0.001))
+
             if style == "zoom_in":
-                zoom = 1.0 + 0.12 * progress
+                zoom = 1.0 + KEN_BURNS_ZOOM * progress
             elif style == "zoom_out":
-                zoom = 1.12 - 0.12 * progress
+                zoom = (1.0 + KEN_BURNS_ZOOM) - KEN_BURNS_ZOOM * progress
             else:
                 zoom = 1.06
 
-            frame_w = int(target_w / zoom)
-            frame_h = int(target_h / zoom)
+            # Crop window, never larger than the source.
+            frame_w = min(new_w, int(target_w / zoom))
+            frame_h = min(new_h, int(target_h / zoom))
 
             if style == "pan_left":
-                cx = int(new_w * 0.65 - new_w * 0.3 * progress)
+                cx = int(new_w * (0.5 + KEN_BURNS_PAN / 2 - KEN_BURNS_PAN * progress))
             elif style == "pan_right":
-                cx = int(new_w * 0.35 + new_w * 0.3 * progress)
+                cx = int(new_w * (0.5 - KEN_BURNS_PAN / 2 + KEN_BURNS_PAN * progress))
             else:
                 cx = new_w // 2
 
-            cy = new_h // 2
-            x1 = max(0, cx - frame_w // 2)
-            y1 = max(0, cy - frame_h // 2)
-            x2 = min(new_w, x1 + frame_w)
-            y2 = min(new_h, y1 + frame_h)
+            # Clamp the window's POSITION, not its edges. Clamping x1 and x2
+            # independently silently narrows the crop at the end of a pan, and
+            # resizing that narrower crop back to full width stretches the image.
+            x1 = min(max(0, cx - frame_w // 2), new_w - frame_w)
+            y1 = min(max(0, new_h // 2 - frame_h // 2), new_h - frame_h)
 
-            crop = img_np[y1:y2, x1:x2]
-            # Resize crop to target
-            from PIL import Image as PILImage
-            crop_pil = PILImage.fromarray(crop).resize((target_w, target_h), PILImage.LANCZOS)
-            return np.array(crop_pil)
+            crop = img_np[y1:y1 + frame_h, x1:x1 + frame_w]
+            resized = Image.fromarray(crop).resize((target_w, target_h), Image.LANCZOS)
+            return np.array(resized)
 
-        clip = ImageClip(img_np, duration=duration)
-        clip = clip.fl(lambda gf, t: make_frame(t), apply_to="mask")
-        # Use make_frame directly for efficiency
-        from moviepy.editor import VideoClip
-        kb_clip = VideoClip(make_frame, duration=duration)
-        return kb_clip
+        return VideoClip(make_frame, duration=duration)
 
     # ------------------------------------------------------------------ Clip pool
+
+    def _open_video(self, path: Path) -> VideoFileClip:
+        """Reader cache — reopening the same file per slot exhausts handles."""
+        if path not in self._readers:
+            self._readers[path] = VideoFileClip(str(path)).without_audio()
+        return self._readers[path]
 
     def _build_clip_pool(
         self,
         video_paths: list[Path],
         image_paths: list[Path],
-        section_type: str,
         cut_interval: float,
         total_duration: float,
     ) -> list:
         """Build a sequence of video/image clips to fill `total_duration`."""
         clips = []
-        pool = list(video_paths) + list(image_paths)
+        pool: list[Path | None] = list(video_paths) + list(image_paths)
         if not pool:
-            bg = ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(10, 10, 20), duration=cut_interval)
-            pool = [None] * 20  # placeholders
+            pool = [None] * 20  # solid-colour placeholders
 
         random.shuffle(pool)
         elapsed = 0.0
         pool_idx = 0
 
         while elapsed < total_duration:
-            remaining = total_duration - elapsed
-            clip_dur = min(cut_interval, remaining)
+            clip_dur = min(cut_interval, total_duration - elapsed)
             if clip_dur < 0.1:
                 break
 
@@ -134,22 +137,22 @@ class Compositor:
 
             try:
                 if source is None:
-                    clip = ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(15, 15, 30), duration=clip_dur)
-                elif source.suffix in (".mp4", ".mov", ".avi"):
-                    vc = VideoFileClip(str(source)).without_audio()
-                    # Pick a random start point
+                    clip = ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(15, 15, 30),
+                                     duration=clip_dur)
+                elif source.suffix.lower() in (".mp4", ".mov", ".avi", ".webm", ".mkv"):
+                    vc = self._open_video(source)
                     if vc.duration > clip_dur + 1:
-                        max_start = vc.duration - clip_dur
-                        start = random.uniform(0, max_start)
+                        start = random.uniform(0, vc.duration - clip_dur)
                         vc = vc.subclip(start, start + clip_dur)
                     else:
                         vc = vc.loop(duration=clip_dur)
                     clip = vc.resize((VIDEO_WIDTH, VIDEO_HEIGHT))
-                else:  # image
+                else:
                     clip = self._ken_burns_clip(source, clip_dur)
             except Exception as e:
                 logger.warning("Clip load error %s: %s", source, e)
-                clip = ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(15, 15, 30), duration=clip_dur)
+                clip = ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(15, 15, 30),
+                                 duration=clip_dur)
 
             clips.append(clip)
             elapsed += clip_dur
@@ -158,45 +161,71 @@ class Compositor:
 
     # ------------------------------------------------------------------ Subtitles
 
+    def _make_text_clip(self, text: str, color: str) -> TextClip:
+        return TextClip(
+            text,
+            fontsize=SUBTITLE_FONT_SIZE,
+            font=SUBTITLE_FONT,
+            color=color,
+            stroke_color=SUBTITLE_STROKE_COLOR,
+            stroke_width=SUBTITLE_STROKE_WIDTH,
+            method="caption",
+            size=(VIDEO_WIDTH - 100, None),
+            align="center",
+        )
+
     def _build_subtitle_clips(self, word_specs: list[dict]) -> list[TextClip]:
-        """Create one TextClip per word with highlight on current word."""
-        subtitle_clips = []
-        seen_chunks: dict[float, bool] = {}
+        """One clip per word: the whole line, with the spoken word highlighted.
+
+        word_specs carries one entry per word, each repeating its 4-word line.
+        Rendering the line once per word (rather than deduping to one clip per
+        line) is what makes the highlight move — and each clip spans exactly the
+        word's own start..end, so there are no gaps where the line blinks out.
+        """
+        if not word_specs:
+            return []
+
+        clips = []
+        failures = 0
 
         for spec in word_specs:
-            chunk_key = spec["start"]
-            if chunk_key in seen_chunks:
-                continue
-            seen_chunks[chunk_key] = True
+            words = spec.get("chunk_words") or [spec["word"]]
+            idx = spec.get("word_index_in_line", 0)
+            start = spec["start"]
+            duration = max(0.05, spec["end"] - start)
 
-            line_words = spec["chunk_words"]
-            line_start = spec["start"]
-            line_end = spec.get("end", spec["start"] + 0.5)
-            line_text = " ".join(line_words)
-            duration = max(0.1, line_end - line_start)
+            # ImageMagick has no inline markup, so the highlight is a second
+            # clip stacked over the line with only the active word visible.
+            base = " ".join(words)
+            masked = " ".join(w if i == idx else " " * len(w) for i, w in enumerate(words))
 
             try:
-                txt_clip = (
-                    TextClip(
-                        line_text,
-                        fontsize=SUBTITLE_FONT_SIZE,
-                        font=SUBTITLE_FONT,
-                        color="white",
-                        stroke_color=SUBTITLE_STROKE_COLOR,
-                        stroke_width=SUBTITLE_STROKE_WIDTH,
-                        method="caption",
-                        size=(VIDEO_WIDTH - 100, None),
-                        align="center",
-                    )
-                    .set_start(line_start)
-                    .set_duration(duration)
-                    .set_position(("center", int(VIDEO_HEIGHT * 0.80)))
-                )
-                subtitle_clips.append(txt_clip)
+                layer = self._make_text_clip(base, "white")
+                hi = self._make_text_clip(masked, SUBTITLE_HIGHLIGHT_COLOR)
             except Exception as e:
-                logger.warning("TextClip error: %s", e)
+                failures += 1
+                if failures == 1:
+                    logger.error("Subtitle rendering failed: %s", e)
+                continue
 
-        return subtitle_clips
+            y = int(VIDEO_HEIGHT * 0.80)
+            for c in (layer, hi):
+                clips.append(
+                    c.set_start(start).set_duration(duration).set_position(("center", y))
+                )
+
+        if failures:
+            logger.warning("%d/%d subtitle clips failed", failures, len(word_specs))
+        if not clips:
+            raise RuntimeError(
+                "Every subtitle failed to render. TextClip needs ImageMagick:\n"
+                "  Windows: install from https://imagemagick.org/script/download.php\n"
+                "           (tick 'Install legacy utilities' so convert.exe exists)\n"
+                "  Linux:   sudo apt-get install imagemagick\n"
+                f"The configured font is {SUBTITLE_FONT!r}; try 'Arial' or a font "
+                "file path if ImageMagick is installed but cannot resolve it."
+            )
+        return clips
 
     # ------------------------------------------------------------------ Master render
 
@@ -214,52 +243,65 @@ class Compositor:
         audio = AudioFileClip(str(audio_path))
         total_duration = audio.duration
 
-        # Build video clips per section, respecting cut_interval per section type
-        all_clips = []
-        for i, section in enumerate(script.sections):
-            if i >= len(section_timeline):
-                break
-            sec_start = section_timeline[i]["start_ms"] / 1000
-            sec_end = section_timeline[i]["end_ms"] / 1000
-            sec_dur = sec_end - sec_start
+        try:
+            # Sections are laid end to end, in the same order and with the same
+            # durations as the audio timeline they were measured from.
+            all_clips = []
+            for i, section in enumerate(script.sections):
+                if i >= len(section_timeline):
+                    break
+                entry = section_timeline[i]
+                sec_dur = (entry["end_ms"] - entry["start_ms"]) / 1000
+                if sec_dur <= 0:
+                    continue
 
-            cut_interval = section.cut_interval  # 2s for hook, 5s for story
+                # Stills only get Ken Burns room during slower story sections;
+                # the hook's 2s cuts stay on motion footage.
+                images = image_paths if section.section_type == "story" else []
+                seg_clips = self._build_clip_pool(
+                    video_paths, images, section.cut_interval, sec_dur
+                )
+                if seg_clips:
+                    all_clips.append(concatenate_videoclips(seg_clips, method="compose"))
 
-            # Choose video/image pool — for hook use more dramatic clips
-            vpool = video_paths
-            ipool = image_paths if section.section_type == "story" else []
+            if not all_clips:
+                logger.warning("No visual clips built — using black background")
+                all_clips = [ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0),
+                                       duration=total_duration)]
 
-            seg_clips = self._build_clip_pool(vpool, ipool, section.section_type, cut_interval, sec_dur)
-            if seg_clips:
-                seg_video = concatenate_videoclips(seg_clips, method="compose")
-                seg_video = seg_video.set_start(sec_start)
-                all_clips.append(seg_video)
+            bg = concatenate_videoclips(all_clips, method="compose")
+            bg = bg.set_duration(total_duration)
 
-        if not all_clips:
-            logger.warning("No visual clips built — using black background")
-            all_clips = [ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0), duration=total_duration)]
+            subtitle_clips = self._build_subtitle_clips(word_timestamps)
+            logger.info("Subtitles: %d clips", len(subtitle_clips))
 
-        # Merge all clip segments into one timeline
-        bg = concatenate_videoclips(all_clips, method="compose").set_duration(total_duration)
+            final = CompositeVideoClip([bg] + subtitle_clips,
+                                       size=(VIDEO_WIDTH, VIDEO_HEIGHT))
+            final = final.set_audio(audio).set_duration(total_duration)
 
-        # Word-by-word subtitles
-        subtitle_clips = self._build_subtitle_clips(word_timestamps)
+            out_path = self.out_dir / "final_video.mp4"
+            final.write_videofile(
+                str(out_path),
+                fps=VIDEO_FPS,
+                codec="libx264",
+                audio_codec="aac",
+                preset="fast",
+                threads=4,
+                verbose=False,
+                logger=None,
+            )
+        finally:
+            # Windows keeps the media files locked until these are released.
+            for reader in self._readers.values():
+                try:
+                    reader.close()
+                except Exception:
+                    pass
+            self._readers.clear()
+            try:
+                audio.close()
+            except Exception:
+                pass
 
-        # Composite
-        layers = [bg] + subtitle_clips
-        final = CompositeVideoClip(layers, size=(VIDEO_WIDTH, VIDEO_HEIGHT))
-        final = final.set_audio(audio).set_duration(total_duration)
-
-        out_path = self.out_dir / "final_video.mp4"
-        final.write_videofile(
-            str(out_path),
-            fps=VIDEO_FPS,
-            codec="libx264",
-            audio_codec="aac",
-            preset="fast",
-            threads=4,
-            verbose=False,
-            logger=None,
-        )
         logger.info("Video rendered: %s", out_path)
         return out_path

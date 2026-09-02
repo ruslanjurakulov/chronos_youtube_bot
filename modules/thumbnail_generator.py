@@ -4,22 +4,44 @@ import logging
 import textwrap
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageEnhance, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageEnhance, ImageFont
 
-from config import OUTPUT_DIR, VIDEO_HEIGHT, VIDEO_WIDTH
+from config import OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
 THUMBNAIL_W = 1280
 THUMBNAIL_H = 720
-FONT_PATH_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+# Tried in order. A Linux-only path used to be the sole candidate, so on the
+# Windows target every truetype load failed and the bitmap fallback rendered
+# the 120px shock text at roughly 11px — unreadable, and silent about it.
+FONT_CANDIDATES = (
+    "C:/Windows/Fonts/arialbd.ttf",
+    "C:/Windows/Fonts/impact.ttf",
+    "C:/Windows/Fonts/seguibl.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+    "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Arial Bold.ttf",
+)
+
+_warned_fallback = False
 
 
-def _load_font(size: int) -> ImageFont.FreeTypeFont:
-    try:
-        return ImageFont.truetype(FONT_PATH_BOLD, size)
-    except OSError:
-        return ImageFont.load_default()
+def _load_font(size: int):
+    global _warned_fallback
+    for path in FONT_CANDIDATES:
+        try:
+            return ImageFont.truetype(path, size)
+        except OSError:
+            continue
+    if not _warned_fallback:
+        _warned_fallback = True
+        logger.warning(
+            "No scalable font found — thumbnail text will render at bitmap size. "
+            "Tried: %s", ", ".join(FONT_CANDIDATES),
+        )
+    return ImageFont.load_default()
 
 
 def _darken_and_vignette(img: Image.Image) -> Image.Image:

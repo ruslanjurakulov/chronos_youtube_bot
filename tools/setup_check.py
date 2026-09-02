@@ -95,6 +95,39 @@ def check_ffmpeg(rep: Report):
         rep.add(BAD, "ffmpeg", f"found but not runnable: {exc}")
 
 
+def check_imagemagick(rep: Report):
+    """Subtitles are drawn by ImageMagick via moviepy's TextClip.
+
+    moviepy 1.0.3 finds it on Windows through the registry key BinPath +
+    convert.exe. ImageMagick 7 ships magick.exe and only installs convert.exe
+    when 'Install legacy utilities' is ticked, so a default v7 install leaves
+    moviepy with the literal string 'unset' and every caption fails.
+    """
+    try:
+        from moviepy.config import get_setting
+        binary = get_setting("IMAGEMAGICK_BINARY")
+    except Exception as exc:
+        rep.add(BAD, "ImageMagick", f"moviepy could not resolve it: {exc}")
+        return
+
+    if not binary or binary == "unset" or not Path(binary).exists():
+        rep.add(BAD, "ImageMagick", "not found — subtitles will be missing. "
+                                    "Install with 'legacy utilities' ticked.")
+        return
+    rep.add(OK, "ImageMagick", str(binary)[:60])
+
+
+def check_font(rep: Report):
+    """Thumbnail text needs a scalable font; the bitmap fallback is unreadable."""
+    from modules.thumbnail_generator import FONT_CANDIDATES
+
+    found = next((p for p in FONT_CANDIDATES if Path(p).exists()), None)
+    if found:
+        rep.add(OK, "thumbnail font", found[:60])
+    else:
+        rep.add(WARN, "thumbnail font", "none found — text renders tiny")
+
+
 def check_imports(rep: Report):
     for mod, pkg in (
         ("google.genai", "google-genai"),
@@ -168,6 +201,8 @@ def main():
     check_files(rep)
     check_ffmpeg(rep)
     check_imports(rep)
+    check_imagemagick(rep)
+    check_font(rep)
     check_assets(rep)
     rep.render()
 

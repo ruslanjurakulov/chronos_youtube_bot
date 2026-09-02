@@ -5,6 +5,10 @@ google-auth-oauthlib>=1.2.0
 edge-tts>=6.1.9
 openai-whisper>=20231117
 moviepy==1.0.3
+# moviepy 1.0.3 picks its resizer at import time: cv2 when available, else a
+# PIL path calling Image.ANTIALIAS, which Pillow 10 removed. compositor.py
+# aliases that constant as a safety net; cv2 avoids the branch altogether.
+opencv-python>=4.8.0
 pydub>=0.25.1
 audioop-lts>=0.2.1
 Pillow>=10.0.0

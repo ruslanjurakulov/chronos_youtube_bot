@@ -1,8 +1,8 @@
 """Stage 3: TTS & Audio Mixer — Multi-voice narration + SFX + Dynamic music."""
 
 import asyncio
+import hashlib
 import logging
-import os
 from pathlib import Path
 
 import edge_tts
@@ -14,14 +14,13 @@ from config import (
     ELEVENLABS_API_KEY,
     ELEVENLABS_VOICE_ID,
     MUSIC_DIR,
-    MUSIC_VOLUME,
     NARRATOR_VOLUME,
     OUTPUT_DIR,
     SFX_DIR,
     SFX_VOLUME,
     TTS_PROVIDER,
 )
-from modules.script_engine import Script, ScriptSection
+from modules.script_engine import Script
 
 logger = logging.getLogger(__name__)
 
@@ -66,9 +65,16 @@ class AudioMixer:
             for chunk in audio:
                 f.write(chunk)
 
-    def _render_segment(self, text: str, voice_role: str, idx: int) -> Path:
-        """Render a single TTS segment, return path to .mp3."""
-        out = self.work_dir / f"seg_{idx:04d}_{voice_role}.mp3"
+    def _render_segment(self, text: str, voice_role: str) -> Path:
+        """Render a single TTS segment, return path to .mp3.
+
+        Keyed by content, not by position. A positional index silently served
+        stale audio whenever a re-run produced a different script: the narration
+        would then contradict its own subtitles and SFX placement, with nothing
+        in the log to say so.
+        """
+        digest = hashlib.sha1(f"{voice_role}:{text}".encode("utf-8")).hexdigest()[:12]
+        out = self.work_dir / f"seg_{digest}_{voice_role}.mp3"
         if out.exists():
             return out
         if TTS_PROVIDER == "elevenlabs":
@@ -87,29 +93,22 @@ class AudioMixer:
         """
         combined = AudioSegment.empty()
         timeline = []  # [{start_ms, end_ms, section_name}]
-        seg_idx = 0
 
         for section in script.sections:
-            segments = section.tts_segments()
-            pauses = section.pauses
-
-            # Build narration with pauses inserted
             section_audio = AudioSegment.empty()
-            pause_positions = {p["char_pos"]: p["duration"] for p in pauses}
 
-            for seg in segments:
-                if not seg["text"].strip():
+            # Walk speech and pauses in written order so each [PAUSE:n] lands
+            # where the script put it, not lumped at the end of the section.
+            for event in section.tts_timeline():
+                if event["kind"] == "pause":
+                    section_audio += AudioSegment.silent(
+                        duration=int(event["duration"] * 1000), frame_rate=44100
+                    )
                     continue
-                path = self._render_segment(seg["text"], seg["voice"], seg_idx)
-                seg_idx += 1
+                path = self._render_segment(event["text"], event["voice"])
                 part = AudioSegment.from_file(path)
                 part = normalize(part) + (20 * (NARRATOR_VOLUME - 1))
                 section_audio += part
-
-            # Append pause after section if specified (crude: insert at end)
-            section_total_pause_ms = int(sum(p["duration"] for p in pauses) * 1000)
-            if section_total_pause_ms:
-                section_audio += AudioSegment.silent(duration=section_total_pause_ms)
 
             start_ms = len(combined)
             combined += section_audio
@@ -183,7 +182,6 @@ class AudioMixer:
     def mix_music(self, base: AudioSegment, timeline: list[dict], script: Script) -> AudioSegment:
         """Build a dynamic music layer that changes volume per cue, overlay onto base."""
         total_ms = len(base)
-        music_layer = AudioSegment.silent(duration=total_ms)
 
         # Resolve music cue times
         cue_times = []
@@ -207,31 +205,38 @@ class AudioMixer:
 
         cue_times.sort(key=lambda x: x["ms"])
 
-        # Load a music track and build the layer segment by segment
-        base_music = self._load_music(cue_times[0]["cue"])
-        if base_music is None:
-            return base
-
-        # Loop music to fill total duration
-        loops = (total_ms // len(base_music)) + 2
-        looped = base_music * loops
-        looped = looped[:total_ms]
-
-        # Apply volume changes at cue boundaries
+        # Build one continuous bed per cue interval, so climax_high and outro
+        # are actually heard rather than only contributing a volume number.
         result_music = AudioSegment.empty()
         prev_ms = 0
+        prev_cue = cue_times[0]["cue"]
+
+        def bed(cue: str, length_ms: int) -> AudioSegment | None:
+            """Track for `cue`, tiled to `length_ms`, at that cue's volume."""
+            if length_ms <= 0:
+                return AudioSegment.empty()
+            track = self._load_music(cue)
+            if not track:  # missing file, or a truncated one — len() would be 0
+                return None
+            tiled = track * ((length_ms // len(track)) + 2)
+            return tiled[:length_ms] + MUSIC_VOLUME_MAP.get(cue, -18)
+
+        # Each interval takes the volume of the cue that OPENED it — the cue
+        # being iterated closes it. Reading this cue's volume instead shifts
+        # every level one interval late and drops the first cue entirely.
         for ct in cue_times:
-            db = MUSIC_VOLUME_MAP.get(ct["cue"], -18)
-            segment = looped[prev_ms:ct["ms"]] + db
-            result_music += segment
-            prev_ms = ct["ms"]
+            piece = bed(prev_cue, ct["ms"] - prev_ms)
+            if piece is None:
+                return base
+            result_music += piece
+            prev_ms, prev_cue = ct["ms"], ct["cue"]
 
-        # Final segment with last cue's volume
-        last_db = MUSIC_VOLUME_MAP.get(cue_times[-1]["cue"], -18)
-        result_music += looped[prev_ms:] + last_db
+        piece = bed(prev_cue, total_ms - prev_ms)
+        if piece is None:
+            return base
+        result_music += piece
 
-        result_music = result_music[:total_ms]
-        return base.overlay(result_music)
+        return base.overlay(result_music[:total_ms])
 
     # ------------------------------------------------------------------ Pattern Interrupt
 

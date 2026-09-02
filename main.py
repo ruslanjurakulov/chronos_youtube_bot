@@ -53,6 +53,7 @@ def run(
     topic: str | None = None,
     privacy: str = YOUTUBE_PRIVACY,
     skip_upload: bool = False,
+    script_file: str | None = None,
 ):
     Path("logs").mkdir(exist_ok=True)
     logger.info("=== Chronos YouTube Bot starting ===")
@@ -65,20 +66,30 @@ def run(
     if written:
         logger.info("Generated %d missing audio assets", written)
 
-    # ── Stage 1: Topic
+    # ── Stages 1-2: Topic and Script
+    # A saved script skips both Gemini calls, so a crash in a later stage — or a
+    # spent daily quota — does not mean paying for generation again.
     topic_mgr = TopicManager()
-    if topic is None:
-        topic = topic_mgr.pick_topic(niche)
-    logger.info("Topic: %s", topic)
-    slug = slugify(topic)
 
-    # ── Stage 2: Script
-    engine = ScriptEngine()
-    script = engine.generate(topic)
+    if script_file:
+        script = ScriptEngine.load(Path(script_file), topic)
+        topic = script.topic
+        logger.info("Script loaded from %s — no API calls", script_file)
+    else:
+        if topic is None:
+            topic = topic_mgr.pick_topic(niche)
+        logger.info("Topic: %s", topic)
+        script = ScriptEngine().generate(topic)
+
+    slug = slugify(topic)
     logger.info("Script: '%s'", script.title)
 
-    # Get per-section visual keywords from Gemini
-    keyword_map = engine.extract_visual_keywords(script)
+    if not script_file:
+        saved = script.save(OUTPUT_DIR / slug / "script.json")
+        logger.info("Script saved: %s — reuse with --script-file", saved)
+
+    # Per-section Pexels keywords — already inside the script JSON, no API call.
+    keyword_map = ScriptEngine.extract_visual_keywords(script)
 
     # ── Stage 3: Audio
     mixer = AudioMixer(slug)
@@ -90,7 +101,7 @@ def run(
     # Gather all unique keywords from Gemini keyword map
     all_keywords = list({kw for entry in keyword_map for kw in entry.get("keywords", [])})
     if not all_keywords:
-        all_keywords = fetcher.extract_keywords(topic, script.full_narration())
+        all_keywords = fetcher.extract_keywords(topic)
 
     videos = fetcher.fetch_videos(all_keywords, count=12)
     images = fetcher.fetch_images(all_keywords, count=8)
@@ -100,7 +111,7 @@ def run(
     sub_gen = SubtitleGenerator(slug)
     word_timestamps = sub_gen.transcribe(audio_path)
     sub_gen.to_srt(word_timestamps)
-    word_clips_specs = sub_gen.word_clips(word_timestamps, 1920, 1080)
+    word_clips_specs = sub_gen.word_clips(word_timestamps, VIDEO_WIDTH, VIDEO_HEIGHT)
 
     # ── Stage 6: Thumbnails
     bg_a = images[0] if images else None
@@ -127,19 +138,22 @@ def run(
     logger.info("Video: %s", video_path)
 
     # ── Stage 8: Upload
+    # The video is already on disk by this point, so no upload failure may cost
+    # us the topic registration — otherwise a bad channel ID or an expired token
+    # means the same topic gets picked again next run despite the finished file.
     if not skip_upload:
         try:
             uploader = YouTubeUploader()
             url = uploader.upload(video_path, script, thumbnail_path=thumb_a, privacy=privacy)
             logger.info("YouTube URL: %s", url)
-            topic_mgr.register_topic(topic, video_path)
             print(f"\n✓ Published: {url}")
-        except FileNotFoundError as e:
-            logger.warning("YouTube upload skipped: %s", e)
-            topic_mgr.register_topic(topic, video_path)
+        except Exception as e:
+            logger.error("YouTube upload failed (%s): %s", type(e).__name__, e)
+            print(f"\n✓ Video saved, upload failed: {video_path}")
     else:
-        topic_mgr.register_topic(topic, video_path)
         print(f"\n✓ Video saved (upload skipped): {video_path}")
+
+    topic_mgr.register_topic(topic, video_path)
 
     logger.info("=== Done ===")
     return video_path
@@ -170,6 +184,9 @@ if __name__ == "__main__":
     parser.add_argument("--privacy", default=YOUTUBE_PRIVACY, choices=["private", "unlisted", "public"])
     parser.add_argument("--no-upload", action="store_true", help="Skip YouTube upload")
     parser.add_argument("--list-channels", action="store_true", help="Show all YouTube channels and exit")
+    parser.add_argument("--script-file", default=None,
+                        help="Reuse a saved script JSON instead of calling Gemini "
+                             "(e.g. output/<slug>/script.json, or samples/demo_script.json)")
     args = parser.parse_args()
 
     if args.list_channels:
@@ -180,4 +197,5 @@ if __name__ == "__main__":
             topic=args.topic,
             privacy=args.privacy,
             skip_upload=args.no_upload,
+            script_file=args.script_file,
         )

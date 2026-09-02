@@ -6,15 +6,12 @@ import time
 from pathlib import Path
 
 import requests
-from PIL import Image
 
 from config import (
     OUTPUT_DIR,
     PEXELS_API_KEY,
     PEXELS_PER_PAGE,
     PEXELS_VIDEO_ORIENTATION,
-    PEXELS_VIDEO_QUALITY,
-    VIDEO_HEIGHT,
     VIDEO_WIDTH,
 )
 
@@ -151,58 +148,11 @@ class MediaFetcher:
         logger.info("Fetched %d images", len(paths))
         return paths
 
-    # ------------------------------------------------------------------ Ken Burns Prep
-
-    def ken_burns_params(self, image_path: Path, duration: float) -> dict:
-        """
-        Returns zoom/pan parameters for Ken Burns effect in compositor.
-        Alternates between zoom-in-left, zoom-in-right, zoom-out-center.
-        """
-        img = Image.open(image_path)
-        w, h = img.size
-
-        styles = ["zoom_in_left", "zoom_in_right", "zoom_out_center", "pan_right", "pan_left"]
-        style = random.choice(styles)
-
-        zoom_start = 1.0
-        zoom_end = 1.0
-        pan_x_start, pan_x_end = 0.5, 0.5
-        pan_y_start, pan_y_end = 0.5, 0.5
-
-        if style == "zoom_in_left":
-            zoom_start, zoom_end = 1.0, 1.12
-            pan_x_start, pan_x_end = 0.35, 0.45
-        elif style == "zoom_in_right":
-            zoom_start, zoom_end = 1.0, 1.12
-            pan_x_start, pan_x_end = 0.65, 0.55
-        elif style == "zoom_out_center":
-            zoom_start, zoom_end = 1.15, 1.0
-        elif style == "pan_right":
-            zoom_start = zoom_end = 1.08
-            pan_x_start, pan_x_end = 0.3, 0.7
-        elif style == "pan_left":
-            zoom_start = zoom_end = 1.08
-            pan_x_start, pan_x_end = 0.7, 0.3
-
-        return {
-            "style": style,
-            "duration": duration,
-            "zoom_start": zoom_start,
-            "zoom_end": zoom_end,
-            "pan_x_start": pan_x_start,
-            "pan_x_end": pan_x_end,
-            "pan_y_start": pan_y_start,
-            "pan_y_end": pan_y_end,
-            "source_w": w,
-            "source_h": h,
-        }
-
     # ------------------------------------------------------------------ Keyword extraction
 
     @staticmethod
-    def extract_keywords(topic: str, script_text: str, n: int = 8) -> list[str]:
-        """Simple keyword extraction — returns topic words + common visual terms."""
-        words = topic.lower().split()
-        # Add cinematic search terms for better B-roll
+    def extract_keywords(topic: str, n: int = 8) -> list[str]:
+        """Last-resort keywords when the script carried none for any section."""
+        words = [w for w in topic.lower().split() if len(w) > 3]
         cinematic = ["cinematic", "documentary", "historical", "dramatic", "ancient"]
         return (words + cinematic)[:n]

@@ -5,13 +5,17 @@ from pathlib import Path
 
 import whisper
 
-from config import OUTPUT_DIR, SUBTITLE_COLOR, SUBTITLE_FONT, SUBTITLE_FONT_SIZE, SUBTITLE_STROKE_COLOR, SUBTITLE_STROKE_WIDTH
+from config import (
+    OUTPUT_DIR,
+    SUBTITLE_COLOR,
+    SUBTITLE_FONT,
+    SUBTITLE_FONT_SIZE,
+    SUBTITLE_HIGHLIGHT_COLOR,
+    SUBTITLE_STROKE_COLOR,
+    SUBTITLE_STROKE_WIDTH,
+)
 
 logger = logging.getLogger(__name__)
-
-# Highlight color cycles word-by-word
-HIGHLIGHT_COLOR = "#FFD700"   # gold / yellow
-WORD_COLOR = "white"
 
 # Whisper model size: "tiny" | "base" | "small" | "medium" | "large"
 WHISPER_MODEL = "base"
@@ -93,8 +97,8 @@ class SubtitleGenerator:
                     "end": w["end"],
                     "x": video_w / 2,
                     "y": int(video_h * 0.82),
-                    "color": WORD_COLOR,
-                    "highlight_color": HIGHLIGHT_COLOR,
+                    "color": SUBTITLE_COLOR,
+                    "highlight_color": SUBTITLE_HIGHLIGHT_COLOR,
                     "font": SUBTITLE_FONT,
                     "font_size": SUBTITLE_FONT_SIZE,
                     "stroke_color": SUBTITLE_STROKE_COLOR,

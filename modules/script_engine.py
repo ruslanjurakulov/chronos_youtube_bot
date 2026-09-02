@@ -4,6 +4,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from google.genai import types as genai_types
 
@@ -124,6 +125,43 @@ class ScriptSection:
             segments.append({"voice": current_voice, "text": _strip_cues(buffer)})
         return segments
 
+    def tts_timeline(self) -> list[dict]:
+        """Speech and silence events in written order.
+
+        tts_segments() splits on [VOICE:] only, which loses where each [PAUSE:n]
+        sat — the mixer could then do nothing better than pile every pause at the
+        end of the section. This keeps them in place, so a pause after a reveal
+        lands after that reveal.
+
+        Events are {"kind": "speech", "voice": str, "text": str}
+                or {"kind": "pause", "duration": float}.
+        """
+        events: list[dict] = []
+        voice = self.voice
+        buffer = ""
+        pos = 0
+
+        def flush():
+            nonlocal buffer
+            text = _strip_cues(buffer)
+            if text:
+                events.append({"kind": "speech", "voice": voice, "text": text})
+            buffer = ""
+
+        marker = re.compile(r"\[VOICE:(\w+)\]|\[PAUSE:([\d.]+)\]")
+        for m in marker.finditer(self.narration):
+            buffer += self.narration[pos:m.start()]
+            pos = m.end()
+            flush()
+            if m.group(1) is not None:
+                voice = m.group(1)
+            else:
+                events.append({"kind": "pause", "duration": float(m.group(2))})
+
+        buffer += self.narration[pos:]
+        flush()
+        return events
+
     def extract_pauses(self) -> list[dict]:
         pauses = []
         for m in re.finditer(r"\[PAUSE:([\d.]+)\]", self.narration):
@@ -174,10 +212,54 @@ class Script:
     def all_music_cues(self) -> list[dict]:
         return [cue for s in self.sections for cue in s.extract_music()]
 
+    def to_dict(self) -> dict:
+        """Serialize back to the same JSON shape ScriptEngine._parse consumes."""
+        return {
+            "topic": self.topic,
+            "title": self.title,
+            "title_ab": self.title_ab,
+            "description": self.description,
+            "tags": self.tags,
+            "hook_sentence": self.hook_sentence,
+            "thumbnail_prompt_a": self.thumbnail_prompt_a,
+            "thumbnail_prompt_b": self.thumbnail_prompt_b,
+            "thumbnail_overlay_text": self.thumbnail_overlay_text,
+            "open_loops": self.open_loops,
+            "sections": [
+                {
+                    "name": s.name,
+                    "type": s.section_type,
+                    "voice": s.voice,
+                    "narration": s.narration,
+                    "duration_hint": s.duration_hint,
+                    "cut_interval": s.cut_interval,
+                    "keywords": s.keywords,
+                }
+                for s in self.sections
+            ],
+        }
+
+    def save(self, path: Path) -> Path:
+        """Write to disk so a re-run can skip the paid generation step."""
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False),
+                        encoding="utf-8")
+        return path
+
 
 class ScriptEngine:
     def __init__(self):
         self.client = make_client()
+
+    @staticmethod
+    def load(path: Path, topic: str | None = None) -> Script:
+        """Rebuild a Script from a saved JSON file — no API call, no quota spent.
+
+        Lets stages 3-7 be exercised without paying for generation again, which
+        matters when a later stage crashes or the daily quota is gone.
+        """
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+        return ScriptEngine._parse(topic or data.get("topic", "untitled"), data)
 
     def _gen(self, prompt: str, system: str | None = None) -> str:
         config = genai_types.GenerateContentConfig(
@@ -210,7 +292,8 @@ class ScriptEngine:
                 return json.loads(match.group())
             raise ValueError("Gemini did not return valid JSON") from None
 
-    def extract_visual_keywords(self, script: "Script") -> list[dict]:
+    @staticmethod
+    def extract_visual_keywords(script: "Script") -> list[dict]:
         """Per-section Pexels search keywords.
 
         These come back inside the script JSON itself (see KEYWORDS RULE in the
@@ -224,7 +307,8 @@ class ScriptEngine:
             for s in script.sections
         ]
 
-    def _parse(self, topic: str, data: dict) -> Script:
+    @staticmethod
+    def _parse(topic: str, data: dict) -> Script:
         sections = []
         for i, s in enumerate(data.get("sections", [])):
             sec = ScriptSection(

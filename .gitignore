@@ -1,6 +1,9 @@
 .env
+# Blanket-ignore JSON: client_secret.json and youtube_token*.json carry
+# credentials and must never be committed. Safe ones are re-included below.
 *.json
 !package.json
+!samples/*.json
 output/
 logs/
 history/
