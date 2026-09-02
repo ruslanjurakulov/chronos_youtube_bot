@@ -15,6 +15,7 @@ import argparse
 import logging
 import re
 import sys
+from datetime import datetime
 from pathlib import Path
 
 # Ensure required directories exist before any imports that may reference them
@@ -22,11 +23,12 @@ Path("logs").mkdir(exist_ok=True)
 Path("history").mkdir(exist_ok=True)
 Path("output").mkdir(exist_ok=True)
 
-from config import OUTPUT_DIR, YOUTUBE_PRIVACY
+from config import OUTPUT_DIR, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
 from modules.audio_mixer import AudioMixer
 from modules.compositor import Compositor
 from modules.media_fetcher import MediaFetcher
 from modules.script_engine import ScriptEngine
+from modules.state_store import StateStore
 from modules.subtitle_generator import SubtitleGenerator
 from modules.thumbnail_generator import ThumbnailGenerator
 from modules.topic_manager import TopicManager
@@ -149,6 +151,17 @@ def run(
             video_id, video_url = uploaded["id"], uploaded["url"]
             logger.info("YouTube URL: %s", video_url)
             print(f"\n✓ Published: {video_url}")
+            with StateStore() as store:
+                store.record_video(
+                    video_id=video_id,
+                    topic=topic,
+                    title=script.title,
+                    slug=slug,
+                    published_at=datetime.utcnow().isoformat(),
+                    privacy=privacy,
+                    category_id=YOUTUBE_CATEGORY_ID,
+                    local_path=str(video_path),
+                )
         except Exception as e:
             logger.error("YouTube upload failed (%s): %s", type(e).__name__, e)
             print(f"\n✓ Video saved, upload failed: {video_path}")
