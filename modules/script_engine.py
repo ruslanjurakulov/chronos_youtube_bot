@@ -57,7 +57,8 @@ Return a JSON object with this EXACT schema:
       "voice": "main",
       "narration": "[MUSIC:intro_high] [SFX:dramatic_sting] They found Europe's biggest treasure... [PAUSE:1.5] and within 5 minutes, [SFX:deep_boom] it sank forever. [PAUSE:1.0] But HOW? [PAUSE:0.5] And who is responsible?",
       "duration_hint": 15,
-      "cut_interval": 2
+      "cut_interval": 2,
+      "keywords": ["sunken treasure ship", "stormy ocean night"]
     },
     {
       "name": "open_loop_plant",
@@ -65,10 +66,16 @@ Return a JSON object with this EXACT schema:
       "voice": "main",
       "narration": "[MUSIC:story_low] Let me take you back to 1715... [PAUSE:1.0] But first — who was the man behind all of this? We'll reveal that at the very end.",
       "duration_hint": 20,
-      "cut_interval": 5
+      "cut_interval": 5,
+      "keywords": ["old sailing ship", "antique map candlelight"]
     }
   ]
 }
+
+KEYWORDS RULE: Every section MUST include 2-3 "keywords" — literal, filmable
+stock-footage search terms for Pexels that match that section's mood. Describe
+what the CAMERA SEES, not the idea: "storm waves lighthouse" not "mystery".
+Avoid proper nouns and dates — stock libraries have no footage of them.
 """
 
 
@@ -80,6 +87,7 @@ class ScriptSection:
     voice: str = "main"
     section_type: str = "story"   # "hook" | "story"
     cut_interval: float = 5.0     # seconds between video cuts (2s for hook, 5s for story)
+    keywords: list[str] = field(default_factory=list)  # Pexels search terms
     sfx_cues: list[dict] = field(default_factory=list)
     music_cues: list[dict] = field(default_factory=list)
     pauses: list[dict] = field(default_factory=list)
@@ -203,26 +211,18 @@ class ScriptEngine:
             raise ValueError("Gemini did not return valid JSON") from None
 
     def extract_visual_keywords(self, script: "Script") -> list[dict]:
-        """Ask Gemini to suggest Pexels search keywords per section."""
-        sections_text = "\n".join(
-            f"[{s.name}]: {s.clean_narration()[:300]}" for s in script.sections
-        )
-        prompt = (
-            "You are a video editor selecting B-roll footage keywords.\n"
-            f"For each script section below, provide 2-3 Pexels search keywords "
-            f"(cinematic, dramatic, matching the mood).\n\n{sections_text}\n\n"
-            "Return JSON: [{\"section\": \"name\", \"keywords\": [\"kw1\", \"kw2\"]}]"
-        )
-        resp_text = self._gen(prompt)
-        try:
-            raw = self._extract_json(resp_text)
-            if isinstance(raw, list):
-                return raw
-        except Exception:
-            pass
-        # Fallback: use topic words
-        words = script.topic.lower().split()
-        return [{"section": s.name, "keywords": words[:2]} for s in script.sections]
+        """Per-section Pexels search keywords.
+
+        These come back inside the script JSON itself (see KEYWORDS RULE in the
+        system prompt), so this costs no extra API call — it used to be a second
+        round-trip, which mattered on the free tier's 20 requests/day.
+        Sections where Gemini omitted keywords fall back to the topic words.
+        """
+        fallback = [w for w in script.topic.lower().split() if len(w) > 3][:2]
+        return [
+            {"section": s.name, "keywords": s.keywords or fallback}
+            for s in script.sections
+        ]
 
     def _parse(self, topic: str, data: dict) -> Script:
         sections = []
@@ -234,6 +234,7 @@ class ScriptEngine:
                 voice=s.get("voice", "main"),
                 section_type=s.get("type", "hook" if i == 0 else "story"),
                 cut_interval=float(s.get("cut_interval", 2.0 if i == 0 else 5.0)),
+                keywords=[str(k).strip() for k in (s.get("keywords") or []) if str(k).strip()],
             )
             sec.sfx_cues = sec.extract_sfx()
             sec.music_cues = sec.extract_music()
