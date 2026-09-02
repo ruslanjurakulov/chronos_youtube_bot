@@ -12,6 +12,7 @@ Chronos YouTube Bot — Full Pipeline
 """
 
 import argparse
+import json
 import logging
 import re
 import sys
@@ -23,10 +24,14 @@ Path("logs").mkdir(exist_ok=True)
 Path("history").mkdir(exist_ok=True)
 Path("output").mkdir(exist_ok=True)
 
-from config import OUTPUT_DIR, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
+from config import OUTPUT_DIR, VIDEO_HEIGHT, VIDEO_WIDTH, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
 from modules.audio_mixer import AudioMixer
+from modules.claim_extractor import extract_claims
 from modules.compositor import Compositor
+from modules.fact_checker import fact_check_claims
 from modules.media_fetcher import MediaFetcher
+from modules.pipeline_stages import PipelineStage, PipelineStateMachine
+from modules.research_engine import research_topic
 from modules.script_engine import ScriptEngine
 from modules.state_store import StateStore
 from modules.subtitle_generator import SubtitleGenerator
@@ -81,14 +86,63 @@ def run(
         if topic is None:
             topic = topic_mgr.pick_topic(niche)
         logger.info("Topic: %s", topic)
-        script = ScriptEngine().generate(topic)
+
+    # ── Pipeline stage tracking (audit trail only — does NOT gate publish)
+    # This run is tracked through Topic -> Research -> Script -> Fact Check ->
+    # Human Approval so the record is honest about what actually happened at
+    # each stage. It deliberately stops at Human Approval: approve() is never
+    # called here, so the run never reaches Publish through this mechanism.
+    # Upload below proceeds exactly as before, independent of this state —
+    # wiring an actual approval requirement is a deliberate follow-up decision,
+    # not something this pipeline enforces yet.
+    pipeline = PipelineStateMachine()
+    run_record = pipeline.start_run(topic)
+
+    research_brief = None
+    if script_file:
+        pipeline.advance(run_record.run_id, PipelineStage.RESEARCH, note="skipped — script loaded from file")
+    else:
+        pipeline.advance(run_record.run_id, PipelineStage.RESEARCH)
+        try:
+            research_brief = research_topic(topic, niche)
+            logger.info("Research: %d fact(s), %d open question(s)",
+                        len(research_brief.key_facts), len(research_brief.open_questions))
+        except Exception as e:
+            logger.warning("Research engine failed (%s: %s) — generating script without research notes",
+                            type(e).__name__, e)
+
+    if not script_file:
+        script = ScriptEngine().generate(topic, research_brief=research_brief)
 
     slug = slugify(topic)
     logger.info("Script: '%s'", script.title)
+    pipeline.advance(run_record.run_id, PipelineStage.SCRIPT)
 
     if not script_file:
         saved = script.save(OUTPUT_DIR / slug / "script.json")
         logger.info("Script saved: %s — reuse with --script-file", saved)
+
+    # ── Fact-check pass (advisory only — see modules/fact_checker.py)
+    # Flags claims for human review; never blocks generation or upload itself.
+    pipeline.advance(run_record.run_id, PipelineStage.FACT_CHECK)
+    try:
+        claims = extract_claims(script)
+        fact_results = fact_check_claims(claims) if claims else []
+        flagged = [r for r in fact_results if r.requires_human_review]
+        if flagged:
+            logger.warning("Fact-check: %d/%d claim(s) flagged for human review", len(flagged), len(fact_results))
+        else:
+            logger.info("Fact-check: %d claim(s) checked, none flagged", len(fact_results))
+        if fact_results:
+            fc_path = OUTPUT_DIR / slug / "fact_check.json"
+            fc_path.parent.mkdir(parents=True, exist_ok=True)
+            fc_path.write_text(json.dumps([r.__dict__ for r in fact_results], indent=2, ensure_ascii=False))
+            logger.info("Fact-check results saved: %s", fc_path)
+    except Exception as e:
+        logger.warning("Fact-checker failed (%s: %s) — proceeding without fact-check results",
+                        type(e).__name__, e)
+
+    pipeline.advance(run_record.run_id, PipelineStage.HUMAN_APPROVAL)
 
     # Per-section Pexels keywords — already inside the script JSON, no API call.
     keyword_map = ScriptEngine.extract_visual_keywords(script)
