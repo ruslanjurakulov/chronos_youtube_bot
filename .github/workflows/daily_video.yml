@@ -1,0 +1,101 @@
+name: Daily YouTube Video
+
+on:
+  schedule:
+    # Every day at 15:00 UTC (18:00 Tashkent / UTC+3)
+    - cron: "0 15 * * *"
+  workflow_dispatch:
+    inputs:
+      niche:
+        description: "Video niche (e.g. history mysteries)"
+        required: false
+        default: "history mysteries"
+      topic:
+        description: "Override topic (leave empty for AI pick)"
+        required: false
+        default: ""
+      privacy:
+        description: "YouTube privacy"
+        required: false
+        default: "private"
+        type: choice
+        options: [private, unlisted, public]
+
+jobs:
+  make-video:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg imagemagick fonts-dejavu
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Restore topic history
+        uses: actions/cache@v4
+        with:
+          path: history/topics.json
+          key: topic-history-${{ github.run_number }}
+          restore-keys: topic-history-
+
+      - name: Restore YouTube token
+        run: |
+          if [ -n "${{ secrets.YOUTUBE_TOKEN_JSON }}" ]; then
+            echo '${{ secrets.YOUTUBE_TOKEN_JSON }}' > youtube_token.json
+          fi
+
+      - name: Restore YouTube client secret
+        run: |
+          echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > client_secret.json
+
+      - name: Prepare asset directories
+        run: mkdir -p assets/sfx assets/music
+
+      - name: Run Chronos bot
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
+          YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
+          YOUTUBE_PRIVACY: ${{ github.event.inputs.privacy || 'private' }}
+          TTS_PROVIDER: edge
+          SCRIPT_LANGUAGE: English
+        run: |
+          TOPIC_ARG=""
+          if [ -n "${{ github.event.inputs.topic }}" ]; then
+            TOPIC_ARG="--topic '${{ github.event.inputs.topic }}'"
+          fi
+          python main.py \
+            --niche "${{ github.event.inputs.niche || 'history mysteries' }}" \
+            --privacy "${{ github.event.inputs.privacy || 'private' }}" \
+            $TOPIC_ARG
+
+      - name: Upload video artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: video-${{ github.run_number }}
+          path: |
+            output/*/final_video.mp4
+            output/*/thumbnails/*.jpg
+            logs/run.log
+          retention-days: 7
+
+      - name: Save topic history
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: history/topics.json
+          key: topic-history-${{ github.run_number }}

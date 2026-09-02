@@ -22,7 +22,7 @@ LOGS_DIR = BASE_DIR / "logs"
 TOPIC_HISTORY_FILE = HISTORY_DIR / "topics.json"
 
 # Script Engine
-GEMINI_MODEL = "gemini-1.5-pro"
+GEMINI_MODEL = "gemini-3.6-flash"
 SCRIPT_LANGUAGE = os.getenv("SCRIPT_LANGUAGE", "English")
 VIDEO_DURATION_TARGET = int(os.getenv("VIDEO_DURATION_TARGET", "300"))  # seconds
 
