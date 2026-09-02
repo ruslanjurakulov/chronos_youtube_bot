@@ -43,12 +43,12 @@ jobs:
       - name: Install Python dependencies
         run: pip install -r requirements.txt
 
-      - name: Restore topic history
+      - name: Restore history state (chronos.db, topic_vectors.npz, topics.json, pipeline_runs.json)
         uses: actions/cache@v4
         with:
-          path: history/topics.json
-          key: topic-history-${{ github.run_number }}
-          restore-keys: topic-history-
+          path: history
+          key: chronos-history-${{ github.run_number }}
+          restore-keys: chronos-history-
 
       - name: Restore YouTube token
         run: |
@@ -93,9 +93,9 @@ jobs:
             logs/run.log
           retention-days: 7
 
-      - name: Save topic history
+      - name: Save history state
         if: always()
         uses: actions/cache/save@v4
         with:
-          path: history/topics.json
-          key: topic-history-${{ github.run_number }}
+          path: history
+          key: chronos-history-${{ github.run_number }}
