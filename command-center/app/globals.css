@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+/* ── Chronos Command Center — dark operations palette ───────────────────────
+   A single dark theme: deep slate ground, cyan primary, semantic status hues.
+   Deliberately committed to one look (an ops console), so no light variant. */
+@theme {
+  --color-bg: #060a12;
+  --color-panel: #0c131f;
+  --color-panel-2: #111a29;
+  --color-border: #1e2c40;
+  --color-fg: #e6edf6;
+  --color-muted: #7d8ca3;
+  --color-primary: #22d3ee;
+  --color-primary-dim: #0e7490;
+  --color-ok: #34d399;
+  --color-warn: #fbbf24;
+  --color-fail: #f87171;
+  --color-idle: #64748b;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+}
+
+* {
+  border-color: var(--color-border);
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  font-family:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Subtle grid backdrop for the ops-console feel. */
+.grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(34, 211, 238, 0.04) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(34, 211, 238, 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.panel {
+  background: var(--color-panel);
+  border: 1px solid var(--color-border);
+  border-radius: 0.6rem;
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.glow-dot {
+  box-shadow: 0 0 8px 0 currentColor;
+}
+
+@keyframes pulse-soft {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.pulse {
+  animation: pulse-soft 1.8s ease-in-out infinite;
+}

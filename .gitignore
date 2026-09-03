@@ -4,6 +4,10 @@
 *.json
 !package.json
 !samples/*.json
+# Command Center (Next.js app) config — no credentials, and Vercel needs the
+# lockfile for reproducible `npm ci` builds.
+!command-center/tsconfig.json
+!command-center/package-lock.json
 output/
 logs/
 history/
