@@ -107,6 +107,21 @@ CREATE TABLE IF NOT EXISTS topic_performance (
     reason           TEXT,
     updated_at       TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS system_events (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    event        TEXT NOT NULL,
+    ts           TEXT NOT NULL,
+    video_id     TEXT,
+    job_id       TEXT,
+    agent        TEXT,
+    status       TEXT,
+    duration_ms  REAL,
+    metadata     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_ts ON system_events (ts);
+CREATE INDEX IF NOT EXISTS idx_events_video ON system_events (video_id);
 """
 
 
@@ -523,5 +538,52 @@ class StateStore:
         rows = self.conn.execute(
             "SELECT * FROM topic_performance ORDER BY score DESC, videos_analyzed DESC LIMIT ?",
             (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    # -- system events -----------------------------------------------------
+
+    def record_event(
+        self,
+        event: str,
+        ts: str,
+        video_id: str | None = None,
+        job_id: str | None = None,
+        agent: str | None = None,
+        status: str | None = None,
+        duration_ms: float | None = None,
+        metadata: str | None = None,
+    ):
+        """Append one observability event (append-only — the event stream is a
+        log, never deduplicated). `metadata` is an already-serialized JSON string
+        (see modules/event_log.py, which sanitizes it first)."""
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO system_events
+                    (event, ts, video_id, job_id, agent, status, duration_ms, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (event, ts, video_id, job_id, agent, status, duration_ms, metadata),
+            )
+
+    def list_events(
+        self, since: str | None = None, limit: int = 200, video_id: str | None = None
+    ) -> list[dict]:
+        """List observability events, most recent first, optionally filtered by
+        `since` (ISO8601 lower bound on ts) and/or `video_id`."""
+        clauses: list[str] = []
+        params: list = []
+        if since:
+            clauses.append("ts >= ?")
+            params.append(since)
+        if video_id:
+            clauses.append("video_id = ?")
+            params.append(video_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        params.append(limit)
+        rows = self.conn.execute(
+            f"SELECT * FROM system_events{where} ORDER BY ts DESC, id DESC LIMIT ?",
+            params,
         ).fetchall()
         return [dict(row) for row in rows]
