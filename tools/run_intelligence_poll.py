@@ -45,6 +45,7 @@ logger = logging.getLogger("intelligence_poll")
 from modules.audience_demand import AudienceDemandEngine
 from modules.comment_fetcher import CommentFetcher
 from modules.comment_intelligence import classify_comments
+from modules import event_log as events
 from modules.content_planner import ContentPlanner
 from modules.feedback_engine import FeedbackEngine
 from modules.intelligence_poller import IntelligencePoller
@@ -171,8 +172,14 @@ def run_feedback_analysis() -> dict:
         summary = FeedbackEngine().run()
     except Exception as e:
         logger.warning("Feedback loop failed (%s: %s) — no scores updated this run", type(e).__name__, e)
+        events.emit(events.AGENT_FAILED, agent="feedback_engine", status=events.STATUS_FAILED,
+                    metadata={"error": f"{type(e).__name__}: {e}"})
         return {"videos_analyzed": 0, "signals_recorded": 0, "topics_scored": 0}
     logger.info("Feedback loop summary: %s", summary)
+    events.emit(events.FEEDBACK_GENERATED, agent="feedback_engine", status=events.STATUS_COMPLETED, metadata=summary)
+    if summary.get("topics_scored"):
+        events.emit(events.FEEDBACK_APPLIED, agent="feedback_engine", status=events.STATUS_COMPLETED,
+                    metadata={"topics_scored": summary["topics_scored"]})
     return summary
 
 
@@ -184,6 +191,7 @@ def main():
     args = parser.parse_args()
 
     logger.info("=== Intelligence poll starting ===")
+    events.emit(events.SYSTEM_HEARTBEAT, agent="intelligence_poll", status=events.STATUS_RUNNING)
 
     try:
         summary = IntelligencePoller().run_all(competitor_channel_ids=_competitor_channel_ids())

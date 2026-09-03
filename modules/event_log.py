@@ -1,0 +1,150 @@
+"""Event log — structured observability events for the Command Center.
+
+`emit()` records a SystemEvent into StateStore's `system_events` table. That
+table is the data source for the monitoring Command Center's Live Activity
+Feed, agent status, and per-video pipeline timeline. Every important lifecycle
+moment in the pipeline and the intelligence poll emits one.
+
+Two hard guarantees:
+
+1. **emit() never raises and never changes behavior.** Observability must not
+   be able to break video generation, upload, or a scheduled poll. Any failure
+   to record an event is swallowed with a warning and the caller proceeds.
+
+2. **No secret ever enters the event stream.** `metadata` is sanitized before
+   storage: any key whose name looks credential-bearing (token, key, secret,
+   password, cookie, credential, authorization, ...) is dropped and replaced
+   with a redaction marker, so an accidental `emit(..., metadata={"api_key": ...})`
+   cannot leak.
+
+Event names follow a `noun.verb` convention (`topic.selected`, `render.progress`,
+`upload.completed`, `feedback.applied`, ...). The common ones are exported as
+constants below; callers may also pass any string.
+
+Storage note: `emit()` opens a short-lived StateStore per call when one isn't
+injected. The event volume is low (a dozen or so per video run, a handful per
+poll), so this is simpler and safer than sharing a long-lived connection across
+the whole pipeline; a test or hot path can inject a store to avoid re-opening.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime
+
+logger = logging.getLogger(__name__)
+
+# -- canonical event names --------------------------------------------------
+# System / heartbeat
+SYSTEM_STARTED = "system.started"
+SYSTEM_HEARTBEAT = "system.heartbeat"
+# Agents (a logical worker: topic manager, script engine, poller, ...)
+AGENT_STARTED = "agent.started"
+AGENT_COMPLETED = "agent.completed"
+AGENT_FAILED = "agent.failed"
+# Jobs (a unit of scheduled work)
+JOB_CREATED = "job.created"
+JOB_STARTED = "job.started"
+JOB_COMPLETED = "job.completed"
+JOB_FAILED = "job.failed"
+# Pipeline stages
+TOPIC_SELECTED = "topic.selected"
+RESEARCH_STARTED = "research.started"
+RESEARCH_COMPLETED = "research.completed"
+SCRIPT_STARTED = "script.started"
+SCRIPT_COMPLETED = "script.completed"
+VOICE_STARTED = "voice.started"
+VOICE_COMPLETED = "voice.completed"
+MEDIA_STARTED = "media.started"
+MEDIA_COMPLETED = "media.completed"
+RENDER_STARTED = "render.started"
+RENDER_COMPLETED = "render.completed"
+RENDER_FAILED = "render.failed"
+THUMBNAIL_STARTED = "thumbnail.started"
+THUMBNAIL_COMPLETED = "thumbnail.completed"
+UPLOAD_STARTED = "upload.started"
+UPLOAD_COMPLETED = "upload.completed"
+UPLOAD_FAILED = "upload.failed"
+VIDEO_PUBLISHED = "video.published"
+# Analytics / feedback loop
+ANALYTICS_UPDATED = "analytics.updated"
+FEEDBACK_GENERATED = "feedback.generated"
+FEEDBACK_APPLIED = "feedback.applied"
+
+# Status vocabulary (free-form, but these are the common ones).
+STATUS_RUNNING = "running"
+STATUS_COMPLETED = "completed"
+STATUS_FAILED = "failed"
+
+# Substrings that mark a metadata key as credential-bearing. Case-insensitive.
+_SENSITIVE_KEY_MARKERS = (
+    "token", "secret", "password", "passwd", "cookie", "credential",
+    "authorization", "auth", "api_key", "apikey", "access_key", "private",
+    "client_secret", "refresh",
+)
+_REDACTED = "[redacted]"
+
+
+def _looks_sensitive(key: str) -> bool:
+    lowered = str(key).lower()
+    # A bare "key" is too broad (video_key, topic_key are innocent), so only
+    # redact when the name carries one of the credential markers.
+    return any(marker in lowered for marker in _SENSITIVE_KEY_MARKERS)
+
+
+def _sanitize(metadata: dict | None) -> str | None:
+    """Serialize metadata to JSON with credential-bearing keys redacted.
+
+    Returns None for empty/None input. Never raises: anything that won't
+    serialize is coerced to its repr so an odd value can't break emit().
+    """
+    if not metadata:
+        return None
+    safe: dict = {}
+    for key, value in metadata.items():
+        safe[key] = _REDACTED if _looks_sensitive(key) else value
+    try:
+        return json.dumps(safe, ensure_ascii=False, default=repr)
+    except Exception:
+        # Last-resort: never let metadata serialization break an emit.
+        return json.dumps({"_unserializable": repr(safe)}, ensure_ascii=False)
+
+
+def emit(
+    event: str,
+    *,
+    video_id: str | None = None,
+    job_id: str | None = None,
+    agent: str | None = None,
+    status: str | None = None,
+    duration_ms: float | None = None,
+    metadata: dict | None = None,
+    store=None,
+) -> bool:
+    """Record one observability event. Returns True on success, False if it was
+    swallowed. Never raises.
+
+    Pass `store` (an open StateStore) on a hot path to avoid re-opening the DB;
+    otherwise a short-lived store is opened and closed for this one event.
+    """
+    try:
+        ts = datetime.utcnow().isoformat()
+        payload = _sanitize(metadata)
+        if store is not None:
+            store.record_event(
+                event=event, ts=ts, video_id=video_id, job_id=job_id,
+                agent=agent, status=status, duration_ms=duration_ms, metadata=payload,
+            )
+            return True
+        from modules.state_store import StateStore
+
+        with StateStore() as own_store:
+            own_store.record_event(
+                event=event, ts=ts, video_id=video_id, job_id=job_id,
+                agent=agent, status=status, duration_ms=duration_ms, metadata=payload,
+            )
+        return True
+    except Exception as e:
+        logger.warning("Failed to record event %r (%s: %s) — continuing", event, type(e).__name__, e)
+        return False
