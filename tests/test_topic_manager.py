@@ -27,6 +27,14 @@ from modules.content_planner import ContentPlanner
 from modules.originality_engine import OriginalityResult
 
 
+def _null_feedback_engine() -> MagicMock:
+    """A FeedbackEngine stand-in that contributes no learned-score prompt text,
+    so it never opens the real StateStore during these tests."""
+    fake = MagicMock()
+    fake.topic_scores_as_prompt_text.return_value = ""
+    return fake
+
+
 class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
     def setUp(self):
         self._tmpdir = tempfile.TemporaryDirectory()
@@ -72,6 +80,9 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
         fake_performance_analyzer = MagicMock()
         fake_performance_analyzer.analyze_videos_as_prompt_text.return_value = ""
 
+        fake_feedback_engine = MagicMock()
+        fake_feedback_engine.topic_scores_as_prompt_text.return_value = ""
+
         gen_mock = MagicMock()
         gen_mock.text = gemini_text
 
@@ -80,6 +91,7 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
         self._patch("modules.topic_manager.OriginalityEngine", return_value=fake_originality)
         self._patch("modules.topic_manager.TopicRecommender", return_value=fake_recommender)
         self._patch("modules.topic_manager.PerformanceAnalyzer", return_value=fake_performance_analyzer)
+        self._patch("modules.topic_manager.FeedbackEngine", return_value=fake_feedback_engine)
         self._patch("modules.topic_manager.ContentPlanner", side_effect=lambda: ContentPlanner(store_path=self.calendar_path))
 
         from modules.topic_manager import TopicManager
@@ -151,6 +163,7 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
              patch("modules.topic_manager.OriginalityEngine", return_value=fake_originality), \
              patch("modules.topic_manager.TopicRecommender", return_value=fake_recommender), \
              patch("modules.topic_manager.PerformanceAnalyzer", return_value=fake_performance_analyzer), \
+             patch("modules.topic_manager.FeedbackEngine", return_value=_null_feedback_engine()), \
              patch("modules.topic_manager.ContentPlanner", side_effect=RuntimeError("disk full")):
             from modules.topic_manager import TopicManager
             tm = TopicManager()  # must not raise
@@ -189,6 +202,7 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
              patch("modules.topic_manager.OriginalityEngine", return_value=fake_originality), \
              patch("modules.topic_manager.TopicRecommender", return_value=fake_recommender), \
              patch("modules.topic_manager.PerformanceAnalyzer", side_effect=RuntimeError("disk full")), \
+             patch("modules.topic_manager.FeedbackEngine", return_value=_null_feedback_engine()), \
              patch("modules.topic_manager.ContentPlanner", side_effect=lambda: ContentPlanner(store_path=self.calendar_path)):
             from modules.topic_manager import TopicManager
             tm = TopicManager()  # must not raise

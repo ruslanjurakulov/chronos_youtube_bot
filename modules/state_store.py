@@ -83,6 +83,30 @@ CREATE TABLE IF NOT EXISTS demand_signals (
 
 CREATE INDEX IF NOT EXISTS idx_demand_date
     ON demand_signals (polled_date);
+
+CREATE TABLE IF NOT EXISTS feedback_signals (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id         TEXT NOT NULL,
+    topic            TEXT,
+    signal           TEXT NOT NULL,
+    metric_value     REAL,
+    channel_baseline REAL,
+    detail           TEXT,
+    analyzed_date    TEXT NOT NULL,
+    UNIQUE (video_id, signal, analyzed_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_feedback_date
+    ON feedback_signals (analyzed_date);
+
+CREATE TABLE IF NOT EXISTS topic_performance (
+    topic            TEXT PRIMARY KEY,
+    score            REAL NOT NULL,
+    videos_analyzed  INTEGER NOT NULL,
+    avg_views_per_day REAL,
+    reason           TEXT,
+    updated_at       TEXT NOT NULL
+);
 """
 
 
@@ -404,4 +428,100 @@ class StateStore:
                 "SELECT * FROM demand_signals ORDER BY polled_date DESC LIMIT ?",
                 (limit,),
             ).fetchall()
+        return [dict(row) for row in rows]
+
+    # -- feedback signals --------------------------------------------------
+
+    def record_feedback_signal(
+        self,
+        video_id: str,
+        signal: str,
+        analyzed_date: str,
+        topic: str = "",
+        metric_value: float | None = None,
+        channel_baseline: float | None = None,
+        detail: str = "",
+    ):
+        """Record a discrete learning signal for a video on a given analysis date.
+
+        One row per (video_id, signal, analyzed_date) — re-running the feedback
+        analysis on the same day overwrites rather than accumulating duplicates,
+        so the signal history reflects one verdict per video per analysis run.
+        """
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO feedback_signals
+                    (video_id, topic, signal, metric_value, channel_baseline, detail, analyzed_date)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(video_id, signal, analyzed_date) DO UPDATE SET
+                    topic=excluded.topic,
+                    metric_value=excluded.metric_value,
+                    channel_baseline=excluded.channel_baseline,
+                    detail=excluded.detail
+                """,
+                (video_id, topic, signal, metric_value, channel_baseline, detail, analyzed_date),
+            )
+
+    def list_feedback_signals(self, since: str | None = None, limit: int = 200) -> list[dict]:
+        """List feedback/learning signals, most recently analyzed first."""
+        if since:
+            rows = self.conn.execute(
+                "SELECT * FROM feedback_signals WHERE analyzed_date >= ? "
+                "ORDER BY analyzed_date DESC, id DESC LIMIT ?",
+                (since, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM feedback_signals ORDER BY analyzed_date DESC, id DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+    # -- topic performance -------------------------------------------------
+
+    def upsert_topic_performance(
+        self,
+        topic: str,
+        score: float,
+        videos_analyzed: int,
+        updated_at: str,
+        avg_views_per_day: float | None = None,
+        reason: str = "",
+    ):
+        """Insert or update the learned performance score for a topic.
+
+        One row per topic — the latest feedback analysis replaces the earlier
+        score, keeping a single current verdict per topic that Topic Manager
+        can read when choosing what to make next.
+        """
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO topic_performance
+                    (topic, score, videos_analyzed, avg_views_per_day, reason, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(topic) DO UPDATE SET
+                    score=excluded.score,
+                    videos_analyzed=excluded.videos_analyzed,
+                    avg_views_per_day=excluded.avg_views_per_day,
+                    reason=excluded.reason,
+                    updated_at=excluded.updated_at
+                """,
+                (topic, score, videos_analyzed, avg_views_per_day, reason, updated_at),
+            )
+
+    def get_topic_performance(self, topic: str) -> dict | None:
+        """Return the learned performance row for one topic, or None."""
+        row = self.conn.execute(
+            "SELECT * FROM topic_performance WHERE topic = ?", (topic,)
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_topic_performance(self, limit: int = 200) -> list[dict]:
+        """List learned topic-performance rows, highest score first."""
+        rows = self.conn.execute(
+            "SELECT * FROM topic_performance ORDER BY score DESC, videos_analyzed DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
         return [dict(row) for row in rows]

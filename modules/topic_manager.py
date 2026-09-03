@@ -7,6 +7,7 @@ from pathlib import Path
 
 from config import GEMINI_MODEL, TOPIC_HISTORY_FILE, SCRIPT_LANGUAGE
 from modules.content_planner import ContentPlanner
+from modules.feedback_engine import FeedbackEngine
 from modules.gemini_client import generate_with_retry, make_client
 from modules.originality_engine import OriginalityEngine
 from modules.performance_analyzer import PerformanceAnalyzer
@@ -26,6 +27,7 @@ class TopicManager:
         self.recommender = self._safe_make_recommender()
         self.content_planner = self._safe_make_content_planner()
         self.performance_analyzer = self._safe_make_performance_analyzer()
+        self.feedback_engine = self._safe_make_feedback_engine()
 
     def _safe_make_recommender(self) -> TopicRecommender | None:
         """TopicRecommender degrades gracefully on its own (empty DB, a
@@ -65,6 +67,21 @@ class TopicManager:
             logger.warning(
                 "Failed to construct PerformanceAnalyzer (%s: %s) — proceeding without "
                 "past-performance context in the topic prompt",
+                type(e).__name__, e,
+            )
+            return None
+
+    def _safe_make_feedback_engine(self) -> FeedbackEngine | None:
+        """FeedbackEngine reads the learned per-topic scores the feedback loop
+        persisted (see modules/feedback_engine.py). Its own reads degrade to ""
+        on failure, but constructing it opens a StateStore, so guard that too.
+        """
+        try:
+            return FeedbackEngine()
+        except Exception as e:
+            logger.warning(
+                "Failed to construct FeedbackEngine (%s: %s) — proceeding without "
+                "learned topic scores in the prompt",
                 type(e).__name__, e,
             )
             return None
@@ -131,6 +148,15 @@ class TopicManager:
             performance_context = self.performance_analyzer.analyze_videos_as_prompt_text()
             if performance_context:
                 prompt += f"\n\n{performance_context}"
+        # The closed feedback loop: the FeedbackEngine turned real published-
+        # video metrics into persistent per-topic scores (see
+        # modules/feedback_engine.py). Surfacing them here is what makes that
+        # learning actually influence the next choice — framed as guidance from
+        # this channel's own results, not a rule.
+        if self.feedback_engine is not None:
+            learned_scores = self.feedback_engine.topic_scores_as_prompt_text()
+            if learned_scores:
+                prompt += f"\n\n{learned_scores}"
         response = generate_with_retry(self.client, GEMINI_MODEL, prompt)
         return response.text.strip().strip('"').strip("'")
 
