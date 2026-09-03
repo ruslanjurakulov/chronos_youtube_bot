@@ -2,8 +2,13 @@ name: Tests
 
 on:
   push:
+    # The Command Center is a self-contained Next.js app with its own tooling;
+    # the Python suite has nothing to say about it, so don't run (and fail) on
+    # frontend-only changes.
+    paths-ignore: ["command-center/**"]
   pull_request:
     branches: [main]
+    paths-ignore: ["command-center/**"]
   workflow_dispatch:
 
 jobs:
