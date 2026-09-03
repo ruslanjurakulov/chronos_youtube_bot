@@ -10,7 +10,12 @@ moviepy==1.0.3
 # aliases that constant as a safety net; cv2 avoids the branch altogether.
 opencv-python>=4.8.0
 pydub>=0.25.1
-audioop-lts>=0.2.1
+# audioop was removed from the stdlib in Python 3.13; audioop-lts backfills it
+# and its wheels REQUIRE >=3.13. On 3.11/3.12 (what the workflows run) audioop
+# is still built in, so this backport is neither needed nor installable — the
+# marker skips it there. Without the marker, `pip install -r requirements.txt`
+# hard-fails on 3.11 ("No matching distribution found for audioop-lts").
+audioop-lts>=0.2.1; python_version >= "3.13"
 Pillow>=10.0.0
 requests>=2.31.0
 python-dotenv>=1.0.0
