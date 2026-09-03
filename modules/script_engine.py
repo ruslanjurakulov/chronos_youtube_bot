@@ -10,6 +10,7 @@ from google.genai import types as genai_types
 
 from config import GEMINI_MODEL, SCRIPT_LANGUAGE, VIDEO_DURATION_TARGET
 from modules.gemini_client import generate_with_retry, make_client
+from modules.performance_analyzer import PerformanceAnalyzer
 from modules.research_engine import ResearchBrief
 
 logger = logging.getLogger(__name__)
@@ -290,6 +291,46 @@ def _format_research_notes(research_brief: "ResearchBrief | None") -> str:
 class ScriptEngine:
     def __init__(self):
         self.client = make_client()
+        self.performance_analyzer = self._safe_make_performance_analyzer()
+
+    def _safe_make_performance_analyzer(self) -> "PerformanceAnalyzer | None":
+        """PerformanceAnalyzer's own methods already degrade to "" on any
+        internal failure, but constructing it (which opens a StateStore) is
+        not covered by that guarantee — a failure here must never stop a
+        script from being written.
+        """
+        try:
+            return PerformanceAnalyzer()
+        except Exception as e:
+            logger.warning(
+                "Failed to construct PerformanceAnalyzer (%s: %s) — writing the "
+                "script without past-performance context",
+                type(e).__name__, e,
+            )
+            return None
+
+    def _performance_context(self) -> str:
+        """Real past-performance numbers for this channel's own videos,
+        rendered as optional context to append to the script prompt.
+
+        This is the same feedback-loop idea as topic_manager.py's use of the
+        analyzer, but here it tells the *writer* which of this channel's own
+        past topics actually resonated — ambient context to gauge tone and
+        framing against, never a template to copy (analyze_videos_as_prompt_text
+        frames it that way itself, and returns "" below two videos with
+        metrics, so there is no empty section on a fresh channel).
+        """
+        if self.performance_analyzer is None:
+            return ""
+        try:
+            return self.performance_analyzer.analyze_videos_as_prompt_text()
+        except Exception as e:
+            logger.warning(
+                "PerformanceAnalyzer.analyze_videos_as_prompt_text failed (%s: %s) — "
+                "writing the script without past-performance context",
+                type(e).__name__, e,
+            )
+            return ""
 
     @staticmethod
     def load(path: Path, topic: str | None = None) -> Script:
@@ -310,6 +351,9 @@ class ScriptEngine:
 
     def generate(self, topic: str, research_brief: "ResearchBrief | None" = None) -> Script:
         prompt = self._build_prompt(topic, research_brief)
+        performance_context = self._performance_context()
+        if performance_context:
+            prompt += f"\n\n{performance_context}"
         logger.info("Generating script for: %s", topic)
         text = self._gen(prompt, system=SCRIPT_SYSTEM_PROMPT)
         raw = self._extract_json(text)
