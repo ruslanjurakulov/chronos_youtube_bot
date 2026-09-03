@@ -5,6 +5,8 @@ write path) plus fake/mock CommentFetcher and classify_comments so no live
 API calls are ever made.
 """
 
+import subprocess
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -157,6 +159,30 @@ class EnqueueTopicSuggestionsTestCase(unittest.TestCase):
         planner = ContentPlanner(store_path=self.calendar_path)
         entries = planner.list_entries(status="queued")
         self.assertEqual(len(entries), 1)
+
+
+class RunnableAsScriptTestCase(unittest.TestCase):
+    """Regression guard: the workflow invokes `python tools/run_intelligence_poll.py`,
+    which puts tools/ (not the repo root) on sys.path — so `import modules` fails
+    unless the script inserts the repo root itself. The other tests import the
+    module as a package (root already on path) and so never exercise the
+    script-invocation path that actually runs in CI. This runs it as a real
+    subprocess the way the workflow does.
+    """
+
+    REPO_ROOT = Path(__file__).resolve().parent.parent
+
+    def test_runs_as_a_script_from_repo_root(self):
+        # --help executes every module-level import, then argparse exits 0.
+        # Before the sys.path fix this died with ModuleNotFoundError (exit 1).
+        result = subprocess.run(
+            [sys.executable, "tools/run_intelligence_poll.py", "--help"],
+            cwd=self.REPO_ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stderr)
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
 
 
 class RunFeedbackAnalysisTestCase(unittest.TestCase):
