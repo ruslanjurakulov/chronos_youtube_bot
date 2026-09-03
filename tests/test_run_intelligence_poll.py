@@ -159,5 +159,20 @@ class EnqueueTopicSuggestionsTestCase(unittest.TestCase):
         self.assertEqual(len(entries), 1)
 
 
+class RunFeedbackAnalysisTestCase(unittest.TestCase):
+    def test_delegates_to_feedback_engine_and_returns_summary(self):
+        fake_engine = MagicMock()
+        fake_engine.run.return_value = {"videos_analyzed": 3, "signals_recorded": 5, "topics_scored": 2}
+        with patch.object(mod, "FeedbackEngine", return_value=fake_engine):
+            summary = mod.run_feedback_analysis()
+        fake_engine.run.assert_called_once()
+        self.assertEqual(summary, {"videos_analyzed": 3, "signals_recorded": 5, "topics_scored": 2})
+
+    def test_failure_degrades_to_zero_summary(self):
+        with patch.object(mod, "FeedbackEngine", side_effect=RuntimeError("boom")):
+            summary = mod.run_feedback_analysis()  # must not raise
+        self.assertEqual(summary, {"videos_analyzed": 0, "signals_recorded": 0, "topics_scored": 0})
+
+
 if __name__ == "__main__":
     unittest.main()

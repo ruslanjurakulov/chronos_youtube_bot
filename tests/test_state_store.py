@@ -202,6 +202,61 @@ class StateStoreTestCase(unittest.TestCase):
             rows = store.list_demand_signals(since="2026-01-03")
             self.assertEqual([r["topic_phrase"] for r in rows], ["b"])
 
+    # -- feedback signals --------------------------------------------------
+
+    def test_feedback_signal_insert_and_list(self):
+        with StateStore(self.db_path) as store:
+            store.record_feedback_signal(
+                video_id="v1", signal="HIGH_RETENTION", analyzed_date="2026-01-01",
+                topic="Rome", metric_value=120.0, channel_baseline=75.0, detail="1.60x channel average",
+            )
+            rows = store.list_feedback_signals()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["signal"], "HIGH_RETENTION")
+            self.assertEqual(rows[0]["topic"], "Rome")
+
+    def test_feedback_signal_upserts_on_same_video_signal_date(self):
+        with StateStore(self.db_path) as store:
+            store.record_feedback_signal(video_id="v1", signal="HIGH_RETENTION", analyzed_date="2026-01-01", metric_value=100.0)
+            store.record_feedback_signal(video_id="v1", signal="HIGH_RETENTION", analyzed_date="2026-01-01", metric_value=200.0)
+            rows = store.list_feedback_signals()
+            self.assertEqual(len(rows), 1)
+            self.assertEqual(rows[0]["metric_value"], 200.0)
+
+    def test_feedback_signal_filters_by_since(self):
+        with StateStore(self.db_path) as store:
+            store.record_feedback_signal(video_id="v1", signal="LOW_ENGAGEMENT", analyzed_date="2026-01-01")
+            store.record_feedback_signal(video_id="v2", signal="HIGH_ENGAGEMENT", analyzed_date="2026-01-05")
+            rows = store.list_feedback_signals(since="2026-01-03")
+            self.assertEqual([r["video_id"] for r in rows], ["v2"])
+
+    # -- topic performance -------------------------------------------------
+
+    def test_topic_performance_upsert_and_get(self):
+        with StateStore(self.db_path) as store:
+            store.upsert_topic_performance(topic="Rome", score=88.0, videos_analyzed=3, updated_at="2026-01-01", reason="strong")
+            row = store.get_topic_performance("Rome")
+            self.assertEqual(row["score"], 88.0)
+            self.assertEqual(row["videos_analyzed"], 3)
+            self.assertIsNone(store.get_topic_performance("Nonexistent"))
+
+    def test_topic_performance_upsert_overwrites(self):
+        with StateStore(self.db_path) as store:
+            store.upsert_topic_performance(topic="Rome", score=50.0, videos_analyzed=1, updated_at="2026-01-01")
+            store.upsert_topic_performance(topic="Rome", score=90.0, videos_analyzed=4, updated_at="2026-01-05", reason="improved")
+            row = store.get_topic_performance("Rome")
+            self.assertEqual(row["score"], 90.0)
+            self.assertEqual(row["videos_analyzed"], 4)
+            self.assertEqual(len(store.list_topic_performance()), 1)
+
+    def test_topic_performance_list_orders_by_score_desc(self):
+        with StateStore(self.db_path) as store:
+            store.upsert_topic_performance(topic="Low", score=20.0, videos_analyzed=1, updated_at="2026-01-01")
+            store.upsert_topic_performance(topic="High", score=95.0, videos_analyzed=1, updated_at="2026-01-01")
+            store.upsert_topic_performance(topic="Mid", score=55.0, videos_analyzed=1, updated_at="2026-01-01")
+            rows = store.list_topic_performance()
+            self.assertEqual([r["topic"] for r in rows], ["High", "Mid", "Low"])
+
 
 if __name__ == "__main__":
     unittest.main()

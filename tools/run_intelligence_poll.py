@@ -2,7 +2,7 @@
 """Scheduled entry point for the intelligence layer — see
 .github/workflows/intelligence_poll.yml.
 
-Runs three independent passes, each defensive on its own: one bad video, one
+Runs four independent passes, each defensive on its own: one bad video, one
 bad API response, or one entire sub-system being down must never abort the
 rest of the poll.
 
@@ -14,6 +14,10 @@ rest of the poll.
      queue — this is the producer side of the content-planning loop;
      modules/topic_manager.py is the consumer side (checks the queue
      before spending a Gemini call on a fresh topic).
+  4. Run the feedback loop (modules/feedback_engine.py) over the freshly
+     polled metrics — derive learning signals and per-topic scores that
+     Topic Manager reads on the next video run. This is the step that closes
+     the loop: published-video performance actually influences future topics.
 
 This script does not decide *when* to run — that's the workflow's cron
 schedule. It only does the work once invoked.
@@ -42,6 +46,7 @@ from modules.audience_demand import AudienceDemandEngine
 from modules.comment_fetcher import CommentFetcher
 from modules.comment_intelligence import classify_comments
 from modules.content_planner import ContentPlanner
+from modules.feedback_engine import FeedbackEngine
 from modules.intelligence_poller import IntelligencePoller
 from modules.state_store import StateStore
 from modules.topic_recommender import TopicRecommender
@@ -157,10 +162,25 @@ def enqueue_topic_suggestions(limit: int = 5) -> int:
     return enqueued
 
 
+def run_feedback_analysis() -> dict:
+    """Run the feedback loop over the metrics this poll (and prior polls) have
+    persisted: derive learning signals + per-topic scores that Topic Manager
+    reads on the next video run. Runs last, after own-channel metrics have been
+    freshly polled above. Never raises (FeedbackEngine is defensive)."""
+    try:
+        summary = FeedbackEngine().run()
+    except Exception as e:
+        logger.warning("Feedback loop failed (%s: %s) — no scores updated this run", type(e).__name__, e)
+        return {"videos_analyzed": 0, "signals_recorded": 0, "topics_scored": 0}
+    logger.info("Feedback loop summary: %s", summary)
+    return summary
+
+
 def main():
     parser = argparse.ArgumentParser(description="Chronos intelligence poll")
     parser.add_argument("--skip-comments", action="store_true", help="Skip the comment fetch/classify pass")
     parser.add_argument("--skip-planning", action="store_true", help="Skip feeding suggestions into the content planner queue")
+    parser.add_argument("--skip-feedback", action="store_true", help="Skip the feedback-loop scoring pass")
     args = parser.parse_args()
 
     logger.info("=== Intelligence poll starting ===")
@@ -187,6 +207,11 @@ def main():
         enqueue_topic_suggestions()
     else:
         logger.info("Content planning skipped (--skip-planning)")
+
+    if not args.skip_feedback:
+        run_feedback_analysis()
+    else:
+        logger.info("Feedback scoring skipped (--skip-feedback)")
 
     logger.info("=== Intelligence poll done ===")
 
