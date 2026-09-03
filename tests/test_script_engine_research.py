@@ -109,7 +109,11 @@ class TestGenerateStillWorksWithoutResearchBrief(unittest.TestCase):
             '"thumbnail_prompt_b": "B", "thumbnail_overlay_text": "O", '
             '"open_loops": [], "sections": []}'
         )
+        fake_pa = MagicMock()
+        fake_pa.analyze_videos_as_prompt_text.return_value = ""
         with patch("modules.script_engine.make_client", return_value=MagicMock()), patch(
+            "modules.script_engine.PerformanceAnalyzer", return_value=fake_pa
+        ), patch(
             "modules.script_engine.generate_with_retry",
             return_value=self._mock_response(payload),
         ) as mock_gen:
@@ -134,7 +138,11 @@ class TestGenerateStillWorksWithoutResearchBrief(unittest.TestCase):
             key_facts=[ResearchFact(claim="A recalled claim.", confidence="low")],
             suggested_angle="A recalled angle.",
         )
+        fake_pa = MagicMock()
+        fake_pa.analyze_videos_as_prompt_text.return_value = ""
         with patch("modules.script_engine.make_client", return_value=MagicMock()), patch(
+            "modules.script_engine.PerformanceAnalyzer", return_value=fake_pa
+        ), patch(
             "modules.script_engine.generate_with_retry",
             return_value=self._mock_response(payload),
         ) as mock_gen:
