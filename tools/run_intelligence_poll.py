@@ -30,6 +30,12 @@ import sys
 from datetime import date
 from pathlib import Path
 
+# Running this as a script (`python tools/run_intelligence_poll.py`) puts the
+# tools/ directory on sys.path, not the repo root, so `import modules` fails
+# with ModuleNotFoundError. Add the repo root first — same as
+# tools/run_feedback.py and tools/check_pending_approvals.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 Path("logs").mkdir(exist_ok=True)
 
 logging.basicConfig(
