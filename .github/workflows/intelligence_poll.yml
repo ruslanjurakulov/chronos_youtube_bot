@@ -57,6 +57,10 @@ jobs:
           YOUTUBE_CHANNEL_ID: ${{ secrets.YOUTUBE_CHANNEL_ID }}
           YOUTUBE_DATA_API_KEY: ${{ secrets.YOUTUBE_DATA_API_KEY }}
           COMPETITOR_CHANNEL_IDS: ${{ vars.COMPETITOR_CHANNEL_IDS }}
+          # Optional — when set, the poll mirrors state to Supabase for the
+          # Command Center. Unset = fully local, mirror is a no-op.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: |
           SKIP_ARG=""
           if [ "${{ github.event.inputs.skip_comments }}" = "true" ]; then
