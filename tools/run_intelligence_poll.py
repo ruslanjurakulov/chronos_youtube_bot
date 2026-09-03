@@ -50,6 +50,7 @@ from modules.content_planner import ContentPlanner
 from modules.feedback_engine import FeedbackEngine
 from modules.intelligence_poller import IntelligencePoller
 from modules.state_store import StateStore
+from modules.supabase_sync import SupabaseSync
 from modules.topic_recommender import TopicRecommender
 
 
@@ -183,11 +184,27 @@ def run_feedback_analysis() -> dict:
     return summary
 
 
+def mirror_to_supabase() -> dict:
+    """Mirror the current local state into Supabase for the Command Center.
+    No-op (returns {}) when SUPABASE_URL / SUPABASE_SERVICE_KEY aren't set, so
+    the bot stays fully local until you provision Supabase. Never raises."""
+    sync = SupabaseSync()
+    if not sync.enabled:
+        return {}
+    try:
+        with StateStore() as store:
+            return sync.mirror_from_store(store)
+    except Exception as e:
+        logger.warning("Supabase mirror failed (%s: %s)", type(e).__name__, e)
+        return {}
+
+
 def main():
     parser = argparse.ArgumentParser(description="Chronos intelligence poll")
     parser.add_argument("--skip-comments", action="store_true", help="Skip the comment fetch/classify pass")
     parser.add_argument("--skip-planning", action="store_true", help="Skip feeding suggestions into the content planner queue")
     parser.add_argument("--skip-feedback", action="store_true", help="Skip the feedback-loop scoring pass")
+    parser.add_argument("--skip-mirror", action="store_true", help="Skip mirroring state to Supabase")
     args = parser.parse_args()
 
     logger.info("=== Intelligence poll starting ===")
@@ -220,6 +237,11 @@ def main():
         run_feedback_analysis()
     else:
         logger.info("Feedback scoring skipped (--skip-feedback)")
+
+    if not args.skip_mirror:
+        mirror_to_supabase()
+    else:
+        logger.info("Supabase mirror skipped (--skip-mirror)")
 
     logger.info("=== Intelligence poll done ===")
 
