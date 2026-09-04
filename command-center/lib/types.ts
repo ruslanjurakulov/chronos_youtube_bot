@@ -6,6 +6,8 @@
 
 export interface VideoRow {
   video_id: string;
+  /** Which Chronos channel published it. Backfilled to "default" by migration 0001. */
+  channel_id: string;
   topic: string | null;
   title: string | null;
   slug: string | null;
@@ -36,6 +38,7 @@ export interface TopicPerformanceRow {
 
 export interface FeedbackSignalRow {
   video_id: string;
+  channel_id: string;
   topic: string | null;
   signal: string;
   metric_value: number | null;
@@ -46,6 +49,12 @@ export interface FeedbackSignalRow {
 
 export interface SystemEventRow {
   event_key: string;
+  /**
+   * The channel this event belongs to, or null for genuinely global events
+   * (system heartbeats, infrastructure). Null is meaningful here — it is not
+   * "unknown", it is "not any one channel's doing".
+   */
+  channel_id: string | null;
   event: string;
   ts: string;
   video_id: string | null;
@@ -66,10 +75,16 @@ export interface CompetitorSnapshotRow {
   published_at: string | null;
   polled_date: string;
   view_velocity: number | null;
+  /**
+   * NOTE the two ids: `channel_id` above is the COMPETITOR's YouTube channel
+   * (it always has been); this is which of our channels is watching them.
+   */
+  chronos_channel_id: string;
 }
 
 export interface DemandSignalRow {
   id: number;
+  channel_id: string;
   topic_phrase: string;
   mention_count: number;
   example_comment_ids: string | null;
@@ -88,6 +103,7 @@ export interface ContentQueueRow {
   source: string | null;
   rationale: string | null;
   status: string;
+  channel_id: string;
   synced_at: string | null;
 }
 
@@ -108,5 +124,77 @@ export interface PipelineRunRow {
   history: PipelineRunStage[] | null;
   started_at: string | null;
   updated_at: string | null;
+  channel_id: string;
   synced_at: string | null;
+}
+
+/**
+ * Multi-channel (Phase 5). See supabase/migrations/0001_multi_channel.sql.
+ */
+
+export type ChannelStatus = "ACTIVE" | "PAUSED";
+
+/** Generator settings for one channel. All optional — an omitted field falls
+ * back to the bot's own config on the server side. */
+export interface ChannelAgentConfig {
+  language?: string;
+  target_duration_seconds?: number;
+  tts_provider?: string;
+  elevenlabs_voice_id?: string;
+  edge_tts_voice?: string;
+  system_prompt?: string;
+  niche_rules?: string;
+  visual_style_prompt?: string;
+}
+
+export interface ChannelScheduleConfig {
+  publish_hour_utc?: number | null;
+  enabled?: boolean;
+}
+
+/**
+ * A *reference* to a publishing credential — deliberately never the credential.
+ * `ref` names the server-side secret (CHRONOS_YT_TOKEN_<REF>); the token itself
+ * exists only on the machine that publishes. There is no field here, and no
+ * column in the table, that could hold one.
+ */
+export interface ChannelCredentialRef {
+  provider?: string;
+  ref?: string;
+  youtube_channel_id?: string;
+}
+
+export interface ChannelRow {
+  channel_id: string;
+  name: string;
+  niche: string;
+  status: ChannelStatus | string;
+  agent_config: ChannelAgentConfig | null;
+  schedule_config: ChannelScheduleConfig | null;
+  credential_ref: ChannelCredentialRef | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+/** Credential *health*, written by the bot. Status only — see the note above. */
+export interface ChannelCredentialRow {
+  channel_id: string;
+  provider: string;
+  status: "connected" | "not_connected" | "expired" | "error" | string;
+  youtube_channel_id: string | null;
+  expires_at: string | null;
+  last_verified_at: string | null;
+  detail: string | null;
+  synced_at: string | null;
+}
+
+/** Learned topic score, keyed per channel so two channels never collide. */
+export interface ChannelTopicPerformanceRow {
+  channel_id: string;
+  topic: string;
+  score: number;
+  videos_analyzed: number;
+  avg_views_per_day: number | null;
+  reason: string | null;
+  updated_at: string;
 }

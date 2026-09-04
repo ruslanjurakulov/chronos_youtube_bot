@@ -4,6 +4,8 @@ import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, StatusPill } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
+import { getChannelSelection } from "@/lib/channels-server";
+import { scopeQuery } from "@/lib/channels";
 import { fmt, type Dictionary } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 
@@ -49,14 +51,18 @@ function derive(
 export default async function IntegrationsPage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope channel-owned queries to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
   let dbOk = false;
   if (supabase) {
-    const { data, error } = await supabase
-      .from("system_events")
-      .select("*")
+    const { data, error } = await scopeQuery(
+        supabase.from("system_events").select("*"),
+        selection, { nullIsGlobal: true },
+      )
       .order("ts", { ascending: false })
       .limit(1000);
     dbOk = !error;

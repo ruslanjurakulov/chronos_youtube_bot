@@ -13,6 +13,8 @@ import { CustomizeButton } from "@/components/dashboard/CustomizeButton";
 import { isToday, num, relativeTime, statusTone } from "@/lib/format";
 import { inferNextStage, dailyMission } from "@/lib/intelligence";
 import { getDictionary } from "@/lib/i18n/server";
+import { fetchTopicScores, getChannelSelection } from "@/lib/channels-server";
+import { scopeQuery } from "@/lib/channels";
 import { fmt } from "@/lib/i18n";
 import type { FeedbackSignalRow, MetricsSnapshotRow, SystemEventRow, TopicPerformanceRow, VideoRow } from "@/lib/types";
 
@@ -24,6 +26,9 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export default async function CommandCenter() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope every channel-owned query to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
@@ -35,16 +40,16 @@ export default async function CommandCenter() {
 
   if (supabase) {
     const [ev, vid, tp, snap, sg] = await Promise.all([
-      supabase.from("system_events").select("*").order("ts", { ascending: false }).limit(200),
-      supabase.from("videos").select("*").order("published_at", { ascending: false }).limit(50),
-      supabase.from("topic_performance").select("*").order("score", { ascending: false }).limit(6),
+      scopeQuery(supabase.from("system_events").select("*"), selection, { nullIsGlobal: true }).order("ts", { ascending: false }).limit(200),
+      scopeQuery(supabase.from("videos").select("*"), selection).order("published_at", { ascending: false }).limit(50),
+      fetchTopicScores(supabase, selection, 6),
       supabase.from("metrics_snapshots").select("*").order("snapshot_date", { ascending: false }).limit(200),
-      supabase.from("feedback_signals").select("*").order("analyzed_date", { ascending: false }).limit(200),
+      scopeQuery(supabase.from("feedback_signals").select("*"), selection).order("analyzed_date", { ascending: false }).limit(200),
     ]);
-    if (ev.error || vid.error || tp.error) dbHealthy = false;
+    if (ev.error || vid.error) dbHealthy = false;
     events = (ev.data as SystemEventRow[]) ?? [];
     videos = (vid.data as VideoRow[]) ?? [];
-    topics = (tp.data as TopicPerformanceRow[]) ?? [];
+    topics = tp;
     snapshots = (snap.data as MetricsSnapshotRow[]) ?? [];
     signals = (sg.data as FeedbackSignalRow[]) ?? [];
   }
@@ -82,10 +87,10 @@ export default async function CommandCenter() {
       {/* Hero band — Chronos Core + real system status + today's mission */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="panel flex items-center justify-center p-5">
-          <ChronosCore initial={events} size={200} />
+          <ChronosCore initial={events} size={200} selection={selection} />
         </div>
         <Widget id="status" title={t.ops.statusTitle}>
-          <SystemStatus initial={events} dbOk={dbHealthy} />
+          <SystemStatus initial={events} dbOk={dbHealthy} selection={selection} />
         </Widget>
         <Widget id="mission" title={t.ops.missionTitle}>
           <DailyMission
@@ -120,7 +125,7 @@ export default async function CommandCenter() {
         {/* Live activity feed (realtime) */}
         <Widget id="feed" title={t.ops.streamTitle} span="lg:col-span-2">
           <div className="h-[420px]">
-            <ActivityFeed initial={events} />
+            <ActivityFeed initial={events} selection={selection} />
           </div>
         </Widget>
 

@@ -4,6 +4,8 @@ import { NotConfigured } from "@/components/NotConfigured";
 import { StatCard, Panel, EmptyState } from "@/components/ui";
 import { num, decimal } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
+import { getChannelSelection } from "@/lib/channels-server";
+import { scopeQuery } from "@/lib/channels";
 import { fmt } from "@/lib/i18n";
 import type { MetricsSnapshotRow, VideoRow } from "@/lib/types";
 
@@ -105,6 +107,9 @@ function RankedList({
 export default async function AnalyticsPage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope every channel-owned query to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const supabase = await createClient();
   let videos: VideoRow[] = [];
@@ -113,7 +118,7 @@ export default async function AnalyticsPage() {
 
   if (supabase) {
     const [vid, snap] = await Promise.all([
-      supabase.from("videos").select("*").order("published_at", { ascending: false }).limit(500),
+      scopeQuery(supabase.from("videos").select("*"), selection).order("published_at", { ascending: false }).limit(500),
       supabase.from("metrics_snapshots").select("*").limit(5000),
     ]);
     if (vid.error || snap.error) dbHealthy = false;

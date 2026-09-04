@@ -8,6 +8,7 @@ import type { Dictionary } from "@/lib/i18n";
 type NavKey = keyof Dictionary["nav"];
 const NAV: { href: string; key: NavKey; glyph: string }[] = [
   { href: "/", key: "command", glyph: "◎" },
+  { href: "/channels", key: "channels", glyph: "◉" },
   { href: "/videos", key: "videos", glyph: "▦" },
   { href: "/pipeline", key: "pipeline", glyph: "⌗" },
   { href: "/agents", key: "agents", glyph: "⚙" },

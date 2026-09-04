@@ -5,6 +5,8 @@ import { StatCard, Panel, EmptyState } from "@/components/ui";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { statusTone } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
+import { getChannelSelection } from "@/lib/channels-server";
+import { scopeQuery } from "@/lib/channels";
 import { fmt } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 import { ErrorTable } from "@/components/errors/ErrorTable";
@@ -24,15 +26,19 @@ function isFailure(e: SystemEventRow): boolean {
 export default async function ErrorCenter() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope channel-owned queries to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
   let queryFailed = false;
 
   if (supabase) {
-    const { data, error } = await supabase
-      .from("system_events")
-      .select("*")
+    const { data, error } = await scopeQuery(
+        supabase.from("system_events").select("*"),
+        selection, { nullIsGlobal: true },
+      )
       .order("ts", { ascending: false })
       .limit(FETCH_LIMIT);
     if (error) queryFailed = true;

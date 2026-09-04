@@ -50,6 +50,9 @@ _UPSERT_TABLES = {
     "trending_snapshots": "video_id,polled_date,region_code",
     "content_queue": "entry_id",
     "pipeline_runs": "run_id",
+    "channels": "channel_id",
+    "channel_credentials": "channel_id,provider",
+    "channel_topic_performance": "channel_id,topic",
 }
 
 
@@ -101,6 +104,35 @@ class SupabaseSync:
             logger.warning("Supabase upsert into %s errored (%s: %s)", table, type(e).__name__, e)
             return 0
 
+    def select(self, table: str, params: dict | None = None) -> list[dict]:
+        """Read rows from `table` via PostgREST. Returns [] when disabled or on
+        any failure. Never raises.
+
+        The read counterpart of `upsert` — added so configuration the Command
+        Center writes (channels) can be read back by the bot. Data still flows
+        one way for *state*: the bot owns videos/metrics/events and only writes
+        those; it only ever reads configuration.
+        """
+        if not self.enabled:
+            return []
+        try:
+            resp = requests.get(
+                f"{self.url}/rest/v1/{table}",
+                params={"select": "*", **(params or {})},
+                headers=self._headers(),
+                timeout=_TIMEOUT,
+            )
+            if resp.status_code >= 300:
+                logger.warning(
+                    "Supabase select from %s failed: HTTP %s %s", table, resp.status_code, resp.text[:300]
+                )
+                return []
+            data = resp.json()
+            return data if isinstance(data, list) else []
+        except Exception as e:
+            logger.warning("Supabase select from %s errored (%s: %s)", table, type(e).__name__, e)
+            return []
+
     # -- high-level --------------------------------------------------------
 
     def mirror_from_store(self, store, events_limit: int = 500) -> dict:
@@ -123,6 +155,7 @@ class SupabaseSync:
             "metrics_snapshots": None,  # no bulk lister; handled below
             "feedback_signals": lambda: store.list_feedback_signals(limit=100000),
             "topic_performance": lambda: store.list_topic_performance(limit=100000),
+            "channel_topic_performance": lambda: store.list_channel_topic_performance(limit=100000),
             "competitor_snapshots": lambda: store.list_competitor_snapshots(limit=100000),
             "trending_snapshots": lambda: store.list_trending_snapshots(limit=100000),
         }
@@ -181,7 +214,8 @@ class SupabaseSync:
                 from modules.content_planner import ContentPlanner
 
                 planner = ContentPlanner()
-            rows = [self._queue_row(e) for e in planner.list_entries()]
+            # Every channel's entries — the Command Center filters, the mirror does not.
+            rows = [self._queue_row(e) for e in planner.list_entries(channel_id=None)]
             counts["content_queue"] = self.upsert(
                 "content_queue", rows, on_conflict=_UPSERT_TABLES["content_queue"]
             )
@@ -204,6 +238,80 @@ class SupabaseSync:
         logger.info("Supabase operational mirror complete: %s", counts)
         return counts
 
+    def mirror_channels(self, registry=None) -> dict:
+        """Mirror channel *configuration presence* and *credential health* so
+        the Command Center can render a real Channels view.
+
+        Two deliberate asymmetries:
+
+        * **Config flows UI -> Supabase -> bot**, not back. This method only
+          bootstraps the `channels` table when it is empty (so a deployment
+          that has never used the management UI still sees its real default
+          channel instead of a blank page). Once rows exist, they are the
+          source of truth and are left alone — mirroring a stale local
+          channels.json over a Command Center edit would silently undo it.
+        * **Credential health flows bot -> Supabase**, always. Only the server
+          can see the token files, and only *status* is written:
+          `channel_credentials` has no column that could hold a token. See
+          modules/channel_credentials.py.
+
+        Never raises.
+        """
+        if not self.enabled:
+            return {}
+
+        counts: dict[str, int] = {}
+        try:
+            if registry is None:
+                from modules.channels import ChannelRegistry
+
+                registry = ChannelRegistry(sync=self)
+            channels = registry.list()
+        except Exception as e:
+            logger.warning("Failed loading channels for mirror (%s: %s)", type(e).__name__, e)
+            return counts
+
+        # -- bootstrap channel rows only when the table is empty --
+        try:
+            if not self.select("channels", {"select": "channel_id", "limit": "1"}):
+                rows = [self._channel_row(c) for c in channels]
+                counts["channels"] = self.upsert(
+                    "channels", rows, on_conflict=_UPSERT_TABLES["channels"]
+                )
+        except Exception as e:
+            logger.warning("Failed bootstrapping channels (%s: %s)", type(e).__name__, e)
+
+        # -- credential health (status only, never a token) --
+        try:
+            from modules.channel_credentials import credential_status
+
+            rows = [credential_status(c).to_dict() for c in channels]
+            counts["channel_credentials"] = self.upsert(
+                "channel_credentials", rows, on_conflict=_UPSERT_TABLES["channel_credentials"]
+            )
+        except Exception as e:
+            logger.warning("Failed mirroring channel_credentials (%s: %s)", type(e).__name__, e)
+
+        logger.info("Supabase channel mirror complete: %s", counts)
+        return counts
+
+    @staticmethod
+    def _channel_row(channel) -> dict:
+        """One ChannelContext as a `channels` row. `credential_ref` is the
+        non-secret reference object — see modules/channels.CredentialRef."""
+        d = channel.to_dict()
+        return {
+            "channel_id": d["channel_id"],
+            "name": d["name"],
+            "niche": d["niche"],
+            "status": d["status"],
+            "agent_config": d["agent_config"],
+            "schedule_config": d["schedule_config"],
+            "credential_ref": d["credential_ref"],
+            "created_at": d["created_at"] or None,
+            "updated_at": d["updated_at"] or None,
+        }
+
     @staticmethod
     def _queue_row(entry) -> dict:
         """One CalendarEntry as a content_queue row."""
@@ -215,6 +323,7 @@ class SupabaseSync:
             "source": d.get("source") or None,
             "rationale": d.get("rationale") or None,
             "status": d.get("status") or "queued",
+            "channel_id": d.get("channel_id") or "default",
         }
 
     @staticmethod
@@ -236,6 +345,7 @@ class SupabaseSync:
             "history": history,
             "started_at": stamps[0] if stamps else None,
             "updated_at": stamps[-1] if stamps else None,
+            "channel_id": d.get("channel_id") or "default",
         }
 
     @staticmethod
@@ -246,6 +356,8 @@ class SupabaseSync:
 
     @staticmethod
     def _event_row(row: dict) -> dict:
+        # channel_id rides along untouched: null stays null, and null means
+        # "global" in this table (see supabase/migrations/0001_multi_channel.sql).
         out = {k: v for k, v in row.items() if k != "id"}
         out["event_key"] = f"{row.get('ts', '')}|{row.get('event', '')}|{row.get('id', '')}"
         return out

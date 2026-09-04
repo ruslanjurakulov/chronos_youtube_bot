@@ -4,6 +4,8 @@ import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, EmptyState, StatusPill } from "@/components/ui";
 import { relativeTime, statusTone, timeOfDay } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
+import { getChannelSelection } from "@/lib/channels-server";
+import { scopeQuery } from "@/lib/channels";
 import { fmt, type Dictionary } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 import { StageStrip, StageLegend, type StageState, type StageView } from "@/components/pipeline/StageStrip";
@@ -133,6 +135,9 @@ const OVERALL_TONE: Record<Overall, "run" | "ok" | "fail" | "idle"> = {
 export default async function PipelinePage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope channel-owned queries to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const overallLabel: Record<Overall, string> = {
     RUNNING: t.status.running,
@@ -146,9 +151,10 @@ export default async function PipelinePage() {
   let dbError = false;
 
   if (supabase) {
-    const ev = await supabase
-      .from("system_events")
-      .select("*")
+    const ev = await scopeQuery(
+        supabase.from("system_events").select("*"),
+        selection, { nullIsGlobal: true },
+      )
       .order("ts", { ascending: false })
       .limit(500);
     if (ev.error) dbError = true;

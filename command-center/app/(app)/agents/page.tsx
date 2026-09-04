@@ -5,6 +5,8 @@ import { Panel, EmptyState, StatCard } from "@/components/ui";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { statusTone } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
+import { getChannelSelection } from "@/lib/channels-server";
+import { scopeQuery } from "@/lib/channels";
 import type { SystemEventRow } from "@/lib/types";
 import { AgentCard, type AgentSummary } from "@/components/agents/AgentCard";
 
@@ -59,15 +61,19 @@ function deriveAgents(events: SystemEventRow[]): AgentSummary[] {
 export default async function AgentsPage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope channel-owned queries to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
   let dbError = false;
 
   if (supabase) {
-    const ev = await supabase
-      .from("system_events")
-      .select("*")
+    const ev = await scopeQuery(
+        supabase.from("system_events").select("*"),
+        selection, { nullIsGlobal: true },
+      )
       .order("ts", { ascending: false })
       .limit(500);
     if (ev.error) dbError = true;

@@ -86,3 +86,28 @@ publishing behaviour is unchanged.
 
 **Re-run `supabase/schema.sql` in the Supabase SQL editor** after updating, or
 the Command Center's Autonomy page will report that the tables were not found.
+
+
+## Multi-channel tables (Phase 5)
+
+`supabase/migrations/0001_multi_channel.sql` adds three tables and a
+`channel_id` column to the existing ones:
+
+- `channels` — channel configuration, written by the Command Center's Channels
+  page (the one table with an authenticated insert/update policy — no delete,
+  and no data table gains one).
+- `channel_credentials` — credential **health only**: connected / not_connected
+  / expired / error, plus expiry and last-verified. There is no column that can
+  hold a token, and there never will be.
+- `channel_topic_performance` — learned scores keyed on `(channel_id, topic)`,
+  so two channels never collide on the same topic string.
+
+The migration is additive: no drop, no rename, no delete. Existing rows backfill
+to the `default` channel in the same `ADD COLUMN ... NOT NULL DEFAULT 'default'`
+statement. A fresh project needs only `supabase/schema.sql`, which inlines the
+same statements. See `docs/MULTI_CHANNEL.md` for what is scoped per channel and
+why `topic_performance` was deliberately left untouched.
+
+**Apply the migration in the Supabase SQL editor**, or the Command Center's
+Channels page will report that the tables were not found and the app will keep
+running as the single default channel.

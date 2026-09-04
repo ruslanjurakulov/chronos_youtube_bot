@@ -5,6 +5,8 @@ import { Panel, EmptyState, StatCard } from "@/components/ui";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { relativeTime } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
+import { fetchTopicScores, getChannelSelection } from "@/lib/channels-server";
+import { scopeQuery } from "@/lib/channels";
 import { fmt } from "@/lib/i18n";
 import type { FeedbackSignalRow, TopicPerformanceRow } from "@/lib/types";
 
@@ -20,6 +22,9 @@ function signalTone(signal: string): string {
 export default async function FeedbackPage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope every channel-owned query to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const LOOP = [
     t.feedback.loop1,
@@ -37,11 +42,11 @@ export default async function FeedbackPage() {
 
   if (supabase) {
     const [sg, tp] = await Promise.all([
-      supabase.from("feedback_signals").select("*").order("analyzed_date", { ascending: false }).limit(200),
-      supabase.from("topic_performance").select("*").order("score", { ascending: false }).limit(50),
+      scopeQuery(supabase.from("feedback_signals").select("*"), selection).order("analyzed_date", { ascending: false }).limit(200),
+      fetchTopicScores(supabase, selection, 50),
     ]);
     signals = (sg.data as FeedbackSignalRow[]) ?? [];
-    topics = (tp.data as TopicPerformanceRow[]) ?? [];
+    topics = tp;
   }
 
   const lastRun = signals[0]?.analyzed_date ?? null;

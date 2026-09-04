@@ -25,12 +25,14 @@ function ev(over: Partial<SystemEventRow> & { event: string; ts: string }): Syst
     status: over.status ?? null,
     duration_ms: over.duration_ms ?? null,
     metadata: over.metadata ?? null,
+    channel_id: over.channel_id ?? null,
   };
 }
 
 function video(over: Partial<VideoRow> & { video_id: string }): VideoRow {
   return {
     video_id: over.video_id,
+    channel_id: over.channel_id ?? "default",
     topic: over.topic ?? null,
     title: over.title ?? null,
     slug: null,

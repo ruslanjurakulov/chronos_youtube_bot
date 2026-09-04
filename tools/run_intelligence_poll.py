@@ -53,6 +53,7 @@ from modules.comment_fetcher import CommentFetcher
 from modules.comment_intelligence import classify_comments
 from modules import event_log as events
 from modules.content_planner import ContentPlanner
+from modules.channels import ChannelRegistry
 from modules.feedback_engine import FeedbackEngine
 from modules.intelligence_poller import IntelligencePoller
 from modules.state_store import StateStore
@@ -170,24 +171,86 @@ def enqueue_topic_suggestions(limit: int = 5) -> int:
     return enqueued
 
 
+def poll_additional_channel_metrics() -> dict:
+    """Poll own-channel analytics for every ACTIVE channel except the default.
+
+    The default channel is already covered by `IntelligencePoller.run_all()`
+    above, which also does the competitor and trending passes — those read
+    public data with an API key and are not per-channel, so they run once.
+
+    Each extra channel gets its own poller, reading with its own OAuth token and
+    seeing only its own videos. Each is wrapped individually: a channel whose
+    token is missing or expired must not stop the next channel from being
+    polled, and must not fail the job.
+    """
+    try:
+        channels = [c for c in ChannelRegistry().active() if not c.is_default]
+    except Exception as e:
+        logger.warning("Channel registry unavailable (%s: %s) — polled the default channel only",
+                       type(e).__name__, e)
+        return {}
+    if not channels:
+        return {}
+
+    written: dict = {}
+    for channel in channels:
+        try:
+            poller = IntelligencePoller(channel=channel)
+            written[str(channel.channel_id)] = poller.poll_own_channel_metrics()
+        except Exception as e:
+            logger.warning("[channel: %s] analytics poll failed (%s: %s) — other channels unaffected",
+                           channel.channel_id, type(e).__name__, e)
+            events.emit(events.AGENT_FAILED, agent="intelligence_poller", status=events.STATUS_FAILED,
+                        channel_id=str(channel.channel_id),
+                        metadata={"operation": "analytics", "error": f"{type(e).__name__}: {e}"})
+    if written:
+        logger.info("Per-channel analytics snapshots written: %s", written)
+    return written
+
+
 def run_feedback_analysis() -> dict:
     """Run the feedback loop over the metrics this poll (and prior polls) have
     persisted: derive learning signals + per-topic scores that Topic Manager
     reads on the next video run. Runs last, after own-channel metrics have been
-    freshly polled above. Never raises (FeedbackEngine is defensive)."""
+    freshly polled above. Never raises (FeedbackEngine is defensive).
+
+    Runs once PER CHANNEL, each with its own engine scoped to its own videos —
+    a Finance video's numbers must never move a History topic score. One
+    channel's failure is logged and the next channel still runs. The returned
+    summary is the total across channels, plus a per-channel breakdown.
+    """
     try:
-        summary = FeedbackEngine().run()
+        channels = ChannelRegistry().list()
     except Exception as e:
-        logger.warning("Feedback loop failed (%s: %s) — no scores updated this run", type(e).__name__, e)
-        events.emit(events.AGENT_FAILED, agent="feedback_engine", status=events.STATUS_FAILED,
-                    metadata={"error": f"{type(e).__name__}: {e}"})
-        return {"videos_analyzed": 0, "signals_recorded": 0, "topics_scored": 0}
-    logger.info("Feedback loop summary: %s", summary)
-    events.emit(events.FEEDBACK_GENERATED, agent="feedback_engine", status=events.STATUS_COMPLETED, metadata=summary)
-    if summary.get("topics_scored"):
-        events.emit(events.FEEDBACK_APPLIED, agent="feedback_engine", status=events.STATUS_COMPLETED,
-                    metadata={"topics_scored": summary["topics_scored"]})
-    return summary
+        logger.warning("Channel registry unavailable (%s: %s) — running feedback for the default channel only",
+                       type(e).__name__, e)
+        channels = []
+
+    channel_ids = [str(c.channel_id) for c in channels] or [None]
+    totals = {"videos_analyzed": 0, "signals_recorded": 0, "topics_scored": 0}
+    per_channel: dict = {}
+
+    for channel_id in channel_ids:
+        try:
+            summary = FeedbackEngine(channel_id=channel_id).run()
+        except Exception as e:
+            logger.warning("Feedback loop failed for channel %s (%s: %s) — no scores updated for it",
+                           channel_id, type(e).__name__, e)
+            events.emit(events.AGENT_FAILED, agent="feedback_engine", status=events.STATUS_FAILED,
+                        channel_id=channel_id,
+                        metadata={"operation": "feedback", "error": f"{type(e).__name__}: {e}"})
+            continue
+        per_channel[channel_id or "default"] = summary
+        for key in totals:
+            totals[key] += summary.get(key, 0)
+        events.emit(events.FEEDBACK_GENERATED, agent="feedback_engine", status=events.STATUS_COMPLETED,
+                    channel_id=channel_id, metadata=summary)
+        if summary.get("topics_scored"):
+            events.emit(events.FEEDBACK_APPLIED, agent="feedback_engine", status=events.STATUS_COMPLETED,
+                        channel_id=channel_id, metadata={"topics_scored": summary["topics_scored"]})
+
+    logger.info("Feedback loop summary: %s (per channel: %s)", totals, per_channel)
+    return totals
 
 
 def mirror_to_supabase() -> dict:
@@ -213,6 +276,10 @@ def mirror_to_supabase() -> dict:
         counts.update(sync.mirror_planner_and_runs())
     except Exception as e:
         logger.warning("Supabase operational mirror failed (%s: %s)", type(e).__name__, e)
+    try:
+        counts.update(sync.mirror_channels())
+    except Exception as e:
+        logger.warning("Supabase channel mirror failed (%s: %s)", type(e).__name__, e)
     return counts
 
 
@@ -230,6 +297,7 @@ def main():
     try:
         summary = IntelligencePoller().run_all(competitor_channel_ids=_competitor_channel_ids())
         logger.info("Analytics/competitor/trend summary: %s", summary)
+        poll_additional_channel_metrics()
     except Exception as e:
         # IntelligencePoller() eagerly authenticates AnalyticsClient at
         # construction time — an auth failure there must not take down the

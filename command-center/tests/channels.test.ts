@@ -1,0 +1,295 @@
+import { describe, expect, it } from "vitest";
+import {
+  ALL_CHANNELS,
+  channelHealth,
+  channelStats,
+  inSelection,
+  isScoped,
+  isValidChannelId,
+  resolveSelection,
+  scopeQuery,
+  slugifyChannelId,
+} from "@/lib/channels";
+import type {
+  ChannelCredentialRow,
+  ChannelRow,
+  MetricsSnapshotRow,
+  SystemEventRow,
+  VideoRow,
+} from "@/lib/types";
+
+function channel(over: Partial<ChannelRow> & { channel_id: string }): ChannelRow {
+  return {
+    channel_id: over.channel_id,
+    name: over.name ?? over.channel_id,
+    niche: over.niche ?? "",
+    status: over.status ?? "ACTIVE",
+    agent_config: over.agent_config ?? null,
+    schedule_config: over.schedule_config ?? null,
+    credential_ref: over.credential_ref ?? null,
+    created_at: null,
+    updated_at: null,
+  };
+}
+
+let seq = 0;
+function ev(over: Partial<SystemEventRow> & { event: string; ts: string }): SystemEventRow {
+  seq += 1;
+  return {
+    event_key: over.event_key ?? `k${seq}`,
+    event: over.event,
+    ts: over.ts,
+    video_id: over.video_id ?? null,
+    job_id: null,
+    agent: over.agent ?? null,
+    status: over.status ?? null,
+    duration_ms: null,
+    metadata: null,
+    channel_id: over.channel_id ?? null,
+  };
+}
+
+function video(over: Partial<VideoRow> & { video_id: string; channel_id: string }): VideoRow {
+  return {
+    video_id: over.video_id,
+    channel_id: over.channel_id,
+    topic: over.topic ?? null,
+    title: null,
+    slug: null,
+    published_at: over.published_at ?? null,
+    privacy: null,
+    category_id: null,
+    local_path: null,
+  };
+}
+
+function snap(video_id: string, views: number): MetricsSnapshotRow {
+  return {
+    video_id,
+    snapshot_date: "2026-09-01",
+    views,
+    likes: null,
+    comment_count: null,
+    watch_time_minutes: null,
+    average_view_duration_seconds: null,
+  };
+}
+
+function credential(over: Partial<ChannelCredentialRow> & { channel_id: string }): ChannelCredentialRow {
+  return {
+    channel_id: over.channel_id,
+    provider: over.provider ?? "youtube",
+    status: over.status ?? "connected",
+    youtube_channel_id: null,
+    expires_at: null,
+    last_verified_at: null,
+    detail: over.detail ?? null,
+    synced_at: null,
+  };
+}
+
+// -- selection -------------------------------------------------------------
+
+describe("resolveSelection", () => {
+  const channels = [channel({ channel_id: "default" }), channel({ channel_id: "finance" })];
+
+  it("defaults to all channels with no cookie", () => {
+    expect(resolveSelection(undefined, channels)).toBe(ALL_CHANNELS);
+  });
+
+  it("keeps a selection that names a real channel", () => {
+    expect(resolveSelection("finance", channels)).toBe("finance");
+  });
+
+  it("falls back to all channels when the selected channel no longer exists", () => {
+    // Showing an empty app with no explanation would be worse than widening.
+    expect(resolveSelection("deleted-channel", channels)).toBe(ALL_CHANNELS);
+  });
+
+  it("knows when the view is scoped", () => {
+    expect(isScoped(ALL_CHANNELS)).toBe(false);
+    expect(isScoped("finance")).toBe(true);
+  });
+});
+
+// -- query scoping ---------------------------------------------------------
+
+describe("scopeQuery", () => {
+  function fakeQuery() {
+    const calls: string[] = [];
+    const q = {
+      calls,
+      eq(column: string, value: string) {
+        calls.push(`eq:${column}=${value}`);
+        return q;
+      },
+      or(filter: string) {
+        calls.push(`or:${filter}`);
+        return q;
+      },
+    };
+    return q;
+  }
+
+  it("does not filter in the all-channels view", () => {
+    const q = fakeQuery();
+    expect(scopeQuery(q, ALL_CHANNELS)).toBe(q);
+    expect(q.calls).toEqual([]);
+  });
+
+  it("filters to one channel", () => {
+    const q = fakeQuery();
+    scopeQuery(q, "finance");
+    expect(q.calls).toEqual(["eq:channel_id=finance"]);
+  });
+
+  it("keeps global rows when null means global", () => {
+    const q = fakeQuery();
+    scopeQuery(q, "finance", { nullIsGlobal: true });
+    expect(q.calls).toEqual(["or:channel_id.eq.finance,channel_id.is.null"]);
+  });
+
+  it("honours a different column name", () => {
+    // competitor_snapshots.channel_id is the competitor's channel; ours is
+    // chronos_channel_id.
+    const q = fakeQuery();
+    scopeQuery(q, "finance", { column: "chronos_channel_id" });
+    expect(q.calls).toEqual(["eq:chronos_channel_id=finance"]);
+  });
+});
+
+describe("inSelection", () => {
+  it("admits everything in the all-channels view", () => {
+    expect(inSelection("finance", ALL_CHANNELS)).toBe(true);
+    expect(inSelection(null, ALL_CHANNELS)).toBe(true);
+  });
+
+  it("rejects another channel's row while scoped", () => {
+    expect(inSelection("history", "finance")).toBe(false);
+  });
+
+  it("treats null as global only when asked", () => {
+    expect(inSelection(null, "finance")).toBe(false);
+    expect(inSelection(null, "finance", { nullIsGlobal: true })).toBe(true);
+  });
+});
+
+// -- health ----------------------------------------------------------------
+
+describe("channelHealth", () => {
+  const now = Date.parse("2026-09-04T12:00:00Z");
+  const recent = "2026-09-04T09:00:00Z";
+  const old = "2026-08-20T09:00:00Z";
+
+  it("reports an expired token as a failure needing action", () => {
+    const h = channelHealth(
+      channel({ channel_id: "finance" }),
+      [ev({ event: "video.published", ts: recent, channel_id: "finance" })],
+      credential({ channel_id: "finance", status: "expired", detail: "reconnect" }),
+      now,
+    );
+    expect(h.tone).toBe("fail");
+    expect(h.actionRequired).toBe(true);
+    expect(h.subsystems.find((s) => s.key === "youtube")?.detail).toBe("reconnect");
+  });
+
+  it("does not fault a paused channel for being quiet", () => {
+    // A paused channel is idle by choice; calling that unhealthy would train
+    // the operator to ignore the indicator.
+    const h = channelHealth(channel({ channel_id: "finance", status: "PAUSED" }), [], undefined, now);
+    expect(h.subsystems.find((s) => s.key === "scheduler")?.tone).toBe("idle");
+    expect(h.actionRequired).toBe(false);
+  });
+
+  it("warns when an active channel has produced nothing in 48h", () => {
+    const h = channelHealth(
+      channel({ channel_id: "finance" }),
+      [ev({ event: "video.published", ts: old, channel_id: "finance" })],
+      undefined,
+      now,
+    );
+    expect(h.subsystems.find((s) => s.key === "scheduler")?.tone).toBe("warn");
+  });
+
+  it("ignores another channel's events entirely", () => {
+    // The isolation that matters: History's failures must not colour Finance.
+    const h = channelHealth(
+      channel({ channel_id: "finance" }),
+      [
+        ev({ event: "agent.failed", ts: recent, channel_id: "history", agent: "compositor", status: "failed" }),
+        ev({ event: "render.completed", ts: recent, channel_id: "finance", agent: "compositor", status: "completed" }),
+      ],
+      credential({ channel_id: "finance" }),
+      now,
+    );
+    expect(h.subsystems.find((s) => s.key === "generator")?.tone).toBe("ok");
+    expect(h.tone).not.toBe("fail");
+  });
+
+  it("stays idle rather than green with no evidence", () => {
+    const h = channelHealth(channel({ channel_id: "finance", status: "PAUSED" }), [], undefined, now);
+    expect(h.tone).toBe("idle");
+  });
+});
+
+// -- comparison ------------------------------------------------------------
+
+describe("channelStats", () => {
+  const channels = [channel({ channel_id: "a", name: "A" }), channel({ channel_id: "b", name: "B" })];
+
+  it("counts only each channel's own videos", () => {
+    const stats = channelStats(
+      channels,
+      [
+        video({ video_id: "v1", channel_id: "a", published_at: "2026-09-01T00:00:00Z" }),
+        video({ video_id: "v2", channel_id: "b", published_at: "2026-09-02T00:00:00Z" }),
+      ],
+      [],
+    );
+    expect(stats.map((s) => s.videos)).toEqual([1, 1]);
+  });
+
+  it("reports views as unknown, not zero, when nothing has been polled", () => {
+    // A channel with unpolled videos has unknown views; rendering 0 would make
+    // a working channel look dead.
+    const stats = channelStats(channels, [video({ video_id: "v1", channel_id: "a" })], []);
+    expect(stats[0].views).toBeNull();
+    expect(stats[0].avgViews).toBeNull();
+  });
+
+  it("sums only measured videos", () => {
+    const stats = channelStats(
+      channels,
+      [video({ video_id: "v1", channel_id: "a" }), video({ video_id: "v2", channel_id: "a" })],
+      [snap("v1", 100)],
+    );
+    expect(stats[0].views).toBe(100);
+    expect(stats[0].avgViews).toBe(100); // averaged over measured videos only
+  });
+
+  it("leaves cadence unknown below two videos", () => {
+    const stats = channelStats(channels, [video({ video_id: "v1", channel_id: "a", published_at: "2026-09-01T00:00:00Z" })], []);
+    expect(stats[0].daysPerVideo).toBeNull();
+  });
+});
+
+// -- ids -------------------------------------------------------------------
+
+describe("channel ids", () => {
+  it("accepts the shape the bot accepts", () => {
+    expect(isValidChannelId("extinct-world")).toBe(true);
+    expect(isValidChannelId("default")).toBe(true);
+  });
+
+  it("rejects ids the bot would reject", () => {
+    expect(isValidChannelId("-leading")).toBe(false);
+    expect(isValidChannelId("Upper")).toBe(false);
+    expect(isValidChannelId("a")).toBe(false);
+    expect(isValidChannelId("has space")).toBe(false);
+  });
+
+  it("slugifies a display name into a candidate id", () => {
+    expect(slugifyChannelId("Extinct World")).toBe("extinct-world");
+    expect(slugifyChannelId("  Chronos: Finance!  ")).toBe("chronos-finance");
+  });
+});

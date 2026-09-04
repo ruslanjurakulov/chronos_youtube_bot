@@ -289,18 +289,29 @@ def _format_research_notes(research_brief: "ResearchBrief | None") -> str:
 
 
 class ScriptEngine:
-    def __init__(self):
-        self.client = make_client()
-        self.performance_analyzer = self._safe_make_performance_analyzer()
+    """Writes one script.
 
-    def _safe_make_performance_analyzer(self) -> "PerformanceAnalyzer | None":
+    An optional ``channel`` supplies that channel's language, target duration
+    and strategy text. Without one, every value comes from ``config.py`` exactly
+    as before, so a single-channel deployment generates identical prompts.
+    """
+
+    def __init__(self, channel=None):
+        self.channel = channel
+        self.client = make_client()
+        self.performance_analyzer = self._safe_make_performance_analyzer(channel)
+
+    def _safe_make_performance_analyzer(self, channel=None) -> "PerformanceAnalyzer | None":
         """PerformanceAnalyzer's own methods already degrade to "" on any
         internal failure, but constructing it (which opens a StateStore) is
         not covered by that guarantee — a failure here must never stop a
         script from being written.
         """
         try:
-            return PerformanceAnalyzer()
+            # A channel's writer sees only that channel's own past performance:
+            # Finance's numbers must not shape a History script.
+            channel_id = str(channel.channel_id) if channel is not None else None
+            return PerformanceAnalyzer(channel_id=channel_id)
         except Exception as e:
             logger.warning(
                 "Failed to construct PerformanceAnalyzer (%s: %s) — writing the "
@@ -350,7 +361,7 @@ class ScriptEngine:
         return response.text
 
     def generate(self, topic: str, research_brief: "ResearchBrief | None" = None) -> Script:
-        prompt = self._build_prompt(topic, research_brief)
+        prompt = self._build_prompt(topic, research_brief, channel=self.channel)
         performance_context = self._performance_context()
         if performance_context:
             prompt += f"\n\n{performance_context}"
@@ -360,11 +371,44 @@ class ScriptEngine:
         return self._parse(topic, raw)
 
     @staticmethod
-    def _build_prompt(topic: str, research_brief: "ResearchBrief | None" = None) -> str:
+    def _build_prompt(
+        topic: str, research_brief: "ResearchBrief | None" = None, channel=None
+    ) -> str:
+        """Assemble the user-side prompt.
+
+        A channel contributes its language, duration and strategy text. The
+        channel's own instructions are APPENDED to the shared retention rules in
+        SCRIPT_SYSTEM_PROMPT rather than replacing them — hook, open loops and
+        cue structure are what makes a Chronos video a Chronos video, on every
+        channel. Its visual style is included because the section `keywords`
+        this prompt asks for are what the stock-footage search runs on, so the
+        style has to reach the writer to reach the screen.
+        """
+        agent = channel.agent if channel is not None else None
+        language = agent.language if agent else SCRIPT_LANGUAGE
+        duration = agent.target_duration_seconds if agent else VIDEO_DURATION_TARGET
+
         prompt = (
             f"Topic: {topic}\n"
-            f"Language: {SCRIPT_LANGUAGE}\n"
-            f"Target duration: {VIDEO_DURATION_TARGET} seconds\n\n"
+            f"Language: {language}\n"
+            f"Target duration: {duration} seconds\n\n"
+        )
+        if channel is not None:
+            prompt += f"Channel: {channel.name}\n"
+            if channel.niche:
+                prompt += f"Channel niche: {channel.niche}\n"
+            if agent.system_prompt:
+                prompt += f"\nChannel content strategy:\n{agent.system_prompt}\n"
+            if agent.niche_rules:
+                prompt += f"\nChannel rules (follow these):\n{agent.niche_rules}\n"
+            if agent.visual_style_prompt:
+                prompt += (
+                    "\nChannel visual style — every section's `keywords` must describe "
+                    f"footage in this style:\n{agent.visual_style_prompt}\n"
+                )
+            prompt += "\n"
+
+        prompt += (
             "Write the full viral YouTube script JSON now. "
             "Include at least 6 sections, 2 open loops, and multiple [PAUSE], [SFX], [MUSIC] cues."
         )

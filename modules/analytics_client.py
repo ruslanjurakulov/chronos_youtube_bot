@@ -106,12 +106,26 @@ class AnalyticsClient:
     parallel module PRs have landed.
     """
 
-    def __init__(self):
+    def __init__(self, channel=None):
+        """`channel` binds this client to one channel's OAuth token, so a
+        channel only ever reads its own analytics. None keeps the legacy
+        single-channel token from config."""
+        self.channel = channel
+        self.token_file = self._resolve_token_file(channel)
         self.service = self._auth()
+
+    @staticmethod
+    def _resolve_token_file(channel) -> Path:
+        if channel is None:
+            return Path(YOUTUBE_TOKEN_FILE)
+        from modules.channel_credentials import materialize_token, token_path
+
+        materialize_token(channel)
+        return token_path(channel)
 
     def _auth(self):
         creds = None
-        token_file = Path(YOUTUBE_TOKEN_FILE)
+        token_file = Path(self.token_file)
 
         if token_file.exists():
             creds = Credentials.from_authorized_user_file(str(token_file), YOUTUBE_SCOPES)

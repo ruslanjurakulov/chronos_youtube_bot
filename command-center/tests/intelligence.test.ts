@@ -40,6 +40,7 @@ function ev(over: Partial<SystemEventRow> & { event: string; ts: string }): Syst
     status: over.status ?? null,
     duration_ms: over.duration_ms ?? null,
     metadata: over.metadata ?? null,
+    channel_id: over.channel_id ?? null,
   };
 }
 
@@ -57,6 +58,7 @@ function perf(over: Partial<TopicPerformanceRow> & { topic: string; score: numbe
 function sig(over: Partial<FeedbackSignalRow> & { signal: string }): FeedbackSignalRow {
   return {
     video_id: over.video_id ?? "v1",
+    channel_id: over.channel_id ?? "default",
     topic: over.topic ?? "Ancient Mysteries",
     signal: over.signal,
     metric_value: over.metric_value ?? 10,
@@ -320,6 +322,7 @@ describe("deriveTopicIntel", () => {
     const videos: VideoRow[] = [
       {
         video_id: "v1",
+        channel_id: "default",
         topic: "T",
         title: null,
         slug: null,
@@ -341,6 +344,7 @@ describe("deriveOpportunities", () => {
   function demand(over: Partial<DemandSignalRow> & { id: number; mention_count: number }): DemandSignalRow {
     return {
       id: over.id,
+      channel_id: over.channel_id ?? "default",
       topic_phrase: over.topic_phrase ?? "genghis khan",
       mention_count: over.mention_count,
       example_comment_ids: null,
