@@ -62,7 +62,14 @@ class IntelligencePoller:
         analytics_client=None,
         competitor_monitor=None,
         trend_detector=None,
+        channel=None,
     ):
+        # `channel` scopes the own-channel analytics pass: which videos are
+        # polled, whose OAuth token reads them, and which channel the resulting
+        # competitor snapshots are attributed to. None = the pre-multi-channel
+        # behaviour (every video, the config token).
+        self.channel = channel
+        self.channel_id = str(channel.channel_id) if channel is not None else None
         if state_store is not None:
             self.state_store = state_store
         else:
@@ -75,7 +82,7 @@ class IntelligencePoller:
         else:
             from modules.analytics_client import AnalyticsClient
 
-            self.analytics_client = AnalyticsClient()
+            self.analytics_client = AnalyticsClient(channel=channel)
 
         if competitor_monitor is not None:
             self.competitor_monitor = competitor_monitor
@@ -118,7 +125,11 @@ class IntelligencePoller:
             since = (datetime.now().date() - timedelta(days=days)).isoformat()
 
         try:
-            videos = self.state_store.list_videos(since=since) if since else self.state_store.list_videos()
+            videos = (
+                self.state_store.list_videos(since=since, channel_id=self.channel_id)
+                if since
+                else self.state_store.list_videos(channel_id=self.channel_id)
+            )
         except Exception:
             logger.exception("Failed to list videos from state store; polling zero own-channel metrics")
             return 0
@@ -180,6 +191,9 @@ class IntelligencePoller:
                         comment_count=snapshot.comment_count,
                         published_at=_isoformat(snapshot.published_at),
                         view_velocity=velocity,
+                        # Which of OUR channels is watching them (channel_id
+                        # above is the competitor's own YouTube channel).
+                        chronos_channel_id=self.channel_id or "default",
                     )
                     written += 1
                 except Exception:

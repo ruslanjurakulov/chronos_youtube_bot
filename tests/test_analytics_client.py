@@ -208,6 +208,11 @@ class TestServiceConstruction(unittest.TestCase):
             mock_build.return_value = "FAKE_SERVICE"
 
             client = AnalyticsClient.__new__(AnalyticsClient)
+            # __init__ is bypassed here, so set what _auth reads: the token file
+            # this client is bound to (AnalyticsClient(channel=...) resolves it
+            # per channel; the value is irrelevant to what this test asserts,
+            # since Path is patched above).
+            client.token_file = "youtube_token.json"
             service = client._auth()
 
             mock_build.assert_called_once_with(

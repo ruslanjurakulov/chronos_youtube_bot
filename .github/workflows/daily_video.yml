@@ -2,14 +2,25 @@ name: Daily YouTube Video
 
 on:
   schedule:
-    # Every day at 15:00 UTC (18:00 Tashkent / UTC+3)
-    - cron: "0 15 * * *"
+    # Hourly. The `resolve` job below asks the channel registry which channels
+    # are due at THIS UTC hour and emits a matrix; every other hour costs one
+    # short job that resolves to an empty matrix and stops. GitHub cron cannot
+    # read a database, so this is how a per-channel `publish_hour_utc` becomes
+    # a real schedule without hardcoding anyone's hour into this file.
+    #
+    # With only the default channel configured (publish_hour_utc 15) exactly
+    # one video job runs per day, at 15:00 UTC — unchanged from before.
+    - cron: "0 * * * *"
   workflow_dispatch:
     inputs:
-      niche:
-        description: "Video niche (e.g. history mysteries)"
+      channel:
+        description: "Channel id (empty = every ACTIVE channel)"
         required: false
-        default: "history mysteries"
+        default: ""
+      niche:
+        description: "Video niche (empty = the channel's own niche)"
+        required: false
+        default: ""
       topic:
         description: "Override topic (leave empty for AI pick)"
         required: false
@@ -22,9 +33,69 @@ on:
         options: [private, unlisted, public]
 
 jobs:
+  # ---------------------------------------------------------------------------
+  # Which channels run this hour. Deliberately cheap: it installs two pure-Python
+  # packages rather than requirements.txt (which pulls torch), so the 23 hours a
+  # day that resolve to nothing cost seconds.
+  # ---------------------------------------------------------------------------
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.pick.outputs.matrix }}
+      count: ${{ steps.pick.outputs.count }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install resolver dependencies
+        run: pip install requests python-dotenv
+
+      - name: Pick due channels
+        id: pick
+        env:
+          # Read-only use: the registry reads the `channels` table the Command
+          # Center writes. No publishing token is read here.
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          EVENT_NAME: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_CHANNEL:-}" ]; then
+            # An explicit manual run targets exactly that channel, whatever the hour.
+            MATRIX=$(python tools/list_channels.py --only "$INPUT_CHANNEL")
+          elif [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            # Manual run with no channel: every ACTIVE channel, ignoring the hour.
+            MATRIX=$(python tools/list_channels.py)
+          else
+            MATRIX=$(python tools/list_channels.py --due-hour "$(date -u +%-H)")
+          fi
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          COUNT=$(printf '%s' "$MATRIX" | python -c 'import json,sys; print(len(json.load(sys.stdin)["include"]))')
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "Due this run ($COUNT): $MATRIX"
+
+  # ---------------------------------------------------------------------------
+  # One job per due channel. fail-fast: false is the isolation guarantee — a
+  # credential failure or a render crash on one channel must not cancel another
+  # channel's video.
+  # ---------------------------------------------------------------------------
   make-video:
+    needs: resolve
+    if: needs.resolve.outputs.count > 0
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    name: make-video (${{ matrix.channel_id }})
+    strategy:
+      fail-fast: false
+      max-parallel: 1  # one ffmpeg render at a time on a 2-core runner
+      matrix: ${{ fromJson(needs.resolve.outputs.matrix) }}
 
     steps:
       - name: Checkout
@@ -50,7 +121,7 @@ jobs:
           key: chronos-history-${{ github.run_number }}
           restore-keys: chronos-history-
 
-      - name: Restore YouTube token
+      - name: Restore YouTube token (default channel)
         run: |
           if [ -n "${{ secrets.YOUTUBE_TOKEN_JSON }}" ]; then
             echo '${{ secrets.YOUTUBE_TOKEN_JSON }}' > youtube_token.json
@@ -72,21 +143,37 @@ jobs:
           YOUTUBE_PRIVACY: ${{ github.event.inputs.privacy || 'private' }}
           TTS_PROVIDER: edge
           SCRIPT_LANGUAGE: English
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # --- Per-channel publishing tokens -------------------------------
+          # GitHub Actions secrets cannot be enumerated at runtime, so each
+          # channel's token secret is listed here explicitly — one line per
+          # channel, added when the channel is created (see the Add Channel
+          # flow in docs/MULTI_CHANNEL.md). An unset secret is an empty string,
+          # which modules/channel_credentials.py reports as "not connected"; it
+          # never falls back to another channel's token.
+          #
+          # Naming: CHRONOS_YT_TOKEN_<REF>, where <REF> is the channel's
+          # credential ref upper-cased. Example, for ref "finance":
+          # CHRONOS_YT_TOKEN_FINANCE: ${{ secrets.CHRONOS_YT_TOKEN_FINANCE }}
         run: |
-          TOPIC_ARG=""
+          ARGS=""
           if [ -n "${{ github.event.inputs.topic }}" ]; then
-            TOPIC_ARG="--topic '${{ github.event.inputs.topic }}'"
+            ARGS="$ARGS --topic '${{ github.event.inputs.topic }}'"
+          fi
+          if [ -n "${{ github.event.inputs.niche }}" ]; then
+            ARGS="$ARGS --niche '${{ github.event.inputs.niche }}'"
           fi
           python main.py \
-            --niche "${{ github.event.inputs.niche || 'history mysteries' }}" \
+            --channel "${{ matrix.channel_id }}" \
             --privacy "${{ github.event.inputs.privacy || 'private' }}" \
-            $TOPIC_ARG
+            $ARGS
 
       - name: Upload video artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: video-${{ github.run_number }}
+          name: video-${{ matrix.channel_id }}-${{ github.run_number }}
           path: |
             output/*/final_video.mp4
             output/*/thumbnails/*.jpg
@@ -98,4 +185,4 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: history
-          key: chronos-history-${{ github.run_number }}
+          key: chronos-history-${{ github.run_number }}-${{ matrix.channel_id }}

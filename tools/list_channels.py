@@ -72,7 +72,24 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="List channels due for a scheduled run")
     parser.add_argument("--due-hour", type=int, default=None, help="Only channels scheduled at this UTC hour")
     parser.add_argument("--all", action="store_true", help="Every channel, including PAUSED ones")
+    parser.add_argument("--only", default=None,
+                        help="Exactly this channel, whatever its schedule (an explicit manual run)")
     args = parser.parse_args()
+
+    if args.only:
+        # An operator naming a channel outranks its schedule — but not its
+        # existence: an unknown id fails loudly rather than resolving to
+        # whichever channel happens to be first.
+        try:
+            c = ChannelRegistry().get(args.only)
+        except (KeyError, ValueError) as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 2
+        print(json.dumps({"include": [
+            {"channel_id": str(c.channel_id), "name": c.name, "niche": c.niche,
+             "is_default": str(c.channel_id) == str(DEFAULT_CHANNEL_ID)}
+        ]}))
+        return 0
 
     if args.all:
         rows = [
