@@ -122,7 +122,53 @@ CREATE TABLE IF NOT EXISTS system_events (
 
 CREATE INDEX IF NOT EXISTS idx_events_ts ON system_events (ts);
 CREATE INDEX IF NOT EXISTS idx_events_video ON system_events (video_id);
+
+-- Channel-scoped topic scores (Phase 5). `topic_performance` above is keyed on
+-- `topic` alone and therefore structurally cannot hold two channels' verdicts
+-- on the same topic string. Rather than rebuild that table (a destructive
+-- migration, for a value that is recomputed from metrics anyway), channel-aware
+-- scores live here, keyed on (channel_id, topic). The old table stays exactly
+-- as it is and keeps being written for the default channel, so every existing
+-- reader — including the Command Center's single-channel views — is unaffected.
+CREATE TABLE IF NOT EXISTS channel_topic_performance (
+    channel_id        TEXT NOT NULL,
+    topic             TEXT NOT NULL,
+    score             REAL NOT NULL,
+    videos_analyzed   INTEGER NOT NULL,
+    avg_views_per_day REAL,
+    reason            TEXT,
+    updated_at        TEXT NOT NULL,
+    PRIMARY KEY (channel_id, topic)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ctp_channel_score
+    ON channel_topic_performance (channel_id, score DESC);
 """
+
+# Additive column migrations for databases created before Phase 5. Each entry is
+# (table, column, DDL) and is applied only when the column is missing, so this is
+# safe to run on every open and never touches existing data. SQLite backfills the
+# DEFAULT into existing rows as part of ADD COLUMN — that is the "existing
+# records belong to the default channel" backfill, done in one statement.
+#
+# `system_events.channel_id` is deliberately nullable with no default: null means
+# "global" there (a system heartbeat is not any one channel's doing), while a
+# channel's own work carries its id.
+_COLUMN_MIGRATIONS = (
+    ("videos", "channel_id", "TEXT NOT NULL DEFAULT 'default'"),
+    ("feedback_signals", "channel_id", "TEXT NOT NULL DEFAULT 'default'"),
+    # NOTE the name: competitor_snapshots.channel_id already exists and means
+    # the *competitor's* YouTube channel. The Chronos channel that is watching
+    # them needs its own column, hence the prefix.
+    ("competitor_snapshots", "chronos_channel_id", "TEXT NOT NULL DEFAULT 'default'"),
+    ("demand_signals", "channel_id", "TEXT NOT NULL DEFAULT 'default'"),
+    ("system_events", "channel_id", "TEXT"),
+)
+
+# Kept as a literal rather than imported from modules.channels so the storage
+# layer keeps no dependency on the channel model. The two must agree; a test
+# asserts they do.
+DEFAULT_CHANNEL_ID = "default"
 
 
 def _resolve_db_path() -> Path:
@@ -148,7 +194,29 @@ class StateStore:
         self.conn.execute("PRAGMA foreign_keys = ON")
         with self.conn:
             self.conn.executescript(_SCHEMA)
+        self._apply_column_migrations()
         logger.info("State store ready at %s", self.db_path)
+
+    def _apply_column_migrations(self):
+        """Add any missing Phase 5 `channel_id` columns. Additive only — no
+        drop, no rewrite, no data touched beyond SQLite's own DEFAULT backfill.
+        A failure here is logged and swallowed: an older database that cannot
+        take a new column must still serve the pipeline it already serves."""
+        for table, column, ddl in _COLUMN_MIGRATIONS:
+            try:
+                existing = {
+                    row["name"] for row in self.conn.execute(f"PRAGMA table_info({table})")
+                }
+                if not existing or column in existing:
+                    continue
+                with self.conn:
+                    self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
+                logger.debug("Added column %s.%s", table, column)
+            except Exception as e:
+                logger.warning(
+                    "Could not add %s.%s (%s: %s) — continuing without it",
+                    table, column, type(e).__name__, e,
+                )
 
     def __enter__(self):
         return self
@@ -171,14 +239,19 @@ class StateStore:
         privacy: str = "",
         category_id: str = "",
         local_path: str = "",
+        channel_id: str = DEFAULT_CHANNEL_ID,
     ):
-        """Insert a video row, or overwrite it if video_id already exists."""
+        """Insert a video row, or overwrite it if video_id already exists.
+
+        `channel_id` defaults to the default channel, so an existing caller that
+        does not know about channels records exactly what it recorded before.
+        """
         with self.conn:
             self.conn.execute(
                 """
                 INSERT INTO videos
-                    (video_id, topic, title, slug, published_at, privacy, category_id, local_path)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (video_id, topic, title, slug, published_at, privacy, category_id, local_path, channel_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(video_id) DO UPDATE SET
                     topic=excluded.topic,
                     title=excluded.title,
@@ -186,9 +259,10 @@ class StateStore:
                     published_at=excluded.published_at,
                     privacy=excluded.privacy,
                     category_id=excluded.category_id,
-                    local_path=excluded.local_path
+                    local_path=excluded.local_path,
+                    channel_id=excluded.channel_id
                 """,
-                (video_id, topic, title, slug, published_at, privacy, category_id, local_path),
+                (video_id, topic, title, slug, published_at, privacy, category_id, local_path, channel_id),
             )
         logger.info("Recorded video: %s (%s)", video_id, title or topic)
 
@@ -199,26 +273,27 @@ class StateStore:
         ).fetchone()
         return dict(row) if row else None
 
-    def list_videos(self, limit: int = 100, since: str | None = None) -> list[dict]:
+    def list_videos(
+        self, limit: int = 100, since: str | None = None, channel_id: str | None = None
+    ) -> list[dict]:
         """List videos, most recently published first.
 
-        `since` (ISO8601) restricts to videos published on or after that timestamp.
+        `since` (ISO8601) restricts to videos published on or after that
+        timestamp. `channel_id` restricts to one channel; None means every
+        channel, which is what a caller that predates multi-channel gets.
         """
+        clauses, params = [], []
         if since:
-            rows = self.conn.execute(
-                """
-                SELECT * FROM videos
-                WHERE published_at >= ?
-                ORDER BY published_at DESC
-                LIMIT ?
-                """,
-                (since, limit),
-            ).fetchall()
-        else:
-            rows = self.conn.execute(
-                "SELECT * FROM videos ORDER BY published_at DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            clauses.append("published_at >= ?")
+            params.append(since)
+        if channel_id is not None:
+            clauses.append("channel_id = ?")
+            params.append(channel_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM videos{where} ORDER BY published_at DESC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
         return [dict(row) for row in rows]
 
     # -- metrics -------------------------------------------------------------
@@ -302,22 +377,28 @@ class StateStore:
         comment_count: int = 0,
         published_at: str = "",
         view_velocity: float = 0.0,
+        chronos_channel_id: str = DEFAULT_CHANNEL_ID,
     ):
         """Insert or replace a competitor video's snapshot for a given poll date.
 
         One row per (video_id, polled_date) — a re-poll for the same date
         overwrites rather than accumulating duplicates, same pattern as
         record_metrics_snapshot.
+
+        Two channel ids meet here and they are not the same thing: `channel_id`
+        is the COMPETITOR's YouTube channel (it has always meant that), while
+        `chronos_channel_id` is which of OUR channels is monitoring them.
         """
         with self.conn:
             self.conn.execute(
                 """
                 INSERT INTO competitor_snapshots
                     (video_id, channel_id, title, view_count, like_count,
-                     comment_count, published_at, polled_date, view_velocity)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     comment_count, published_at, polled_date, view_velocity, chronos_channel_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(video_id, polled_date) DO UPDATE SET
                     channel_id=excluded.channel_id,
+                    chronos_channel_id=excluded.chronos_channel_id,
                     title=excluded.title,
                     view_count=excluded.view_count,
                     like_count=excluded.like_count,
@@ -326,7 +407,7 @@ class StateStore:
                     view_velocity=excluded.view_velocity
                 """,
                 (video_id, channel_id, title, view_count, like_count,
-                 comment_count, published_at, polled_date, view_velocity),
+                 comment_count, published_at, polled_date, view_velocity, chronos_channel_id),
             )
 
     def list_competitor_snapshots(
@@ -412,6 +493,7 @@ class StateStore:
         mention_count: int,
         polled_date: str,
         example_comment_ids: str = "",
+        channel_id: str = DEFAULT_CHANNEL_ID,
     ):
         """Append one audience-demand signal from a poll run.
 
@@ -424,10 +506,11 @@ class StateStore:
         with self.conn:
             self.conn.execute(
                 """
-                INSERT INTO demand_signals (topic_phrase, mention_count, example_comment_ids, polled_date)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO demand_signals
+                    (topic_phrase, mention_count, example_comment_ids, polled_date, channel_id)
+                VALUES (?, ?, ?, ?, ?)
                 """,
-                (topic_phrase, mention_count, example_comment_ids, polled_date),
+                (topic_phrase, mention_count, example_comment_ids, polled_date, channel_id),
             )
 
     def list_demand_signals(self, since: str | None = None, limit: int = 200) -> list[dict]:
@@ -456,6 +539,7 @@ class StateStore:
         metric_value: float | None = None,
         channel_baseline: float | None = None,
         detail: str = "",
+        channel_id: str = DEFAULT_CHANNEL_ID,
     ):
         """Record a discrete learning signal for a video on a given analysis date.
 
@@ -467,30 +551,37 @@ class StateStore:
             self.conn.execute(
                 """
                 INSERT INTO feedback_signals
-                    (video_id, topic, signal, metric_value, channel_baseline, detail, analyzed_date)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (video_id, topic, signal, metric_value, channel_baseline, detail,
+                     analyzed_date, channel_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(video_id, signal, analyzed_date) DO UPDATE SET
                     topic=excluded.topic,
                     metric_value=excluded.metric_value,
                     channel_baseline=excluded.channel_baseline,
-                    detail=excluded.detail
+                    detail=excluded.detail,
+                    channel_id=excluded.channel_id
                 """,
-                (video_id, topic, signal, metric_value, channel_baseline, detail, analyzed_date),
+                (video_id, topic, signal, metric_value, channel_baseline, detail,
+                 analyzed_date, channel_id),
             )
 
-    def list_feedback_signals(self, since: str | None = None, limit: int = 200) -> list[dict]:
-        """List feedback/learning signals, most recently analyzed first."""
+    def list_feedback_signals(
+        self, since: str | None = None, limit: int = 200, channel_id: str | None = None
+    ) -> list[dict]:
+        """List feedback/learning signals, most recently analyzed first.
+        `channel_id` restricts to one channel; None means every channel."""
+        clauses, params = [], []
         if since:
-            rows = self.conn.execute(
-                "SELECT * FROM feedback_signals WHERE analyzed_date >= ? "
-                "ORDER BY analyzed_date DESC, id DESC LIMIT ?",
-                (since, limit),
-            ).fetchall()
-        else:
-            rows = self.conn.execute(
-                "SELECT * FROM feedback_signals ORDER BY analyzed_date DESC, id DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            clauses.append("analyzed_date >= ?")
+            params.append(since)
+        if channel_id is not None:
+            clauses.append("channel_id = ?")
+            params.append(channel_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM feedback_signals{where} ORDER BY analyzed_date DESC, id DESC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
         return [dict(row) for row in rows]
 
     # -- topic performance -------------------------------------------------
@@ -541,6 +632,68 @@ class StateStore:
         ).fetchall()
         return [dict(row) for row in rows]
 
+    # -- channel-scoped topic performance ----------------------------------
+
+    def upsert_channel_topic_performance(
+        self,
+        channel_id: str,
+        topic: str,
+        score: float,
+        videos_analyzed: int,
+        updated_at: str,
+        avg_views_per_day: float | None = None,
+        reason: str = "",
+    ):
+        """Insert or update one channel's learned score for a topic.
+
+        Keyed on (channel_id, topic), so a topic that works for Finance and
+        flops for History holds two independent verdicts — the isolation the
+        single-key `topic_performance` table cannot express.
+        """
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO channel_topic_performance
+                    (channel_id, topic, score, videos_analyzed, avg_views_per_day, reason, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(channel_id, topic) DO UPDATE SET
+                    score=excluded.score,
+                    videos_analyzed=excluded.videos_analyzed,
+                    avg_views_per_day=excluded.avg_views_per_day,
+                    reason=excluded.reason,
+                    updated_at=excluded.updated_at
+                """,
+                (channel_id, topic, score, videos_analyzed, avg_views_per_day, reason, updated_at),
+            )
+
+    def get_channel_topic_performance(self, channel_id: str, topic: str) -> dict | None:
+        """One channel's learned row for one topic, or None."""
+        row = self.conn.execute(
+            "SELECT * FROM channel_topic_performance WHERE channel_id = ? AND topic = ?",
+            (channel_id, topic),
+        ).fetchone()
+        return dict(row) if row else None
+
+    def list_channel_topic_performance(
+        self, channel_id: str | None = None, limit: int = 200
+    ) -> list[dict]:
+        """Learned topic rows, highest score first. `channel_id` restricts to
+        one channel; None returns every channel's rows (each still carrying its
+        own channel_id, so a caller can group them without them being mixed)."""
+        if channel_id is not None:
+            rows = self.conn.execute(
+                "SELECT * FROM channel_topic_performance WHERE channel_id = ? "
+                "ORDER BY score DESC, videos_analyzed DESC LIMIT ?",
+                (channel_id, limit),
+            ).fetchall()
+        else:
+            rows = self.conn.execute(
+                "SELECT * FROM channel_topic_performance "
+                "ORDER BY channel_id ASC, score DESC, videos_analyzed DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
     # -- system events -----------------------------------------------------
 
     def record_event(
@@ -553,25 +706,42 @@ class StateStore:
         status: str | None = None,
         duration_ms: float | None = None,
         metadata: str | None = None,
+        channel_id: str | None = None,
     ):
         """Append one observability event (append-only — the event stream is a
         log, never deduplicated). `metadata` is an already-serialized JSON string
-        (see modules/event_log.py, which sanitizes it first)."""
+        (see modules/event_log.py, which sanitizes it first).
+
+        `channel_id` is None for genuinely global events (system heartbeat,
+        infrastructure) and set for a channel's own work — the distinction the
+        Command Center needs to avoid showing one channel another's activity.
+        """
         with self.conn:
             self.conn.execute(
                 """
                 INSERT INTO system_events
-                    (event, ts, video_id, job_id, agent, status, duration_ms, metadata)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    (event, ts, video_id, job_id, agent, status, duration_ms, metadata, channel_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (event, ts, video_id, job_id, agent, status, duration_ms, metadata),
+                (event, ts, video_id, job_id, agent, status, duration_ms, metadata, channel_id),
             )
 
     def list_events(
-        self, since: str | None = None, limit: int = 200, video_id: str | None = None
+        self,
+        since: str | None = None,
+        limit: int = 200,
+        video_id: str | None = None,
+        channel_id: str | None = None,
+        include_global: bool = True,
     ) -> list[dict]:
         """List observability events, most recent first, optionally filtered by
-        `since` (ISO8601 lower bound on ts) and/or `video_id`."""
+        `since` (ISO8601 lower bound on ts), `video_id` and/or `channel_id`.
+
+        With `channel_id` set, `include_global` decides whether events that
+        belong to no channel (null channel_id — system heartbeats and other
+        infrastructure) come along. They usually should: an operator looking at
+        one channel still needs to know the database is down.
+        """
         clauses: list[str] = []
         params: list = []
         if since:
@@ -580,6 +750,12 @@ class StateStore:
         if video_id:
             clauses.append("video_id = ?")
             params.append(video_id)
+        if channel_id is not None:
+            if include_global:
+                clauses.append("(channel_id = ? OR channel_id IS NULL)")
+            else:
+                clauses.append("channel_id = ?")
+            params.append(channel_id)
         where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
         params.append(limit)
         rows = self.conn.execute(
