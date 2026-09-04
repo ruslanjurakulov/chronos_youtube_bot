@@ -721,6 +721,8 @@ export const ru: Dictionary = {
     paused: "НА ПАУЗЕ",
     voice: "Голос",
     visualStyle: "Визуальный стиль",
+    competitors: "Конкуренты",
+    competitorsHint: "ID YouTube-каналов, за которыми следит этот канал, через запятую. У каждого канала свои — ничего не пересекается.",
     targetDuration: "Целевая длительность",
     schedule: "Расписание",
     scheduleHour: "Час публикации (UTC)",

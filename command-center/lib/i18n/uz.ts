@@ -721,6 +721,8 @@ export const uz: Dictionary = {
     paused: "TO'XTATILGAN",
     voice: "Ovoz",
     visualStyle: "Vizual uslub",
+    competitors: "Raqobatchilar",
+    competitorsHint: "Bu kanal kuzatadigan YouTube kanal ID lari, vergul bilan. Har kanalning o'ziniki — hech narsa umumiy emas.",
     targetDuration: "Maqsadli davomiylik",
     schedule: "Jadval",
     scheduleHour: "Chop etish soati (UTC)",

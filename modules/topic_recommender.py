@@ -68,7 +68,12 @@ class TopicRecommender:
     computation unintentionally.
     """
 
-    def __init__(self, state_store=None, engine=None):
+    def __init__(self, state_store=None, engine=None, channel_id: str | None = None):
+        # `channel_id` scopes the two channel-owned inputs — this channel's own
+        # competitors and its own audience's requests. Trending stays global on
+        # purpose (see suggest_topics). None keeps the pre-multi-channel
+        # behaviour: every row, unscoped.
+        self.channel_id = channel_id
         if state_store is not None:
             self.state_store = state_store
         else:
@@ -111,14 +116,20 @@ class TopicRecommender:
             logger.warning("Failed to list trending snapshots; treating as empty", exc_info=True)
             trending = []
 
+        # Competitors and audience demand belong to a channel; trending above
+        # does not. YouTube's trending list is region-wide public data, the same
+        # rows whichever channel reads them, so scoping it would filter nothing
+        # and only pretend to isolate something.
         try:
-            competitors = self.state_store.list_competitor_snapshots(since=since)
+            competitors = self.state_store.list_competitor_snapshots(
+                since=since, chronos_channel_id=self.channel_id
+            )
         except Exception:
             logger.warning("Failed to list competitor snapshots; treating as empty", exc_info=True)
             competitors = []
 
         try:
-            demand = self.state_store.list_demand_signals(since=since)
+            demand = self.state_store.list_demand_signals(since=since, channel_id=self.channel_id)
         except Exception:
             logger.warning("Failed to list demand signals; treating as empty", exc_info=True)
             demand = []

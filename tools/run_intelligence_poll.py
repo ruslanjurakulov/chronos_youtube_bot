@@ -53,7 +53,7 @@ from modules.comment_fetcher import CommentFetcher
 from modules.comment_intelligence import classify_comments
 from modules import event_log as events
 from modules.content_planner import ContentPlanner
-from modules.channels import ChannelRegistry
+from modules.channels import DEFAULT_CHANNEL_ID, ChannelRegistry
 from modules.feedback_engine import FeedbackEngine
 from modules.intelligence_poller import IntelligencePoller
 from modules.state_store import StateStore
@@ -61,26 +61,45 @@ from modules.supabase_sync import SupabaseSync
 from modules.topic_recommender import TopicRecommender
 
 
-def _competitor_channel_ids() -> list[str]:
+def _competitor_channel_ids(channel=None) -> list[str]:
+    """Which YouTube channels to watch on this run.
+
+    Comes from the channel's own configuration; `COMPETITOR_CHANNEL_IDS` is the
+    fallback the default channel keeps (see modules/channels._env_competitor_ids),
+    so a pre-Phase-5 deployment is unaffected. A Finance channel must never
+    inherit a history channel's rivals, so there is no cross-channel fallback.
+    """
+    if channel is not None:
+        return list(channel.agent.competitor_channel_ids)
     raw = os.getenv("COMPETITOR_CHANNEL_IDS", "")
     return [c.strip() for c in raw.split(",") if c.strip()]
 
 
-def poll_comments_for_recent_videos(store: StateStore, limit: int = 10) -> None:
-    """Fetch and classify comments for the most recently published videos.
+def poll_comments_for_recent_videos(store: StateStore, limit: int = 10, channel=None) -> None:
+    """Fetch and classify comments for one channel's most recently published
+    videos, and record what its audience asked for.
 
     A CommentFetcher auth failure (no token yet, expired credentials) skips
     this whole pass rather than crashing the poll — the analytics/competitor/
     trend pass above is independent and should still have run.
+
+    With a `channel`, the fetcher authenticates as that channel, only that
+    channel's videos are walked, and the resulting demand signals are recorded
+    against it. That last part is the point: audience demand is the single most
+    channel-specific signal there is, and one channel's viewers must never steer
+    another channel's topics.
     """
+    channel_id = str(channel.channel_id) if channel is not None else DEFAULT_CHANNEL_ID
+    label = f"[channel: {channel_id}] "
     try:
-        fetcher = CommentFetcher()
+        fetcher = CommentFetcher(channel=channel)
     except Exception as e:
-        logger.warning("CommentFetcher auth failed (%s: %s) — skipping comment polling", type(e).__name__, e)
+        logger.warning("%sCommentFetcher auth failed (%s: %s) — skipping comment polling",
+                       label, type(e).__name__, e)
         return
 
     all_records = []
-    for video in store.list_videos(limit=limit):
+    for video in store.list_videos(limit=limit, channel_id=channel.channel_id if channel else None):
         video_id = video.get("video_id")
         if not video_id:
             continue
@@ -117,7 +136,7 @@ def poll_comments_for_recent_videos(store: StateStore, limit: int = 10) -> None:
         return
 
     top = [(s.topic_phrase, s.mention_count) for s in signals[:5]]
-    logger.info("Audience demand — top requested topics: %s", top)
+    logger.info("%sAudience demand — top requested topics: %s", label, top)
 
     polled_date = date.today().isoformat()
     written = 0
@@ -128,14 +147,15 @@ def poll_comments_for_recent_videos(store: StateStore, limit: int = 10) -> None:
                 mention_count=signal.mention_count,
                 polled_date=polled_date,
                 example_comment_ids=",".join(str(i) for i in signal.example_comment_ids),
+                channel_id=channel_id,
             )
             written += 1
         except Exception as e:
             logger.warning("Failed to persist demand signal %r (%s: %s) — skipping", signal.topic_phrase, type(e).__name__, e)
-    logger.info("Persisted %d/%d demand signal(s)", written, len(signals))
+    logger.info("%sPersisted %d/%d demand signal(s)", label, written, len(signals))
 
 
-def enqueue_topic_suggestions(limit: int = 5) -> int:
+def enqueue_topic_suggestions(limit: int = 5, channel=None) -> int:
     """Feeds TopicRecommender's ranked suggestions into ContentPlanner's
     queue, so a future pick_topic() call can consume one directly instead
     of spending a Gemini call. Runs after the analytics/competitor/trend
@@ -146,18 +166,22 @@ def enqueue_topic_suggestions(limit: int = 5) -> int:
     re-running this poll repeatedly against an unchanged database just
     reuses existing queued entries rather than growing the queue unbounded.
     """
+    channel_id = str(channel.channel_id) if channel is not None else DEFAULT_CHANNEL_ID
+    label = f"[channel: {channel_id}] "
     try:
-        opportunities = TopicRecommender().suggest_topics(limit=limit)
+        opportunities = TopicRecommender(channel_id=channel_id).suggest_topics(limit=limit)
     except Exception as e:
-        logger.warning("TopicRecommender failed (%s: %s) — nothing enqueued this run", type(e).__name__, e)
+        logger.warning("%sTopicRecommender failed (%s: %s) — nothing enqueued this run",
+                       label, type(e).__name__, e)
         return 0
     if not opportunities:
         return 0
 
     try:
-        planner = ContentPlanner()
+        planner = ContentPlanner(channel_id=channel_id)
     except Exception as e:
-        logger.warning("Failed to construct ContentPlanner (%s: %s) — nothing enqueued this run", type(e).__name__, e)
+        logger.warning("%sFailed to construct ContentPlanner (%s: %s) — nothing enqueued this run",
+                       label, type(e).__name__, e)
         return 0
 
     enqueued = 0
@@ -166,22 +190,45 @@ def enqueue_topic_suggestions(limit: int = 5) -> int:
             planner.enqueue_opportunity(opp)
             enqueued += 1
         except Exception as e:
-            logger.warning("Failed to enqueue suggestion %r (%s: %s) — skipping", opp.topic, type(e).__name__, e)
-    logger.info("Content planner: %d/%d suggestion(s) enqueued (existing queued duplicates are reused, not duplicated)", enqueued, len(opportunities))
+            logger.warning("%sFailed to enqueue suggestion %r (%s: %s) — skipping",
+                           label, opp.topic, type(e).__name__, e)
+    logger.info("%sContent planner: %d/%d suggestion(s) enqueued (existing queued duplicates are reused, not duplicated)",
+                label, enqueued, len(opportunities))
     return enqueued
 
 
+def _active_channels() -> list:
+    """The channels this poll should walk, or `[None]` when the registry is
+    unavailable.
+
+    `None` means "the legacy single channel": the passes that take a channel
+    fall back to their pre-Phase-5 behaviour rather than skipping, so a registry
+    failure degrades the poll's attribution, never its coverage.
+    """
+    try:
+        channels = ChannelRegistry().active()
+    except Exception as e:
+        logger.warning("Channel registry unavailable (%s: %s) — polling as the single default channel",
+                       type(e).__name__, e)
+        return [None]
+    return channels or [None]
+
+
 def poll_additional_channel_metrics() -> dict:
-    """Poll own-channel analytics for every ACTIVE channel except the default.
+    """Poll own-channel analytics AND own competitors for every ACTIVE channel
+    except the default.
 
     The default channel is already covered by `IntelligencePoller.run_all()`
-    above, which also does the competitor and trending passes — those read
-    public data with an API key and are not per-channel, so they run once.
+    above. Trending is NOT repeated here: YouTube's trending list is region-wide
+    public data, identical whichever channel reads it, so polling it per channel
+    would spend quota to store the same rows again.
 
-    Each extra channel gets its own poller, reading with its own OAuth token and
-    seeing only its own videos. Each is wrapped individually: a channel whose
-    token is missing or expired must not stop the next channel from being
-    polled, and must not fail the job.
+    Competitors are the opposite — each channel watches its own — so each extra
+    channel polls its own list, and the snapshots carry its `chronos_channel_id`.
+
+    Each channel is wrapped individually: a channel whose token is missing or
+    expired must not stop the next channel from being polled, and must not fail
+    the job.
     """
     try:
         channels = [c for c in ChannelRegistry().active() if not c.is_default]
@@ -196,7 +243,11 @@ def poll_additional_channel_metrics() -> dict:
     for channel in channels:
         try:
             poller = IntelligencePoller(channel=channel)
-            written[str(channel.channel_id)] = poller.poll_own_channel_metrics()
+            metrics = poller.poll_own_channel_metrics()
+            rivals = _competitor_channel_ids(channel)
+            if rivals:
+                poller.poll_competitors(rivals)
+            written[str(channel.channel_id)] = metrics
         except Exception as e:
             logger.warning("[channel: %s] analytics poll failed (%s: %s) — other channels unaffected",
                            channel.channel_id, type(e).__name__, e)
@@ -307,14 +358,30 @@ def main():
             type(e).__name__, e,
         )
 
+    channels = _active_channels()
+
     if not args.skip_comments:
         with StateStore() as store:
-            poll_comments_for_recent_videos(store)
+            for channel in channels:
+                # Wrapped per channel: one channel's revoked comment scope must
+                # not cost the others their audience-demand pass.
+                try:
+                    poll_comments_for_recent_videos(store, channel=channel)
+                except Exception as e:
+                    logger.warning("[channel: %s] comment poll failed (%s: %s) — other channels unaffected",
+                                   channel.channel_id if channel else DEFAULT_CHANNEL_ID,
+                                   type(e).__name__, e)
     else:
         logger.info("Comment polling skipped (--skip-comments)")
 
     if not args.skip_planning:
-        enqueue_topic_suggestions()
+        for channel in channels:
+            try:
+                enqueue_topic_suggestions(channel=channel)
+            except Exception as e:
+                logger.warning("[channel: %s] topic suggestion failed (%s: %s) — other channels unaffected",
+                               channel.channel_id if channel else DEFAULT_CHANNEL_ID,
+                               type(e).__name__, e)
     else:
         logger.info("Content planning skipped (--skip-planning)")
 

@@ -56,6 +56,7 @@ export function AddChannelWizard() {
   const [edgeVoice, setEdgeVoice] = useState("en-US-ChristopherNeural");
   const [elevenVoice, setElevenVoice] = useState("");
   const [visualStyle, setVisualStyle] = useState("");
+  const [competitors, setCompetitors] = useState("");
   const [hour, setHour] = useState<number | "">(15);
   const [scheduleEnabled, setScheduleEnabled] = useState(true);
   const [credentialRef, setCredentialRef] = useState("");
@@ -96,6 +97,12 @@ export function AddChannelWizard() {
         ...(systemPrompt.trim() ? { system_prompt: systemPrompt.trim() } : {}),
         ...(nicheRules.trim() ? { niche_rules: nicheRules.trim() } : {}),
         ...(visualStyle.trim() ? { visual_style_prompt: visualStyle.trim() } : {}),
+        // Always sent, even when empty: an explicit [] means "watch nobody",
+        // which is not the same as inheriting the process-wide env var.
+        competitor_channel_ids: competitors
+          .split(",")
+          .map((c) => c.trim())
+          .filter(Boolean),
       },
       schedule_config: {
         publish_hour_utc: hour === "" ? null : Number(hour),
@@ -212,6 +219,14 @@ export function AddChannelWizard() {
                 value={nicheRules}
                 onChange={(e) => setNicheRules(e.target.value)}
                 rows={2}
+                className={inputClass}
+              />
+            </Field>
+            <Field label={t.channels.competitors} hint={t.channels.competitorsHint}>
+              <input
+                value={competitors}
+                onChange={(e) => setCompetitors(e.target.value)}
+                placeholder="UCxxxxxxxx, UCyyyyyyyy"
                 className={inputClass}
               />
             </Field>

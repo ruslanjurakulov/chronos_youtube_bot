@@ -727,6 +727,8 @@ export const en = {
     paused: "PAUSED",
     voice: "Voice",
     visualStyle: "Visual style",
+    competitors: "Competitors",
+    competitorsHint: "YouTube channel ids this channel watches, comma-separated. Each channel watches its own — nothing is shared.",
     targetDuration: "Target duration",
     schedule: "Schedule",
     scheduleHour: "Publish hour (UTC)",

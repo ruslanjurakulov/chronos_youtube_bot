@@ -411,17 +411,26 @@ class StateStore:
             )
 
     def list_competitor_snapshots(
-        self, channel_id: str | None = None, since: str | None = None, limit: int = 200
+        self,
+        channel_id: str | None = None,
+        since: str | None = None,
+        limit: int = 200,
+        chronos_channel_id: str | None = None,
     ) -> list[dict]:
         """List competitor snapshots, most recently polled first.
 
-        `channel_id` restricts to one channel; `since` (ISO date) restricts to
-        snapshots polled on or after that date.
+        Mind the two ids: `channel_id` filters by the COMPETITOR's YouTube
+        channel (it always has), while `chronos_channel_id` filters by which of
+        OUR channels is watching them. `since` (ISO date) restricts to snapshots
+        polled on or after that date.
         """
         clauses, params = [], []
         if channel_id:
             clauses.append("channel_id = ?")
             params.append(channel_id)
+        if chronos_channel_id is not None:
+            clauses.append("chronos_channel_id = ?")
+            params.append(chronos_channel_id)
         if since:
             clauses.append("polled_date >= ?")
             params.append(since)
@@ -513,19 +522,26 @@ class StateStore:
                 (topic_phrase, mention_count, example_comment_ids, polled_date, channel_id),
             )
 
-    def list_demand_signals(self, since: str | None = None, limit: int = 200) -> list[dict]:
-        """List audience-demand signals, most recently polled first."""
+    def list_demand_signals(
+        self, since: str | None = None, limit: int = 200, channel_id: str | None = None
+    ) -> list[dict]:
+        """List audience-demand signals, most recently polled first.
+
+        `channel_id` restricts to what one channel's own audience asked for —
+        a Finance viewer's request must never steer a history channel's topics.
+        """
+        clauses, params = [], []
         if since:
-            rows = self.conn.execute(
-                "SELECT * FROM demand_signals WHERE polled_date >= ? "
-                "ORDER BY polled_date DESC LIMIT ?",
-                (since, limit),
-            ).fetchall()
-        else:
-            rows = self.conn.execute(
-                "SELECT * FROM demand_signals ORDER BY polled_date DESC LIMIT ?",
-                (limit,),
-            ).fetchall()
+            clauses.append("polled_date >= ?")
+            params.append(since)
+        if channel_id is not None:
+            clauses.append("channel_id = ?")
+            params.append(channel_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM demand_signals{where} ORDER BY polled_date DESC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
         return [dict(row) for row in rows]
 
     # -- feedback signals --------------------------------------------------

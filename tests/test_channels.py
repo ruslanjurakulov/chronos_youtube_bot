@@ -516,6 +516,120 @@ class LearningIsolationTestCase(unittest.TestCase):
                 store.close()
 
 
+class AudienceIsolationTestCase(unittest.TestCase):
+    """Competitors and audience demand are the two most channel-specific inputs
+    there are — one channel's rivals and one channel's viewers must never steer
+    another channel's topics."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        from modules.state_store import StateStore
+
+        self.store = StateStore(db_path=Path(self.tmp.name) / "chronos.db")
+        self.addCleanup(self.store.close)
+
+    def test_each_channel_carries_its_own_competitor_list(self):
+        fin = finance()
+        hist = ChannelContext(
+            channel_id=validate_channel_id("extinct-world"), name="E", niche="",
+            agent=AgentConfig.from_dict({"competitor_channel_ids": ["UChistory"]}),
+        )
+        with patch.dict(os.environ, {"COMPETITOR_CHANNEL_IDS": "UCenvdefault"}, clear=False):
+            watched_fin = AgentConfig.from_dict({"competitor_channel_ids": ["UCfin1", "UCfin2"]})
+            self.assertEqual(watched_fin.competitor_channel_ids, ("UCfin1", "UCfin2"))
+            self.assertEqual(hist.agent.competitor_channel_ids, ("UChistory",))
+            # No cross-channel bleed, and no silent fallback to the env var for a
+            # channel that named its own.
+            self.assertNotIn("UCenvdefault", watched_fin.competitor_channel_ids)
+            self.assertNotIn("UCfin1", hist.agent.competitor_channel_ids)
+        self.assertEqual(fin.agent.competitor_channel_ids, ())
+
+    def test_an_absent_list_inherits_the_env_var_but_an_empty_one_does_not(self):
+        # These are different intents: "not configured" keeps the legacy
+        # deployment working; "configured as empty" means watch nobody.
+        with patch.dict(os.environ, {"COMPETITOR_CHANNEL_IDS": "UCa,UCb"}, clear=False):
+            self.assertEqual(AgentConfig.from_dict({}).competitor_channel_ids, ("UCa", "UCb"))
+            self.assertEqual(
+                AgentConfig.from_dict({"competitor_channel_ids": []}).competitor_channel_ids, ()
+            )
+
+    def test_poll_reads_competitor_ids_from_the_channel_not_the_env(self):
+        from tools.run_intelligence_poll import _competitor_channel_ids
+
+        channel = ChannelContext(
+            channel_id=validate_channel_id("chronos-finance"), name="F", niche="",
+            agent=AgentConfig.from_dict({"competitor_channel_ids": ["UCmine"]}),
+        )
+        with patch.dict(os.environ, {"COMPETITOR_CHANNEL_IDS": "UCsomeoneelse"}, clear=False):
+            self.assertEqual(_competitor_channel_ids(channel), ["UCmine"])
+            # No channel at all is the legacy path, which still reads the env.
+            self.assertEqual(_competitor_channel_ids(None), ["UCsomeoneelse"])
+
+    def test_demand_signals_are_listed_per_channel(self):
+        self.store.record_demand_signal(
+            topic_phrase="more charts", mention_count=5, polled_date="2026-09-01",
+            channel_id="chronos-finance",
+        )
+        self.store.record_demand_signal(
+            topic_phrase="more dinosaurs", mention_count=7, polled_date="2026-09-01",
+            channel_id="extinct-world",
+        )
+        fin = self.store.list_demand_signals(channel_id="chronos-finance")
+        self.assertEqual([r["topic_phrase"] for r in fin], ["more charts"])
+        self.assertEqual(len(self.store.list_demand_signals()), 2)
+
+    def test_competitor_snapshots_are_listed_by_the_watching_channel(self):
+        self.store.record_competitor_snapshot(
+            video_id="cv1", channel_id="UCrival", polled_date="2026-09-01",
+            chronos_channel_id="chronos-finance",
+        )
+        self.store.record_competitor_snapshot(
+            video_id="cv2", channel_id="UCotherrival", polled_date="2026-09-01",
+            chronos_channel_id="extinct-world",
+        )
+        mine = self.store.list_competitor_snapshots(chronos_channel_id="chronos-finance")
+        self.assertEqual([r["video_id"] for r in mine], ["cv1"])
+        # The other id still filters by the COMPETITOR's channel, as it always did.
+        by_rival = self.store.list_competitor_snapshots(channel_id="UCotherrival")
+        self.assertEqual([r["video_id"] for r in by_rival], ["cv2"])
+
+    def test_recommender_sees_only_its_own_channels_demand_and_rivals(self):
+        from modules.topic_recommender import TopicRecommender
+
+        self.store.record_demand_signal(
+            topic_phrase="finance thing", mention_count=9, polled_date="2026-09-01",
+            channel_id="chronos-finance",
+        )
+        self.store.record_demand_signal(
+            topic_phrase="history thing", mention_count=9, polled_date="2026-09-01",
+            channel_id="extinct-world",
+        )
+        rec = TopicRecommender(state_store=self.store, channel_id="chronos-finance")
+        suggestions = rec.suggest_topics(limit=10)
+        topics = " ".join(s.topic.lower() for s in suggestions)
+        self.assertIn("finance thing", topics)
+        self.assertNotIn("history thing", topics)
+
+    def test_comment_fetcher_binds_to_its_own_channels_token(self):
+        from modules.comment_fetcher import CommentFetcher
+
+        with tempfile.TemporaryDirectory() as tmp:
+            with patch("modules.channel_credentials.cfg.BASE_DIR", Path(tmp)):
+                a = CommentFetcher._resolve_token_file(finance())
+                b = CommentFetcher._resolve_token_file(history())
+        self.assertNotEqual(a, b)
+
+    def test_active_channels_falls_back_rather_than_skipping(self):
+        from tools import run_intelligence_poll as poll
+
+        with patch.object(poll, "ChannelRegistry", side_effect=RuntimeError("boom")):
+            channels = poll._active_channels()
+        # [None] means "run the legacy single-channel pass" — degraded
+        # attribution, never lost coverage.
+        self.assertEqual(channels, [None])
+
+
 class SchedulerIsolationTestCase(unittest.TestCase):
     def test_only_channels_due_this_hour_are_returned(self):
         from tools.list_channels import due_channels

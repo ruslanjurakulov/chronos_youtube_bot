@@ -90,6 +90,33 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _env_competitor_ids() -> list[str]:
+    """The process-wide COMPETITOR_CHANNEL_IDS, as the default channel's list.
+
+    Pre-Phase-5 deployments configured competitors through this one env var, so
+    it remains the fallback. A channel that names its own competitors overrides
+    it entirely — a Finance channel must not inherit a history channel's rivals.
+    """
+    raw = os.getenv("COMPETITOR_CHANNEL_IDS", "")
+    return [c.strip() for c in raw.split(",") if c.strip()]
+
+
+def _clean_ids(value) -> tuple:
+    """Parse competitor ids from a stored list or a comma-separated string.
+
+    An absent key falls back to the env var (the legacy behaviour); an explicit
+    empty list means "watch nobody", which is different and is honoured.
+    """
+    if value is None:
+        return tuple(_env_competitor_ids())
+    if isinstance(value, str):
+        return tuple(c.strip() for c in value.split(",") if c.strip())
+    try:
+        return tuple(str(c).strip() for c in value if str(c).strip())
+    except TypeError:
+        return ()
+
+
 @dataclass(frozen=True)
 class AgentConfig:
     """Per-channel generator settings.
@@ -111,6 +138,13 @@ class AgentConfig:
     system_prompt: str = ""
     niche_rules: str = ""
     visual_style_prompt: str = ""
+    # Which YouTube channels THIS channel watches. Strictly speaking a
+    # monitoring setting rather than a generator one, but it lives in the same
+    # JSON blob so a channel's whole configuration stays in one column and adding
+    # it costs no second migration. A tuple because AgentConfig is frozen.
+    competitor_channel_ids: tuple = field(
+        default_factory=lambda: tuple(_env_competitor_ids())
+    )
 
     def to_dict(self) -> dict:
         return {
@@ -122,6 +156,7 @@ class AgentConfig:
             "system_prompt": self.system_prompt,
             "niche_rules": self.niche_rules,
             "visual_style_prompt": self.visual_style_prompt,
+            "competitor_channel_ids": list(self.competitor_channel_ids),
         }
 
     @staticmethod
@@ -143,6 +178,7 @@ class AgentConfig:
             system_prompt=d.get("system_prompt") or "",
             niche_rules=d.get("niche_rules") or "",
             visual_style_prompt=d.get("visual_style_prompt") or "",
+            competitor_channel_ids=_clean_ids(d.get("competitor_channel_ids")),
         )
 
 

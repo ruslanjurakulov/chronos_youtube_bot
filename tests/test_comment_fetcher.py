@@ -269,6 +269,11 @@ class ServiceConstructionTests(unittest.TestCase):
             mock_build.return_value = "FAKE_SERVICE"
 
             fetcher = CommentFetcher.__new__(CommentFetcher)
+            # __init__ is bypassed here, so set what _auth reads: the token file
+            # this fetcher is bound to (CommentFetcher(channel=...) resolves it
+            # per channel). The value is irrelevant to what this test asserts,
+            # since Path is patched above.
+            fetcher.token_file = "youtube_token.json"
             service = fetcher._auth()
 
             mock_build.assert_called_once_with("youtube", "v3", credentials=fake_creds)
