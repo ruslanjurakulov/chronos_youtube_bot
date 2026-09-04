@@ -2,6 +2,10 @@ name: Tests
 
 on:
   push:
+    # main only. Without this, every push to a PR branch ran the suite once for
+    # the push AND once for the pull_request event — two identical runs on the
+    # same SHA, doubling the minutes for no extra signal.
+    branches: [main]
     # The Command Center is a self-contained Next.js app with its own tooling;
     # the Python suite has nothing to say about it, so don't run (and fail) on
     # frontend-only changes.

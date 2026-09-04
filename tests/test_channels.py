@@ -232,6 +232,62 @@ class CredentialIsolationTestCase(unittest.TestCase):
                 self.assertFalse(token_path(history()).exists())
 
 
+class ClientSecretDiagnosticsTestCase(unittest.TestCase):
+    """The workflows write the client secret with `echo '<secret>' > file`, so an
+    unset secret leaves an EMPTY file that passes an exists() check. Handing that
+    to InstalledAppFlow produced the bare JSONDecodeError every scheduled poll
+    was actually failing with — naming neither the file nor the fix."""
+
+    def _problem(self, contents=None):
+        from modules.channel_credentials import client_secret_problem
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "client_secret.json"
+            if contents is not None:
+                path.write_text(contents, encoding="utf-8")
+            return client_secret_problem(path)
+
+    def test_an_empty_file_is_reported_as_empty_not_as_bad_json(self):
+        problem = self._problem("\n")
+        self.assertIsNotNone(problem)
+        self.assertIn("empty", problem)
+        self.assertIn("YOUTUBE_CLIENT_SECRET_JSON", problem)
+
+    def test_a_missing_file_names_the_secret_to_set(self):
+        problem = self._problem(None)
+        self.assertIsNotNone(problem)
+        self.assertIn("not found", problem)
+
+    def test_malformed_json_is_reported_as_such(self):
+        self.assertIn("not valid JSON", self._problem("{oops"))
+
+    def test_json_without_an_oauth_section_is_rejected(self):
+        # Valid JSON is not the same as a usable OAuth client file.
+        self.assertIn("installed", self._problem(json.dumps({"hello": "world"})))
+
+    def test_a_real_client_file_has_no_problem(self):
+        self.assertIsNone(self._problem(json.dumps({"installed": {"client_id": "x"}})))
+
+    def test_ci_refuses_interactive_consent_instead_of_hanging(self):
+        # run_local_server() opens a browser and waits for a human. On a runner
+        # there is neither, so it hangs until the job times out.
+        from modules.channel_credentials import require_interactive_consent_possible
+
+        with patch.dict(os.environ, {"CI": "true"}, clear=False):
+            with self.assertRaises(RuntimeError) as ctx:
+                require_interactive_consent_possible("[channel: finance] ")
+        message = str(ctx.exception)
+        self.assertIn("connect_channel.py", message)
+        self.assertIn("finance", message)
+
+    def test_off_ci_the_interactive_flow_is_allowed(self):
+        from modules.channel_credentials import require_interactive_consent_possible
+
+        env = {k: v for k, v in os.environ.items() if k != "CI"}
+        with patch.dict(os.environ, env, clear=True):
+            require_interactive_consent_possible()  # must not raise
+
+
 class UploaderIsolationTestCase(unittest.TestCase):
     def test_a_non_default_channel_never_inherits_the_env_target(self):
         from modules.youtube_uploader import YouTubeUploader

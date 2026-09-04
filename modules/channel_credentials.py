@@ -201,6 +201,66 @@ def credential_status(channel: ChannelContext, *, now: Optional[datetime] = None
     )
 
 
+def require_interactive_consent_possible(channel_label: str = "") -> None:
+    """Raise before starting an OAuth flow that cannot possibly succeed here.
+
+    ``InstalledAppFlow.run_local_server()`` opens a browser and waits for a
+    human. On a CI runner there is no browser and no human, so the flow either
+    hangs until the job's timeout or dies with a confusing socket error. Failing
+    fast with the actual remedy is strictly better than either.
+    """
+    if not os.getenv("CI"):
+        return
+    raise RuntimeError(
+        f"{channel_label}No usable YouTube token, and interactive consent is "
+        "impossible on a CI runner (no browser).\n"
+        "Run tools/connect_channel.py on a trusted machine, then store the "
+        "resulting token as this channel's GitHub Actions secret — see "
+        "docs/MULTI_CHANNEL.md."
+    )
+
+
+def client_secret_problem(path: Optional[Path] = None) -> Optional[str]:
+    """Why this client-secret file is unusable, or None when it is fine.
+
+    Existence is not enough. The workflows write the secret with
+    ``echo '<secret>' > client_secret.json``, so when the secret is unset the
+    file exists and contains one empty line — and every auth path here used to
+    check only ``Path(...).exists()``, hand that file to
+    ``InstalledAppFlow.from_client_secrets_file()``, and surface a bare
+    ``JSONDecodeError: Expecting value: line 2 column 1``. That is the error
+    every scheduled poll has actually been failing with, and it names neither
+    the file nor the fix.
+    """
+    target = Path(path) if path is not None else Path(cfg.YOUTUBE_CLIENT_SECRET)
+    if not target.exists():
+        return (
+            f"client_secret.json not found at {target}. Download it from Google "
+            "Cloud Console -> APIs & Services -> Credentials, or set the "
+            "YOUTUBE_CLIENT_SECRET_JSON secret."
+        )
+    try:
+        raw = target.read_text(encoding="utf-8").strip()
+    except OSError as e:
+        return f"client_secret.json at {target} could not be read ({type(e).__name__})."
+    if not raw:
+        return (
+            f"client_secret.json at {target} is empty — the YOUTUBE_CLIENT_SECRET_JSON "
+            "secret is unset or blank, so the workflow wrote nothing into it."
+        )
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        return f"client_secret.json at {target} is not valid JSON."
+    # Google writes the credentials under exactly one of these two keys.
+    if not isinstance(data, dict) or not ({"installed", "web"} & set(data)):
+        return (
+            f"client_secret.json at {target} has no 'installed' or 'web' section — "
+            "it does not look like an OAuth client file."
+        )
+    return None
+
+
 def _parse_iso(value) -> Optional[datetime]:
     try:
         text = str(value).replace("Z", "+00:00")

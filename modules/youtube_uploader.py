@@ -37,7 +37,12 @@ from config import (
     YOUTUBE_TOKEN_FILE,
 )
 from modules.channels import ChannelContext
-from modules.channel_credentials import materialize_token, token_path
+from modules.channel_credentials import (
+    client_secret_problem,
+    materialize_token,
+    require_interactive_consent_possible,
+    token_path,
+)
 from modules.script_engine import Script
 
 logger = logging.getLogger(__name__)
@@ -100,11 +105,17 @@ class YouTubeUploader:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                if not Path(YOUTUBE_CLIENT_SECRET).exists():
-                    raise FileNotFoundError(
-                        f"client_secret.json topilmadi: {YOUTUBE_CLIENT_SECRET}\n"
-                        "Google Cloud Console → APIs & Services → Credentials dan yuklab oling."
-                    )
+                # Existence is not enough: the workflows write this file with
+                # `echo '<secret>' > client_secret.json`, so an unset secret
+                # leaves an EMPTY file behind. Handing that to InstalledAppFlow
+                # produced the bare JSONDecodeError every scheduled poll has
+                # actually been failing with.
+                problem = client_secret_problem()
+                if problem:
+                    raise FileNotFoundError(f"{self._label}{problem}")
+                # And on CI there is no browser to consent in, so say that
+                # instead of blocking on run_local_server until the timeout.
+                require_interactive_consent_possible(self._label)
                 flow = InstalledAppFlow.from_client_secrets_file(
                     YOUTUBE_CLIENT_SECRET, YOUTUBE_SCOPES
                 )
