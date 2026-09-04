@@ -4,6 +4,7 @@ import { NotConfigured } from "@/components/NotConfigured";
 import { StatCard, Panel, EmptyState } from "@/components/ui";
 import { VideoTable } from "@/components/videos/VideoTable";
 import { isToday, num } from "@/lib/format";
+import { getDictionary } from "@/lib/i18n/server";
 import type { MetricsSnapshotRow, VideoRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ export interface VideoWithMetrics extends VideoRow {
 
 export default async function VideoLibrary() {
   if (!isSupabaseConfigured) return <NotConfigured />;
+  const { t } = await getDictionary();
 
   const supabase = await createClient();
   let videos: VideoRow[] = [];
@@ -62,36 +64,27 @@ export default async function VideoLibrary() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">Video Library</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">
-            Every published video with its latest metrics snapshot
-          </p>
+          <h1 className="text-lg font-semibold">{t.videos.title}</h1>
+          <p className="mono text-[11px] text-[var(--color-muted)]">{t.videos.subtitle}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <StatCard label="Videos shown" value={num(rows.length)} sub="latest 100" />
+        <StatCard label={t.videos.videosShown} value={num(rows.length)} sub={t.videos.latest100} />
         <StatCard
-          label="Total views"
-          value={hasAnyViews ? num(totalViews) : "N/A"}
+          label={t.videos.totalViews}
+          value={hasAnyViews ? num(totalViews) : t.common.na}
           tone="ok"
-          sub="across shown videos"
+          sub={t.videos.acrossShown}
         />
-        <StatCard
-          label="Published today"
-          value={num(publishedToday)}
-          tone="ok"
-          sub="videos live"
-        />
+        <StatCard label={t.videos.publishedToday} value={num(publishedToday)} tone="ok" sub={t.videos.videosLive} />
       </div>
 
-      <Panel title="Library">
+      <Panel title={t.videos.library}>
         {dbError ? (
-          <EmptyState>Could not read the library from Supabase.</EmptyState>
+          <EmptyState>{t.videos.readErr}</EmptyState>
         ) : rows.length === 0 ? (
-          <EmptyState>
-            No videos yet. Once the bot publishes, they appear here with live metrics.
-          </EmptyState>
+          <EmptyState>{t.videos.empty}</EmptyState>
         ) : (
           <VideoTable rows={rows} />
         )}

@@ -1,4 +1,7 @@
+"use client";
+
 import { timeOfDay } from "@/lib/format";
+import { useI18n } from "@/lib/i18n/context";
 
 export type StageState = "WAITING" | "COMPLETED" | "RUNNING" | "FAILED";
 
@@ -24,7 +27,7 @@ function StageNode({ stage, last }: { stage: StageView; last: boolean }) {
     <li className="flex min-w-0 flex-1 items-start">
       <div className="flex min-w-0 flex-col items-center gap-1">
         <span
-          className={stage.state === "RUNNING" ? "glow-dot" : undefined}
+          className={stage.state === "RUNNING" ? "glow-dot live-ring" : undefined}
           style={{
             width: 14,
             height: 14,
@@ -33,6 +36,7 @@ function StageNode({ stage, last }: { stage: StageView; last: boolean }) {
             border: `2px solid ${color}`,
             color,
             flexShrink: 0,
+            transition: "background 0.3s ease, border-color 0.3s ease",
           }}
         />
         <span className="mono text-center text-[10px] leading-tight" style={{ color: filled ? "var(--color-fg)" : "var(--color-muted)" }}>
@@ -64,11 +68,12 @@ export function StageStrip({ stages }: { stages: StageView[] }) {
 }
 
 export function StageLegend() {
+  const { t } = useI18n();
   const items: { state: StageState; label: string }[] = [
-    { state: "WAITING", label: "Waiting" },
-    { state: "RUNNING", label: "Running" },
-    { state: "COMPLETED", label: "Completed" },
-    { state: "FAILED", label: "Failed" },
+    { state: "WAITING", label: t.pipeline.legendWaiting },
+    { state: "RUNNING", label: t.pipeline.legendRunning },
+    { state: "COMPLETED", label: t.pipeline.legendCompleted },
+    { state: "FAILED", label: t.pipeline.legendFailed },
   ];
   return (
     <div className="flex flex-wrap items-center gap-4">

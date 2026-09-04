@@ -3,6 +3,8 @@ import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { StatCard, Panel, EmptyState } from "@/components/ui";
 import { num, decimal } from "@/lib/format";
+import { getDictionary } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n";
 import type { MetricsSnapshotRow, VideoRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -62,15 +64,17 @@ function RankedList({
   rows,
   render,
   max,
+  emptyLabel,
   color = "var(--color-primary)",
 }: {
   rows: Perf[];
   render: (p: Perf) => { primary: string; value: string; bar: number | null };
   max: number;
+  emptyLabel: string;
   color?: string;
 }) {
   if (rows.length === 0) {
-    return <EmptyState>Not enough videos with metrics for this ranking yet.</EmptyState>;
+    return <EmptyState>{emptyLabel}</EmptyState>;
   }
   return (
     <ul className="divide-y divide-[var(--color-border)]">
@@ -85,7 +89,7 @@ function RankedList({
             <div className="min-w-0 flex-1">
               <div className="truncate text-sm text-[var(--color-fg)]">{r.primary}</div>
               <div className="mt-1 h-1 w-full overflow-hidden rounded-full bg-[var(--color-panel-2)]">
-                <div className="h-full rounded-full" style={{ width: `${width}%`, background: color }} />
+                <div className="h-full rounded-full transition-all duration-500" style={{ width: `${width}%`, background: color }} />
               </div>
             </div>
             <span className="mono shrink-0 text-sm font-semibold tabular-nums" style={{ color }}>
@@ -100,6 +104,7 @@ function RankedList({
 
 export default async function AnalyticsPage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
+  const { t } = await getDictionary();
 
   const supabase = await createClient();
   let videos: VideoRow[] = [];
@@ -181,39 +186,35 @@ export default async function AnalyticsPage() {
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-lg font-semibold">Performance Intelligence</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">
-          What is working? — derived from real metrics snapshots (latest per video)
-        </p>
+        <h1 className="text-lg font-semibold">{t.analytics.title}</h1>
+        <p className="mono text-[11px] text-[var(--color-muted)]">{t.analytics.subtitle}</p>
       </div>
 
       {!dbHealthy ? (
-        <Panel title="Performance">
-          <EmptyState>Could not read metrics from the database. Check the connection and try again.</EmptyState>
+        <Panel title={t.analytics.performance}>
+          <EmptyState>{t.analytics.readErr}</EmptyState>
         </Panel>
       ) : withMetrics < 1 ? (
-        <Panel title="Performance">
-          <EmptyState>
-            No videos have metrics yet. Once the intelligence poller captures snapshots, per-video
-            performance appears here — no numbers are invented in the meantime.
-          </EmptyState>
+        <Panel title={t.analytics.performance}>
+          <EmptyState>{t.analytics.empty}</EmptyState>
         </Panel>
       ) : (
         <>
           {/* Stat row — real aggregates over the videos that have metrics. */}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatCard label="Videos w/ metrics" value={num(withMetrics)} sub={`of ${num(videos.length)} in library`} />
-            <StatCard label="Total views" value={num(totalViews)} tone="ok" sub="across measured videos" />
-            <StatCard label="Avg views/day" value={decimal(avgVpd, 1)} tone="ok" sub="velocity, snapshot-dated" />
-            <StatCard label="Avg engagement" value={pct(avgEng)} sub="(likes+comments)/views" />
+            <StatCard label={t.analytics.withMetrics} value={num(withMetrics)} sub={fmt(t.analytics.ofLibrary, { n: num(videos.length) })} />
+            <StatCard label={t.analytics.totalViews} value={num(totalViews)} tone="ok" sub={t.analytics.acrossMeasured} />
+            <StatCard label={t.analytics.avgViewsDay} value={decimal(avgVpd, 1)} tone="ok" sub={t.analytics.velocity} />
+            <StatCard label={t.analytics.avgEngagement} value={pct(avgEng)} sub={t.analytics.engFormula} />
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <Panel title="Top Performers — views/day">
+            <Panel title={t.analytics.topPerformers}>
               <RankedList
                 rows={topPerformers}
                 max={N}
                 color="var(--color-ok)"
+                emptyLabel={t.analytics.notEnough}
                 render={(p) => ({
                   primary: p.title,
                   value: decimal(p.viewsPerDay, 1),
@@ -222,14 +223,15 @@ export default async function AnalyticsPage() {
               />
             </Panel>
 
-            <Panel title="Underperformers — views/day">
+            <Panel title={t.analytics.underperformers}>
               {byVpd.length < 2 ? (
-                <EmptyState>Need at least 2 videos with metrics to rank underperformers.</EmptyState>
+                <EmptyState>{t.analytics.needTwo}</EmptyState>
               ) : (
                 <RankedList
                   rows={underperformers}
                   max={N}
                   color="var(--color-warn)"
+                  emptyLabel={t.analytics.notEnough}
                   render={(p) => ({
                     primary: p.title,
                     value: decimal(p.viewsPerDay, 1),
@@ -239,11 +241,12 @@ export default async function AnalyticsPage() {
               )}
             </Panel>
 
-            <Panel title="Best Engagement">
+            <Panel title={t.analytics.bestEngagement}>
               <RankedList
                 rows={byEngagement}
                 max={N}
                 color="var(--color-primary)"
+                emptyLabel={t.analytics.notEnough}
                 render={(p) => ({
                   primary: p.title,
                   value: pct(p.engagement),
@@ -252,11 +255,12 @@ export default async function AnalyticsPage() {
               />
             </Panel>
 
-            <Panel title="Best Retention — avg view duration (retention proxy)">
+            <Panel title={t.analytics.bestRetention}>
               <RankedList
                 rows={byRetention}
                 max={N}
                 color="var(--color-primary)"
+                emptyLabel={t.analytics.notEnough}
                 render={(p) => ({
                   primary: p.title,
                   value: seconds(p.retention),
@@ -266,24 +270,24 @@ export default async function AnalyticsPage() {
             </Panel>
           </div>
 
-          <Panel title="All Measured Videos">
+          <Panel title={t.analytics.allMeasured}>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-                    <th className="px-4 py-2 font-semibold">Title</th>
-                    <th className="px-4 py-2 font-semibold">Topic</th>
-                    <th className="px-4 py-2 text-right font-semibold">Views</th>
-                    <th className="px-4 py-2 text-right font-semibold">Views/day</th>
-                    <th className="px-4 py-2 text-right font-semibold">Engagement</th>
-                    <th className="px-4 py-2 text-right font-semibold">Avg view dur.</th>
+                    <th className="px-4 py-2 font-semibold">{t.analytics.thTitle}</th>
+                    <th className="px-4 py-2 font-semibold">{t.analytics.thTopic}</th>
+                    <th className="px-4 py-2 text-right font-semibold">{t.analytics.thViews}</th>
+                    <th className="px-4 py-2 text-right font-semibold">{t.analytics.thViewsDay}</th>
+                    <th className="px-4 py-2 text-right font-semibold">{t.analytics.thEngagement}</th>
+                    <th className="px-4 py-2 text-right font-semibold">{t.analytics.thAvgDur}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {byVpd.concat(perf.filter((p) => p.viewsPerDay === null)).map((p) => (
-                    <tr key={p.video_id} className="border-b border-[var(--color-border)]/50">
+                    <tr key={p.video_id} className="border-b border-[var(--color-border)]/50 transition-colors hover:bg-[var(--color-panel-2)]">
                       <td className="px-4 py-2 text-[var(--color-fg)]">{p.title}</td>
-                      <td className="px-4 py-2 text-[var(--color-muted)]">{p.topic ?? "—"}</td>
+                      <td className="px-4 py-2 text-[var(--color-muted)]">{p.topic ?? t.common.dash}</td>
                       <td className="px-4 py-2 text-right mono tabular-nums text-[var(--color-fg)]">{num(p.views)}</td>
                       <td className="px-4 py-2 text-right mono tabular-nums text-[var(--color-fg)]">{decimal(p.viewsPerDay, 1)}</td>
                       <td className="px-4 py-2 text-right mono tabular-nums text-[var(--color-muted)]">{pct(p.engagement)}</td>
@@ -295,11 +299,7 @@ export default async function AnalyticsPage() {
             </div>
           </Panel>
 
-          <p className="mono text-[10px] text-[var(--color-muted)]">
-            Note: CTR, impressions and subscribers are N/A — not captured by the current pipeline.
-            Retention is shown as average view duration (retention proxy), the honest metric the
-            schema stores.
-          </p>
+          <p className="mono text-[10px] text-[var(--color-muted)]">{t.analytics.note}</p>
         </>
       )}
     </div>

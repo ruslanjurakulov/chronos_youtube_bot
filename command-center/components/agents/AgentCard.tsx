@@ -1,5 +1,9 @@
+"use client";
+
 import { StatusPill } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
+import { useI18n } from "@/lib/i18n/context";
+import { fmt } from "@/lib/i18n";
 
 export interface AgentSummary {
   agent: string;
@@ -26,6 +30,7 @@ function durationLabel(ms: number | null): string {
  * most recent events. Missing signals render N/A rather than being invented.
  */
 export function AgentCard({ agent }: { agent: AgentSummary }) {
+  const { t } = useI18n();
   const accent =
     agent.tone === "run"
       ? "var(--color-primary)"
@@ -35,46 +40,49 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
           ? "var(--color-ok)"
           : "var(--color-idle)";
 
+  const statusLabel =
+    agent.status === "RUNNING" ? t.status.running : agent.status === "FAILED" ? t.status.failed : t.status.idle;
+
   return (
-    <div className="panel flex flex-col gap-3 p-4">
+    <div className="panel flex flex-col gap-3 p-4 transition-transform duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary-dim)]">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
           <div className="mono truncate text-sm font-bold text-[var(--color-primary)]">
             {agent.agent}
           </div>
           <div className="mono mt-0.5 text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-            {agent.eventCount} recent events
+            {fmt(t.agents.recentEvents, { n: agent.eventCount })}
           </div>
         </div>
-        <StatusPill tone={agent.tone} label={agent.status} />
+        <StatusPill tone={agent.tone} label={statusLabel} live={agent.status === "RUNNING"} />
       </div>
 
       <div className="rounded-md border-l-2 px-3 py-2" style={{ borderColor: accent, background: "var(--color-panel-2)" }}>
         <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-          Current task
+          {t.agents.currentTask}
         </div>
         <div className="mono mt-0.5 truncate text-sm text-[var(--color-fg)]">{agent.currentTask}</div>
         <div className="mono mt-0.5 text-[11px] text-[var(--color-muted)]">
-          {agent.durationMs !== null ? `took ${durationLabel(agent.durationMs)} · ` : ""}
-          {agent.lastActivity ? relativeTime(agent.lastActivity) : "N/A"}
+          {agent.durationMs !== null ? fmt(t.agents.took, { d: durationLabel(agent.durationMs) }) : ""}
+          {agent.lastActivity ? relativeTime(agent.lastActivity) : t.common.na}
         </div>
       </div>
 
       <dl className="grid grid-cols-2 gap-2">
         <div>
           <dt className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-            Last success
+            {t.agents.lastSuccess}
           </dt>
           <dd className="mono mt-0.5 text-[11px]" style={{ color: agent.lastSuccess ? "var(--color-ok)" : "var(--color-muted)" }}>
-            {agent.lastSuccess ? relativeTime(agent.lastSuccess) : "N/A"}
+            {agent.lastSuccess ? relativeTime(agent.lastSuccess) : t.common.na}
           </dd>
         </div>
         <div>
           <dt className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-            Last failure
+            {t.agents.lastFailure}
           </dt>
           <dd className="mono mt-0.5 text-[11px]" style={{ color: agent.lastFailure ? "var(--color-fail)" : "var(--color-muted)" }}>
-            {agent.lastFailure ? relativeTime(agent.lastFailure) : "N/A"}
+            {agent.lastFailure ? relativeTime(agent.lastFailure) : t.common.na}
           </dd>
         </div>
       </dl>

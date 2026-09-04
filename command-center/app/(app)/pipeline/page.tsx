@@ -3,27 +3,32 @@ import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, EmptyState, StatusPill } from "@/components/ui";
 import { relativeTime, statusTone, timeOfDay } from "@/lib/format";
+import { getDictionary } from "@/lib/i18n/server";
+import { fmt, type Dictionary } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 import { StageStrip, StageLegend, type StageState, type StageView } from "@/components/pipeline/StageStrip";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
+type StageLabelKey = keyof Dictionary["pipeline"];
+
 /**
  * The canonical pipeline stages in order. `completed` is the exact event that
  * marks a stage done; `base` is the token whose `.started` / `.failed` variants
- * signal in-progress / error for that same stage.
+ * signal in-progress / error for that same stage. `labelKey` selects the
+ * localized display name (event tokens themselves are never translated).
  */
-const STAGES: { key: string; label: string; completed: string; base: string }[] = [
-  { key: "topic", label: "Topic", completed: "topic.selected", base: "topic" },
-  { key: "research", label: "Research", completed: "research.completed", base: "research" },
-  { key: "script", label: "Script", completed: "script.completed", base: "script" },
-  { key: "voice", label: "Voice", completed: "voice.completed", base: "voice" },
-  { key: "media", label: "Media", completed: "media.completed", base: "media" },
-  { key: "thumbnail", label: "Thumbnail", completed: "thumbnail.completed", base: "thumbnail" },
-  { key: "render", label: "Render", completed: "render.completed", base: "render" },
-  { key: "upload", label: "Upload", completed: "upload.completed", base: "upload" },
-  { key: "publish", label: "Publish", completed: "video.published", base: "video" },
+const STAGES: { key: string; labelKey: StageLabelKey; completed: string; base: string }[] = [
+  { key: "topic", labelKey: "sTopic", completed: "topic.selected", base: "topic" },
+  { key: "research", labelKey: "sResearch", completed: "research.completed", base: "research" },
+  { key: "script", labelKey: "sScript", completed: "script.completed", base: "script" },
+  { key: "voice", labelKey: "sVoice", completed: "voice.completed", base: "voice" },
+  { key: "media", labelKey: "sMedia", completed: "media.completed", base: "media" },
+  { key: "thumbnail", labelKey: "sThumbnail", completed: "thumbnail.completed", base: "thumbnail" },
+  { key: "render", labelKey: "sRender", completed: "render.completed", base: "render" },
+  { key: "upload", labelKey: "sUpload", completed: "upload.completed", base: "upload" },
+  { key: "publish", labelKey: "sPublish", completed: "video.published", base: "video" },
 ];
 
 const HEARTBEAT_MS = 30 * 60 * 1000;
@@ -46,14 +51,15 @@ function stageStatus(events: SystemEventRow[], stage: (typeof STAGES)[number]): 
   return { state: "RUNNING", ts: rel[0].ts };
 }
 
+type Overall = "RUNNING" | "COMPLETED" | "FAILED" | "IN PROGRESS";
 interface VideoPipeline {
   videoId: string;
   stages: StageView[];
   lastActivity: string | null;
-  overall: "RUNNING" | "COMPLETED" | "FAILED" | "IN PROGRESS";
+  overall: Overall;
 }
 
-function derivePipelines(events: SystemEventRow[]): VideoPipeline[] {
+function derivePipelines(events: SystemEventRow[], label: (k: StageLabelKey) => string): VideoPipeline[] {
   const byVideo = new Map<string, SystemEventRow[]>();
   for (const e of events) {
     if (!e.video_id) continue;
@@ -66,13 +72,13 @@ function derivePipelines(events: SystemEventRow[]): VideoPipeline[] {
   for (const [videoId, rows] of byVideo) {
     const stages = STAGES.map<StageView>((s) => {
       const st = stageStatus(rows, s);
-      return { key: s.key, label: s.label, state: st.state, ts: st.ts };
+      return { key: s.key, label: label(s.labelKey), state: st.state, ts: st.ts };
     });
     const lastActivity = rows[0]?.ts ?? null;
     const anyFailed = stages.some((s) => s.state === "FAILED");
     const anyRunning = stages.some((s) => s.state === "RUNNING");
     const published = stages[stages.length - 1].state === "COMPLETED";
-    const overall: VideoPipeline["overall"] = anyFailed
+    const overall: Overall = anyFailed
       ? "FAILED"
       : anyRunning
         ? "RUNNING"
@@ -117,7 +123,7 @@ function deriveSystemPasses(events: SystemEventRow[]): SystemPass[] {
   );
 }
 
-const OVERALL_TONE: Record<VideoPipeline["overall"], "run" | "ok" | "fail" | "idle"> = {
+const OVERALL_TONE: Record<Overall, "run" | "ok" | "fail" | "idle"> = {
   RUNNING: "run",
   COMPLETED: "ok",
   FAILED: "fail",
@@ -126,6 +132,14 @@ const OVERALL_TONE: Record<VideoPipeline["overall"], "run" | "ok" | "fail" | "id
 
 export default async function PipelinePage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
+  const { t } = await getDictionary();
+
+  const overallLabel: Record<Overall, string> = {
+    RUNNING: t.status.running,
+    COMPLETED: t.status.completed,
+    FAILED: t.status.failed,
+    "IN PROGRESS": t.status.inProgress,
+  };
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
@@ -141,26 +155,26 @@ export default async function PipelinePage() {
     events = (ev.data as SystemEventRow[]) ?? [];
   }
 
-  const pipelines = derivePipelines(events).slice(0, 6);
+  const pipelines = derivePipelines(events, (k) => t.pipeline[k]).slice(0, 6);
   const passes = deriveSystemPasses(events);
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">Pipeline</h1>
+          <h1 className="text-lg font-semibold">{t.pipeline.title}</h1>
           <p className="mono text-[11px] text-[var(--color-muted)]">
-            Per-video stage flow derived from system_events — {STAGES.length} canonical stages
+            {fmt(t.pipeline.subtitle, { n: STAGES.length })}
           </p>
         </div>
         <StageLegend />
       </div>
 
-      <Panel title="Video Pipelines">
+      <Panel title={t.pipeline.videoPipelines}>
         {dbError ? (
-          <EmptyState>Could not reach the database. The pipeline view is unavailable right now.</EmptyState>
+          <EmptyState>{t.pipeline.dbErr}</EmptyState>
         ) : pipelines.length === 0 ? (
-          <EmptyState>No pipeline activity yet. Each video&apos;s stages appear here as events arrive.</EmptyState>
+          <EmptyState>{t.pipeline.empty}</EmptyState>
         ) : (
           <div className="flex flex-col divide-y divide-[var(--color-border)]">
             {pipelines.map((p) => (
@@ -169,9 +183,9 @@ export default async function PipelinePage() {
                   <div className="mono truncate text-[12px] text-[var(--color-fg)]">{p.videoId}</div>
                   <div className="flex items-center gap-3">
                     <span className="mono text-[10px] text-[var(--color-muted)]">
-                      {p.lastActivity ? relativeTime(p.lastActivity) : "N/A"}
+                      {p.lastActivity ? relativeTime(p.lastActivity) : t.common.na}
                     </span>
-                    <StatusPill tone={OVERALL_TONE[p.overall]} label={p.overall} />
+                    <StatusPill tone={OVERALL_TONE[p.overall]} label={overallLabel[p.overall]} live={p.overall === "RUNNING"} />
                   </div>
                 </div>
                 <div className="overflow-x-auto">
@@ -185,9 +199,9 @@ export default async function PipelinePage() {
         )}
       </Panel>
 
-      <Panel title="System Passes">
+      <Panel title={t.pipeline.systemPasses}>
         {passes.length === 0 ? (
-          <EmptyState>No non-video system events (e.g. intelligence polls) in the recent window.</EmptyState>
+          <EmptyState>{t.pipeline.noPasses}</EmptyState>
         ) : (
           <ul className="divide-y divide-[var(--color-border)]">
             {passes.map((p) => {
@@ -201,14 +215,14 @@ export default async function PipelinePage() {
                       : "var(--color-idle)";
               const stale = Date.now() - new Date(p.lastTs).getTime() > HEARTBEAT_MS;
               return (
-                <li key={p.event} className="flex items-center gap-3 px-4 py-2.5 text-sm">
+                <li key={p.event} className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-[var(--color-panel-2)]">
                   <span className="glow-dot size-1.5 shrink-0 rounded-full" style={{ color, background: color }} />
                   <span className="mono w-28 shrink-0 text-[11px] text-[var(--color-primary)]">
-                    {p.agent ?? "system"}
+                    {p.agent ?? t.common.system}
                   </span>
                   <span className="truncate text-[var(--color-fg)]">{p.event}</span>
                   <span className="mono ml-auto shrink-0 text-[10px] text-[var(--color-muted)]">
-                    {p.count}× · {timeOfDay(p.lastTs)} {stale ? "(stale)" : ""}
+                    {p.count}× · {timeOfDay(p.lastTs)} {stale ? t.pipeline.stale : ""}
                   </span>
                 </li>
               );

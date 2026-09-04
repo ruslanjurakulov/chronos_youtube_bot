@@ -2,9 +2,11 @@
 
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useI18n } from "@/lib/i18n/context";
 
 export function SignOutButton() {
   const router = useRouter();
+  const { t } = useI18n();
   async function signOut() {
     const supabase = createClient();
     if (supabase) await supabase.auth.signOut();
@@ -14,9 +16,9 @@ export function SignOutButton() {
   return (
     <button
       onClick={signOut}
-      className="mono rounded-md border border-[var(--color-border)] px-2.5 py-1 text-[11px] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+      className="press mono h-8 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-2.5 text-[11px] text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:border-[var(--color-primary-dim)]"
     >
-      Sign out
+      {t.common.signOut}
     </button>
   );
 }

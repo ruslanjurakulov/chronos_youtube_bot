@@ -3,6 +3,8 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { num, relativeTime } from "@/lib/format";
+import { useI18n } from "@/lib/i18n/context";
+import { fmt } from "@/lib/i18n";
 import type { VideoWithMetrics } from "@/app/(app)/videos/page";
 
 const PRIVACY_FILTERS = ["all", "public", "unlisted", "private"] as const;
@@ -14,8 +16,17 @@ type PrivacyFilter = (typeof PRIVACY_FILTERS)[number];
  * fetches on its own — it only filters what the server already resolved.
  */
 export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [privacy, setPrivacy] = useState<PrivacyFilter>("all");
+
+  // Filter values are stable logic keys; only the displayed label is localized.
+  const filterLabel: Record<PrivacyFilter, string> = {
+    all: t.videos.filterAll,
+    public: t.videos.filterPublic,
+    unlisted: t.videos.filterUnlisted,
+    private: t.videos.filterPrivate,
+  };
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -37,8 +48,8 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
           type="search"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search title, topic, id…"
-          className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-sm text-[var(--color-fg)] outline-none placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary-dim)]"
+          placeholder={t.videos.search}
+          className="min-w-0 flex-1 rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-sm text-[var(--color-fg)] outline-none transition-colors placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary-dim)]"
         />
         <div className="flex gap-1">
           {PRIVACY_FILTERS.map((p) => (
@@ -46,7 +57,7 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
               key={p}
               type="button"
               onClick={() => setPrivacy(p)}
-              className="mono rounded-md px-2.5 py-1.5 text-[10px] uppercase tracking-widest transition-colors"
+              className="press mono rounded-md px-2.5 py-1.5 text-[10px] uppercase tracking-widest"
               style={{
                 background: privacy === p ? "var(--color-panel-2)" : "transparent",
                 color: privacy === p ? "var(--color-primary)" : "var(--color-muted)",
@@ -56,7 +67,7 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
                     : "1px solid var(--color-border)",
               }}
             >
-              {p}
+              {filterLabel[p]}
             </button>
           ))}
         </div>
@@ -66,14 +77,14 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-              <th className="px-4 py-2 font-semibold">Title</th>
-              <th className="px-4 py-2 font-semibold">Topic</th>
-              <th className="px-4 py-2 font-semibold">Published</th>
-              <th className="px-4 py-2 font-semibold">Privacy</th>
-              <th className="px-4 py-2 text-right font-semibold">Views</th>
-              <th className="px-4 py-2 text-right font-semibold">Likes</th>
-              <th className="px-4 py-2 text-right font-semibold">Comments</th>
-              <th className="px-4 py-2 text-right font-semibold">Avg view (s)</th>
+              <th className="px-4 py-2 font-semibold">{t.videos.thTitle}</th>
+              <th className="px-4 py-2 font-semibold">{t.videos.thTopic}</th>
+              <th className="px-4 py-2 font-semibold">{t.videos.thPublished}</th>
+              <th className="px-4 py-2 font-semibold">{t.videos.thPrivacy}</th>
+              <th className="px-4 py-2 text-right font-semibold">{t.videos.thViews}</th>
+              <th className="px-4 py-2 text-right font-semibold">{t.videos.thLikes}</th>
+              <th className="px-4 py-2 text-right font-semibold">{t.videos.thComments}</th>
+              <th className="px-4 py-2 text-right font-semibold">{t.videos.thAvgView}</th>
             </tr>
           </thead>
           <tbody>
@@ -83,7 +94,7 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
                   colSpan={8}
                   className="px-4 py-8 text-center mono text-xs text-[var(--color-muted)]"
                 >
-                  No videos match the current filter.
+                  {t.videos.noMatch}
                 </td>
               </tr>
             ) : (
@@ -100,12 +111,12 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
                       {v.title ?? v.video_id}
                     </Link>
                   </td>
-                  <td className="px-4 py-2 text-[var(--color-muted)]">{v.topic ?? "N/A"}</td>
+                  <td className="px-4 py-2 text-[var(--color-muted)]">{v.topic ?? t.common.na}</td>
                   <td className="px-4 py-2 mono text-[11px] text-[var(--color-muted)]">
                     {relativeTime(v.published_at)}
                   </td>
                   <td className="px-4 py-2 mono text-[11px] text-[var(--color-muted)]">
-                    {v.privacy ?? "N/A"}
+                    {v.privacy ?? t.common.na}
                   </td>
                   <td className="px-4 py-2 text-right mono tabular-nums text-[var(--color-fg)]">
                     {num(v.metrics?.views)}
@@ -127,7 +138,7 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
       </div>
 
       <div className="border-t border-[var(--color-border)] px-4 py-2 mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-        {filtered.length} of {rows.length} videos
+        {fmt(t.videos.count, { shown: filtered.length, total: rows.length })}
       </div>
     </div>
   );

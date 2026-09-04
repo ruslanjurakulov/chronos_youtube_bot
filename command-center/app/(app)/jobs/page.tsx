@@ -2,7 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, EmptyState, StatCard } from "@/components/ui";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { relativeTime, statusTone } from "@/lib/format";
+import { getDictionary } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 import { JobStatusPill, type JobStatus } from "@/components/jobs/JobStatusPill";
 
@@ -105,6 +108,7 @@ function durationLabel(ms: number | null): string {
 
 export default async function JobsPage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
+  const { t } = await getDictionary();
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
@@ -129,59 +133,57 @@ export default async function JobsPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">Job Queue</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">
-            Jobs derived from system_events — grouped by job_id, else by video run
-          </p>
+          <h1 className="text-lg font-semibold">{t.jobs.title}</h1>
+          <p className="mono text-[11px] text-[var(--color-muted)]">{t.jobs.subtitle}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Jobs" value={jobs.length} sub="in recent window" />
-        <StatCard label="Running" value={running} tone={running ? "run" : "idle"} sub={running ? "in progress" : "none active"} />
-        <StatCard label="Failed" value={failed} tone={failed ? "fail" : "ok"} sub={failed ? "needs attention" : "none"} />
-        <StatCard label="Completed" value={completed} tone="ok" sub="finished OK" />
+        <StatCard label={t.jobs.jobs} value={<AnimatedNumber value={jobs.length} />} sub={t.jobs.jobsSub} />
+        <StatCard label={t.jobs.running} value={<AnimatedNumber value={running} />} tone={running ? "run" : "idle"} sub={running ? t.jobs.inProgress : t.jobs.noneActive} />
+        <StatCard label={t.jobs.failed} value={<AnimatedNumber value={failed} />} tone={failed ? "fail" : "ok"} sub={failed ? t.jobs.needsAttention : t.jobs.none} />
+        <StatCard label={t.jobs.completed} value={<AnimatedNumber value={completed} />} tone="ok" sub={t.jobs.finishedOk} />
       </div>
 
-      <Panel title="Jobs">
+      <Panel title={t.jobs.panel}>
         {dbError ? (
-          <EmptyState>Could not reach the database. The job queue is unavailable right now.</EmptyState>
+          <EmptyState>{t.jobs.dbErr}</EmptyState>
         ) : jobs.length === 0 ? (
-          <EmptyState>No jobs yet. Each pipeline run appears here as it emits events.</EmptyState>
+          <EmptyState>{t.jobs.empty}</EmptyState>
         ) : (
           <>
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-                    <th className="px-4 py-2 font-semibold">Job</th>
-                    <th className="px-4 py-2 font-semibold">Agents / events</th>
-                    <th className="px-4 py-2 font-semibold">Latest</th>
-                    <th className="px-4 py-2 font-semibold">Started</th>
-                    <th className="px-4 py-2 font-semibold">Completed</th>
-                    <th className="px-4 py-2 font-semibold">Duration</th>
-                    <th className="px-4 py-2 font-semibold">Status</th>
+                    <th className="px-4 py-2 font-semibold">{t.jobs.thJob}</th>
+                    <th className="px-4 py-2 font-semibold">{t.jobs.thAgents}</th>
+                    <th className="px-4 py-2 font-semibold">{t.jobs.thLatest}</th>
+                    <th className="px-4 py-2 font-semibold">{t.jobs.thStarted}</th>
+                    <th className="px-4 py-2 font-semibold">{t.jobs.thCompleted}</th>
+                    <th className="px-4 py-2 font-semibold">{t.jobs.thDuration}</th>
+                    <th className="px-4 py-2 font-semibold">{t.jobs.thStatus}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {jobs.map((j) => (
-                    <tr key={`${j.keyedBy}-${j.id}`} className="border-b border-[var(--color-border)]/50 align-top">
+                    <tr key={`${j.keyedBy}-${j.id}`} className="border-b border-[var(--color-border)]/50 align-top transition-colors hover:bg-[var(--color-panel-2)]">
                       <td className="px-4 py-2">
                         <div className="mono truncate text-[12px] text-[var(--color-fg)]">{j.id}</div>
                         <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-                          by {j.keyedBy === "job_id" ? "job id" : "video"}
+                          {j.keyedBy === "job_id" ? t.jobs.byJobId : t.jobs.byVideo}
                         </div>
                       </td>
                       <td className="px-4 py-2">
                         <div className="mono text-[11px] text-[var(--color-primary)]">
-                          {j.agents.length ? j.agents.join(", ") : "system"}
+                          {j.agents.length ? j.agents.join(", ") : t.common.system}
                         </div>
-                        <div className="mono text-[10px] text-[var(--color-muted)]">{j.events} events</div>
+                        <div className="mono text-[10px] text-[var(--color-muted)]">{fmt(t.jobs.eventsN, { n: j.events })}</div>
                       </td>
                       <td className="px-4 py-2 mono text-[11px] text-[var(--color-muted)]">{j.latestEvent}</td>
                       <td className="px-4 py-2 mono text-[11px] text-[var(--color-muted)]">{relativeTime(j.startedAt)}</td>
                       <td className="px-4 py-2 mono text-[11px] text-[var(--color-muted)]">
-                        {j.completedAt ? relativeTime(j.completedAt) : "—"}
+                        {j.completedAt ? relativeTime(j.completedAt) : t.common.dash}
                       </td>
                       <td className="px-4 py-2 mono text-[11px] text-[var(--color-muted)]">{durationLabel(j.durationMs)}</td>
                       <td className="px-4 py-2">
@@ -193,8 +195,7 @@ export default async function JobsPage() {
               </table>
             </div>
             <p className="border-t border-[var(--color-border)] px-4 py-2 mono text-[10px] text-[var(--color-muted)]">
-              Read-only view. Retry / cancel controls require the backend service key (never exposed
-              to the browser) and are out of scope for this panel.
+              {t.jobs.readOnly}
             </p>
           </>
         )}
