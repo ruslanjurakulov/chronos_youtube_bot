@@ -5,10 +5,12 @@ import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, StatCard, EmptyState, StatusPill } from "@/components/ui";
 import { ViewsSparkline } from "@/components/videos/ViewsSparkline";
 import { VideoLifecycle } from "@/components/videos/VideoLifecycle";
+import { IntelligenceTrace } from "@/components/intel/IntelligenceTrace";
+import { buildTrace } from "@/lib/decisions";
 import { num, decimal, relativeTime, timeOfDay, statusTone } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n";
-import type { FeedbackSignalRow, MetricsSnapshotRow, SystemEventRow, VideoRow } from "@/lib/types";
+import type { FeedbackSignalRow, MetricsSnapshotRow, SystemEventRow, TopicPerformanceRow, VideoRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -45,9 +47,10 @@ export default async function VideoDetail({
   let snapshots: MetricsSnapshotRow[] = [];
   let events: SystemEventRow[] = [];
   let learningSignals: FeedbackSignalRow[] = [];
+  let topicPerf: TopicPerformanceRow[] = [];
 
   if (supabase) {
-    const [vid, snap, ev, fs] = await Promise.all([
+    const [vid, snap, ev, fs, tp] = await Promise.all([
       supabase.from("videos").select("*").eq("video_id", id).maybeSingle(),
       supabase
         .from("metrics_snapshots")
@@ -60,11 +63,13 @@ export default async function VideoDetail({
         .eq("video_id", id)
         .order("ts", { ascending: true }),
       supabase.from("feedback_signals").select("*").eq("video_id", id).limit(50),
+      supabase.from("topic_performance").select("*"),
     ]);
     video = (vid.data as VideoRow | null) ?? null;
     snapshots = (snap.data as MetricsSnapshotRow[]) ?? [];
     events = (ev.data as SystemEventRow[]) ?? [];
     learningSignals = (fs.data as FeedbackSignalRow[]) ?? [];
+    topicPerf = (tp.data as TopicPerformanceRow[]) ?? [];
   }
 
   if (!video) {
@@ -132,9 +137,23 @@ export default async function VideoDetail({
         </div>
       </Panel>
 
-      <Panel title={t.ops.lifecycleTitle}>
-        <VideoLifecycle events={events} hasMetrics={snapshots.length > 0} hasLearning={learningSignals.length > 0} />
-      </Panel>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Panel title={t.ops.lifecycleTitle}>
+          <VideoLifecycle events={events} hasMetrics={snapshots.length > 0} hasLearning={learningSignals.length > 0} />
+        </Panel>
+        <Panel title={t.intel.traceTitle}>
+          <IntelligenceTrace
+            steps={buildTrace(
+              video.video_id,
+              video.topic,
+              events,
+              snapshots.length,
+              learningSignals,
+              topicPerf.find((p) => p.topic === video.topic) ?? null,
+            )}
+          />
+        </Panel>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel title={t.videoDetail.pipeline}>
