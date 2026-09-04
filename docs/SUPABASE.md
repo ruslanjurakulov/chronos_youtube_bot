@@ -69,3 +69,20 @@ No code change needed.
   secrets — never in the browser bundle).
 - The event stream never contains secrets: `modules/event_log.py` redacts
   credential-bearing metadata keys before they are ever stored.
+
+
+## Operational tables (Phase 4, step 1)
+
+`supabase/schema.sql` also creates two read-only observability tables:
+
+- `content_queue` — ContentPlanner's queued topics.
+- `pipeline_runs` — PipelineStateMachine's runs and the `human_approved` audit
+  flag.
+
+They are mirrored from the bot's `history/` state by the intelligence poll
+(`SupabaseSync.mirror_planner_and_runs()`), carry the same authenticated-read
+RLS as every other table, and are **not** read back into the pipeline —
+publishing behaviour is unchanged.
+
+**Re-run `supabase/schema.sql` in the Supabase SQL editor** after updating, or
+the Command Center's Autonomy page will report that the tables were not found.

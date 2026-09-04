@@ -42,13 +42,12 @@ architectural change:
 
 1. **The Command Center is read-only.** It holds the anon key under RLS, and
    there is no insert/update policy on any table. It has no write path at all.
-2. **Backend state is not visible to it.** The content queue
-   (`history/content_calendar.json`, `ContentPlanner`) and the run/approval
-   state machine (`history/pipeline_runs.json`, `PipelineStateMachine`) are
-   local JSON files on an ephemeral Actions runner. `modules/supabase_sync.py`
-   mirrors `videos`, `metrics_snapshots`, `feedback_signals`,
-   `topic_performance`, `competitor_snapshots`, `trending_snapshots` and
-   `system_events` — **not** the queue or the runs.
+2. **The backend does not read any config the UI could write.** Nothing in
+   `main.py` or the workflows consults a mode, a stop flag or a limit, so a
+   control would have nothing to act on.
+
+   (Backend *state* is now visible — see "Operational mirror" below. What is
+   still missing is the reverse direction: config the backend obeys.)
 
 An emergency-stop button the bot never reads would be exactly the fabricated
 autonomy status the brief forbids, so the Controls panel says NOT CONFIGURED
@@ -58,17 +57,7 @@ and points here instead.
 
 Three coordinated changes, in this order:
 
-1. **Mirror existing backend state** (additive, low risk). Extend
-   `modules/supabase_sync.py` with two tables so the Command Center can *see*
-   what already exists:
-   - `content_queue` — from `ContentPlanner` entries (id, topic, source,
-     rationale, status, created_at, scheduled_for).
-   - `pipeline_runs` — from `PipelineStateMachine` (run_id, topic,
-     current_stage, human_approved, approved_by, approved_at, transitions).
-
-   Both need a primary key, `created_at`/`updated_at`, an index on status/stage,
-   and authenticated-read RLS matching the existing tables. This alone makes the
-   Content Queue, approval status and full lifecycle visible — still read-only.
+1. ~~**Mirror existing backend state**~~ — **done** (see "Operational mirror").
 
 2. **An autonomy config table the backend obeys.** e.g. `autonomy_config`
    (single row: mode, emergency_stopped, max_videos_per_day, max_retries,
@@ -84,6 +73,39 @@ Three coordinated changes, in this order:
 Note that step 2 changes publishing behaviour. The current brief says the
 publish gate must remain untouched, so it is **not** done here; it needs an
 explicit decision.
+
+## Operational mirror (step 1, implemented)
+
+The bot keeps two pieces of operational state on disk under `history/`:
+
+- `content_calendar.json` — `ContentPlanner`'s queue of candidate topics.
+- `pipeline_runs.json` — `PipelineStateMachine`'s runs, including the
+  `human_approved` audit flag set by `tools/approve_run.py`.
+
+**These survive between workflow runs**: both `daily_video.yml` and
+`intelligence_poll.yml` restore and save the `history` directory with
+`actions/cache` (`chronos-history-*`). They are cached state, not lost state.
+
+`SupabaseSync.mirror_planner_and_runs()` mirrors them into two new tables,
+`content_queue` and `pipeline_runs`, and the intelligence poll calls it right
+after the existing `mirror_from_store()`. Both tables carry a primary key,
+indexes on status/stage and recency, and the same authenticated-read RLS as
+every other table — the anon key still reads nothing without a signed-in user.
+
+`pipeline_runs.started_at` / `updated_at` are the first and last **real** stage
+transition timestamps, so runs can be ordered without inventing a clock.
+
+This is **observability only**:
+
+- nothing reads these rows back into the pipeline;
+- `human_approved` is mirrored as the audit-trail flag it already is —
+  mirroring it does not gate publishing, and publishing is unchanged;
+- the mirror is defensive: a failure reading the queue cannot stop the runs
+  from mirroring, and neither can fail the poll that called it.
+
+Applying the updated `supabase/schema.sql` is required before these panels show
+anything; until then the Command Center says the table was not found rather
+than showing a misleading empty queue.
 
 ## What this layer does provide, from real data
 
@@ -103,6 +125,8 @@ explicit decision.
 - **Duplicate topic coverage** — topics genuinely covered more than once in the
   published library (normalized comparison). This is real repetition, not a
   prediction about a future idea.
+- **Content queue and pipeline runs** — mirrored from the bot's own state (see
+  above), including each run's current stage and approval flag.
 - **Content quality gate** (per video) — which stages actually completed
   (`script/voice/media/thumbnail/render/upload`) plus a count of recorded
   failures. **Read-only: it reports, it does not gate.** The publish path is
@@ -116,9 +140,13 @@ into, retry against, or otherwise affect video generation or publishing.
 
 ## Guarantees
 
-- No new tables, columns, migrations, env vars, event names or AI calls.
-- Publish gate, feedback algorithm, topic scoring, schema, RLS, realtime and
-  authentication untouched; zero Python files changed.
+- Two new **read-only** tables (`content_queue`, `pipeline_runs`) with the same
+  authenticated-read RLS as every existing table. No new env vars, event names
+  or AI calls.
+- Publish gate, publishing behaviour, feedback algorithm, topic scoring, RLS
+  model, realtime and authentication untouched. The only Python touched is
+  `modules/supabase_sync.py` (a new additive method) and the intelligence poll's
+  `mirror_to_supabase()` that calls it — `main.py` is not modified.
 - Frontend remains read-only — no `insert`/`update`/`upsert`/`delete` anywhere —
   and references no secrets; only `NEXT_PUBLIC_SUPABASE_*`.
 - Derivations are unit-tested in `command-center/tests/autonomy.test.ts`,

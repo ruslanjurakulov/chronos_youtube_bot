@@ -117,6 +117,45 @@ create index if not exists idx_events_ts on public.system_events (ts desc);
 create index if not exists idx_events_video on public.system_events (video_id);
 
 -- ---------------------------------------------------------------------------
+-- Operational state mirrored for observability (Phase 4, step 1)
+-- ---------------------------------------------------------------------------
+-- These two tables mirror state the bot already keeps on disk under history/
+-- (restored between workflow runs via actions/cache) so the Command Center can
+-- *see* it. They are read-only observability: nothing reads them back into the
+-- pipeline, and the publish path is unaffected.
+
+-- ContentPlanner's queue of candidate topics (history/content_calendar.json).
+create table if not exists public.content_queue (
+    entry_id   text primary key,
+    topic      text not null,
+    added_at   text not null,
+    source     text,
+    rationale  text,
+    status     text not null default 'queued',
+    synced_at  timestamptz not null default now()
+);
+create index if not exists idx_queue_status on public.content_queue (status);
+create index if not exists idx_queue_added on public.content_queue (added_at desc);
+
+-- PipelineStateMachine runs (history/pipeline_runs.json). `human_approved` is
+-- the audit-trail flag set by tools/approve_run.py; nothing gates publishing on
+-- it, and mirroring it here does not change that.
+create table if not exists public.pipeline_runs (
+    run_id         text primary key,
+    topic          text not null,
+    current_stage  text not null,
+    human_approved boolean not null default false,
+    approved_by    text,
+    approved_at    text,
+    history        jsonb,
+    started_at     text,
+    updated_at     text,
+    synced_at      timestamptz not null default now()
+);
+create index if not exists idx_runs_stage on public.pipeline_runs (current_stage);
+create index if not exists idx_runs_updated on public.pipeline_runs (updated_at desc);
+
+-- ---------------------------------------------------------------------------
 -- Realtime — let the Command Center live-subscribe to the activity feed
 -- ---------------------------------------------------------------------------
 -- Adds the event + score tables to the supabase_realtime publication so the
@@ -140,7 +179,8 @@ declare t text;
 begin
   foreach t in array array[
     'videos','metrics_snapshots','competitor_snapshots','trending_snapshots',
-    'demand_signals','feedback_signals','topic_performance','system_events'
+    'demand_signals','feedback_signals','topic_performance','system_events',
+    'content_queue','pipeline_runs'
   ]
   loop
     execute format('alter table public.%I enable row level security', t);

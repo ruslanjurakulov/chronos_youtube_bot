@@ -113,3 +113,114 @@ class SupabaseSyncEnabledTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MirrorPlannerAndRunsTestCase(unittest.TestCase):
+    """The Phase 4 step-1 observability mirror: ContentPlanner's queue and
+    PipelineStateMachine's runs. Uses the real classes against tempdir JSON so
+    the row shaping is exercised end to end; requests.post is mocked."""
+
+    def setUp(self):
+        self._tmpdir = tempfile.TemporaryDirectory()
+        self.tmp = Path(self._tmpdir.name)
+        self.sync = SupabaseSync(url="https://demo.supabase.co", service_key="service-key-123")
+
+    def tearDown(self):
+        self._tmpdir.cleanup()
+
+    def _ok_response(self):
+        resp = MagicMock()
+        resp.status_code = 201
+        resp.text = ""
+        return resp
+
+    def _planner(self):
+        from modules.content_planner import ContentPlanner
+
+        return ContentPlanner(store_path=self.tmp / "content_calendar.json")
+
+    def _machine(self):
+        from modules.pipeline_stages import PipelineStateMachine
+
+        return PipelineStateMachine(store_path=self.tmp / "pipeline_runs.json")
+
+    def test_disabled_returns_empty(self):
+        sync = SupabaseSync(url="", service_key="")
+        self.assertEqual(sync.mirror_planner_and_runs(), {})
+
+    def test_mirrors_queue_and_runs(self):
+        planner = self._planner()
+        planner.enqueue("Ancient Egypt", source="manual", rationale="operator pick")
+        machine = self._machine()
+        machine.start_run("Ancient Egypt")
+
+        with patch("modules.supabase_sync.requests.post", return_value=self._ok_response()) as post:
+            counts = self.sync.mirror_planner_and_runs(planner=planner, machine=machine)
+
+        self.assertEqual(counts.get("content_queue"), 1)
+        self.assertEqual(counts.get("pipeline_runs"), 1)
+
+        posted = {}
+        for call in post.call_args_list:
+            url = call.args[0] if call.args else call.kwargs.get("url", "")
+            posted[url.rsplit("/", 1)[-1]] = call.kwargs["json"]
+
+        queue_row = posted["content_queue"][0]
+        self.assertEqual(queue_row["topic"], "Ancient Egypt")
+        self.assertEqual(queue_row["status"], "queued")
+        self.assertEqual(queue_row["source"], "manual")
+
+        run_row = posted["pipeline_runs"][0]
+        self.assertEqual(run_row["topic"], "Ancient Egypt")
+        # The audit-trail flag is mirrored as-is; nothing gates publishing on it.
+        self.assertFalse(run_row["human_approved"])
+        # started_at / updated_at come from real transitions, not a fresh clock.
+        self.assertIsNotNone(run_row["started_at"])
+        self.assertEqual(run_row["started_at"], run_row["history"][0]["timestamp"])
+
+    def test_approved_run_carries_its_audit_fields(self):
+        from modules.pipeline_stages import PipelineStage
+
+        machine = self._machine()
+        run = machine.start_run("Roman Empire")
+        # approve() is only legal at HUMAN_APPROVAL, so walk the real stages.
+        for stage in (
+            PipelineStage.RESEARCH,
+            PipelineStage.SCRIPT,
+            PipelineStage.FACT_CHECK,
+            PipelineStage.HUMAN_APPROVAL,
+        ):
+            machine.advance(run.run_id, stage)
+        machine.approve(run.run_id, approved_by="ruslan")
+
+        with patch("modules.supabase_sync.requests.post", return_value=self._ok_response()) as post:
+            self.sync.mirror_planner_and_runs(planner=self._planner(), machine=machine)
+
+        run_rows = [
+            call.kwargs["json"]
+            for call in post.call_args_list
+            if (call.args[0] if call.args else "").endswith("pipeline_runs")
+        ][0]
+        self.assertTrue(run_rows[0]["human_approved"])
+        self.assertEqual(run_rows[0]["approved_by"], "ruslan")
+        self.assertIsNotNone(run_rows[0]["approved_at"])
+
+    def test_planner_failure_does_not_block_runs_mirror(self):
+        broken = MagicMock()
+        broken.list_entries.side_effect = RuntimeError("disk gone")
+        machine = self._machine()
+        machine.start_run("Topic")
+
+        with patch("modules.supabase_sync.requests.post", return_value=self._ok_response()):
+            counts = self.sync.mirror_planner_and_runs(planner=broken, machine=machine)
+
+        # The queue read failed, but the runs still mirrored — and nothing raised.
+        self.assertNotIn("content_queue", counts)
+        self.assertEqual(counts.get("pipeline_runs"), 1)
+
+    def test_empty_state_mirrors_nothing_without_error(self):
+        with patch("modules.supabase_sync.requests.post") as post:
+            counts = self.sync.mirror_planner_and_runs(planner=self._planner(), machine=self._machine())
+        post.assert_not_called()
+        self.assertEqual(counts.get("content_queue"), 0)
+        self.assertEqual(counts.get("pipeline_runs"), 0)
