@@ -155,7 +155,34 @@ python main.py                      # the default channel, exactly as before
 | `AudioMixer` | TTS provider and narrator voice (the voice is part of the segment cache key, so two channels never share a rendered segment) |
 | `YouTubeUploader` | its own token and its own YouTube target |
 | `IntelligencePoller` / `AnalyticsClient` | its own OAuth token, its own videos |
+| `CommentFetcher` | its own OAuth token, comments on its own videos only |
+| `TopicRecommender` | its own competitors and its own audience's requests |
+| `ContentPlanner` | suggestions land in its own queue |
 | `FeedbackEngine` / `PerformanceAnalyzer` | its own videos in, its own scores out |
+
+### Competitors and audience demand
+
+These are the two most channel-specific inputs there are, and both are scoped:
+
+* **Competitors** come from the channel's own `competitor_channel_ids`
+  (inside `agent_config` — a monitoring setting kept in the same JSON so a
+  channel's whole configuration lives in one column). Snapshots are stored
+  against the watching channel's `chronos_channel_id`. An **absent** list
+  inherits the process-wide `COMPETITOR_CHANNEL_IDS`, which is what keeps a
+  pre-Phase-5 deployment working; an **explicit empty** list means "watch
+  nobody", and the two are deliberately different. There is no cross-channel
+  fallback — a Finance channel never inherits a history channel's rivals.
+* **Audience demand** is polled per channel: the fetcher authenticates as that
+  channel, walks only its videos, and records the resulting demand signals
+  against it. One channel's viewers must never steer another channel's topics.
+* **Trending stays global.** YouTube's trending list is region-wide public data,
+  identical whichever channel reads it, so it is polled once. Scoping it would
+  filter nothing and only pretend to isolate something.
+
+Each channel's comment pass and suggestion pass is wrapped individually: a
+revoked comment scope on one channel costs the others nothing. If the registry
+itself cannot be loaded, the poll runs the legacy single-channel pass rather
+than skipping — degraded attribution, never lost coverage.
 
 **Visual style** reaches the screen through the per-section `keywords` the script
 prompt produces, which is what the stock-footage search actually runs on. It is
@@ -278,8 +305,5 @@ behaves exactly as it did before.
 - **Per-channel autonomy configuration.** The foundation exists (channels carry
   config the backend reads), but no autonomy setting is stored or honoured. That
   is the Step 2 decision described in `docs/AUTONOMY.md`.
-- **Per-channel competitor lists.** `COMPETITOR_CHANNEL_IDS` is still one global
-  env var; competitor and trending polling read public data with an API key and
-  run once per poll, attributed to the channel that ran them.
 - **Deleting a channel.** Pause it. Deletion would orphan videos, learning and
   history that the schema deliberately keeps.

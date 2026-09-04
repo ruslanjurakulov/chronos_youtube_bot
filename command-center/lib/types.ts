@@ -145,6 +145,13 @@ export interface ChannelAgentConfig {
   system_prompt?: string;
   niche_rules?: string;
   visual_style_prompt?: string;
+  /**
+   * YouTube channel ids this channel monitors. A monitoring setting rather than
+   * a generator one, kept in the same JSON so a channel's whole configuration
+   * lives in one column. Absent means "inherit COMPETITOR_CHANNEL_IDS" (the
+   * default channel's legacy behaviour); an explicit [] means "watch nobody".
+   */
+  competitor_channel_ids?: string[];
 }
 
 export interface ChannelScheduleConfig {

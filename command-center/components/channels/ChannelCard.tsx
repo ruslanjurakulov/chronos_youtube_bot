@@ -200,6 +200,14 @@ export function ChannelCard({
         />
         <Field label={t.channels.videos} value={String(videos)} />
         <Field label={t.channels.queued} value={String(queued)} />
+        <Field
+          label={t.channels.competitors}
+          // undefined means the channel inherits the server-side default, which
+          // this dashboard cannot see — so say "—", never a confident 0.
+          value={
+            agent.competitor_channel_ids ? String(agent.competitor_channel_ids.length) : undefined
+          }
+        />
       </dl>
 
       {agent.visual_style_prompt && (

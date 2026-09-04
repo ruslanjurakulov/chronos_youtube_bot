@@ -136,7 +136,8 @@ class EnqueueTopicSuggestionsTestCase(unittest.TestCase):
             ContentOpportunity(topic="Another One", score=0.6, source="demand", rationale="mentioned 5 times"),
         ]
         with patch.object(mod, "TopicRecommender", return_value=fake_recommender), \
-             patch.object(mod, "ContentPlanner", lambda: ContentPlanner(store_path=self.calendar_path)):
+             patch.object(mod, "ContentPlanner",
+                        lambda **kw: ContentPlanner(store_path=self.calendar_path, **kw)):
             written = mod.enqueue_topic_suggestions()
 
         self.assertEqual(written, 2)
@@ -144,6 +145,8 @@ class EnqueueTopicSuggestionsTestCase(unittest.TestCase):
         entries = planner.list_entries(status="queued")
         self.assertEqual({e.topic for e in entries}, {"A Real Suggestion", "Another One"})
         self.assertTrue(all(e.source.startswith("content_opportunity:") for e in entries))
+        # Suggestions land in the polling channel's own queue, not a shared one.
+        self.assertTrue(all(e.channel_id == "default" for e in entries))
 
     def test_repeated_polls_reuse_queued_duplicates_not_grow_unbounded(self):
         fake_recommender = MagicMock()
@@ -151,7 +154,8 @@ class EnqueueTopicSuggestionsTestCase(unittest.TestCase):
             ContentOpportunity(topic="Same Suggestion Every Time", score=0.8, source="trend", rationale="consistently trending")
         ]
         with patch.object(mod, "TopicRecommender", return_value=fake_recommender), \
-             patch.object(mod, "ContentPlanner", lambda: ContentPlanner(store_path=self.calendar_path)):
+             patch.object(mod, "ContentPlanner",
+                        lambda **kw: ContentPlanner(store_path=self.calendar_path, **kw)):
             mod.enqueue_topic_suggestions()
             mod.enqueue_topic_suggestions()
             mod.enqueue_topic_suggestions()
