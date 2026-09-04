@@ -3,10 +3,11 @@ import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, StatCard, EmptyState } from "@/components/ui";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
+import { ExplainScore } from "@/components/topics/ExplainScore";
 import { num, decimal, relativeTime } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n";
-import type { DemandSignalRow, TopicPerformanceRow } from "@/lib/types";
+import type { DemandSignalRow, FeedbackSignalRow, TopicPerformanceRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -18,20 +19,32 @@ export default async function TopicManager() {
   const supabase = await createClient();
   let topics: TopicPerformanceRow[] = [];
   let demand: DemandSignalRow[] = [];
+  let signals: FeedbackSignalRow[] = [];
   let dbError = false;
 
   if (supabase) {
-    const [tp, ds] = await Promise.all([
+    const [tp, ds, fs] = await Promise.all([
       supabase.from("topic_performance").select("*").order("score", { ascending: false }),
       supabase
         .from("demand_signals")
         .select("*")
         .order("polled_date", { ascending: false })
         .limit(50),
+      supabase.from("feedback_signals").select("*").order("analyzed_date", { ascending: false }).limit(300),
     ]);
     if (tp.error || ds.error) dbError = true;
     topics = (tp.data as TopicPerformanceRow[]) ?? [];
     demand = (ds.data as DemandSignalRow[]) ?? [];
+    signals = (fs.data as FeedbackSignalRow[]) ?? [];
+  }
+
+  // Group feedback signals by topic for the "Why?" explanation (real data).
+  const signalsByTopic = new Map<string, FeedbackSignalRow[]>();
+  for (const s of signals) {
+    if (!s.topic) continue;
+    const arr = signalsByTopic.get(s.topic);
+    if (arr) arr.push(s);
+    else signalsByTopic.set(s.topic, [s]);
   }
 
   const scored = topics.length;
@@ -85,13 +98,16 @@ export default async function TopicManager() {
                 {topics.map((tp) => (
                   <tr key={tp.topic} className="border-b border-[var(--color-border)]/50 transition-colors hover:bg-[var(--color-panel-2)]">
                     <td className="px-4 py-2 text-[var(--color-fg)]">{tp.topic}</td>
-                    <td
-                      className="px-4 py-2 text-right mono font-bold tabular-nums"
-                      style={{
-                        color: tp.score >= 50 ? "var(--color-ok)" : "var(--color-warn)",
-                      }}
-                    >
-                      {tp.score.toFixed(0)}
+                    <td className="px-4 py-2 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <ExplainScore score={tp.score} reason={tp.reason} signals={signalsByTopic.get(tp.topic) ?? []} />
+                        <span
+                          className="mono font-bold tabular-nums"
+                          style={{ color: tp.score >= 50 ? "var(--color-ok)" : "var(--color-warn)" }}
+                        >
+                          {tp.score.toFixed(0)}
+                        </span>
+                      </div>
                     </td>
                     <td className="px-4 py-2 text-right mono tabular-nums text-[var(--color-muted)]">
                       {num(tp.videos_analyzed)}

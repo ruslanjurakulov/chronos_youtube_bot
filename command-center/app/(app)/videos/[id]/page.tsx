@@ -4,10 +4,11 @@ import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, StatCard, EmptyState, StatusPill } from "@/components/ui";
 import { ViewsSparkline } from "@/components/videos/ViewsSparkline";
+import { VideoLifecycle } from "@/components/videos/VideoLifecycle";
 import { num, decimal, relativeTime, timeOfDay, statusTone } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
 import { fmt } from "@/lib/i18n";
-import type { MetricsSnapshotRow, SystemEventRow, VideoRow } from "@/lib/types";
+import type { FeedbackSignalRow, MetricsSnapshotRow, SystemEventRow, VideoRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -43,9 +44,10 @@ export default async function VideoDetail({
   let video: VideoRow | null = null;
   let snapshots: MetricsSnapshotRow[] = [];
   let events: SystemEventRow[] = [];
+  let learningSignals: FeedbackSignalRow[] = [];
 
   if (supabase) {
-    const [vid, snap, ev] = await Promise.all([
+    const [vid, snap, ev, fs] = await Promise.all([
       supabase.from("videos").select("*").eq("video_id", id).maybeSingle(),
       supabase
         .from("metrics_snapshots")
@@ -57,10 +59,12 @@ export default async function VideoDetail({
         .select("*")
         .eq("video_id", id)
         .order("ts", { ascending: true }),
+      supabase.from("feedback_signals").select("*").eq("video_id", id).limit(50),
     ]);
     video = (vid.data as VideoRow | null) ?? null;
     snapshots = (snap.data as MetricsSnapshotRow[]) ?? [];
     events = (ev.data as SystemEventRow[]) ?? [];
+    learningSignals = (fs.data as FeedbackSignalRow[]) ?? [];
   }
 
   if (!video) {
@@ -126,6 +130,10 @@ export default async function VideoDetail({
             value={<span className="mono text-[13px]">{video.video_id}</span>}
           />
         </div>
+      </Panel>
+
+      <Panel title={t.ops.lifecycleTitle}>
+        <VideoLifecycle events={events} hasMetrics={snapshots.length > 0} hasLearning={learningSignals.length > 0} />
       </Panel>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

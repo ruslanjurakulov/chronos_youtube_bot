@@ -1,5 +1,6 @@
 import { Sidebar, MobileNav } from "@/components/Sidebar";
 import { Header } from "@/components/Header";
+import { CommandPalette } from "@/components/CommandPalette";
 import { getUser } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/config";
 
@@ -8,13 +9,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const user = isSupabaseConfigured ? await getUser() : null;
 
   return (
-    <div className="grid-bg flex min-h-dvh">
+    <div className="grid-bg atmos flex min-h-dvh">
       <Sidebar />
       <div className="flex min-w-0 flex-1 flex-col">
         <Header userEmail={user?.email} />
         <MobileNav />
         <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-5">{children}</main>
       </div>
+      <CommandPalette />
     </div>
   );
 }

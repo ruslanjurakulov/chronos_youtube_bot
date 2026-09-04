@@ -29,15 +29,19 @@
   --color-border: #d6deea;
   --color-fg: #101a2b;
   --color-muted: #56687f;
-  --color-primary: #0e7490;
-  --color-primary-dim: #0891b2;
+  --color-primary: #7c3aed;
+  --color-primary-dim: #6d28d9;
+  --color-secondary: #2563eb;
   --color-on-accent: #ffffff;
   --color-ok: #059669;
   --color-warn: #b45309;
   --color-fail: #dc2626;
   --color-info: #2563eb;
   --color-idle: #94a3b8;
-  --grid-line: rgba(14, 116, 144, 0.05);
+  --grid-line: rgba(124, 58, 237, 0.05);
+  --glow-primary: rgba(124, 58, 237, 0.28);
+  --atmos-1: rgba(124, 58, 237, 0.10);
+  --atmos-2: rgba(37, 99, 235, 0.08);
   --shadow-panel: 0 1px 2px rgba(16, 26, 43, 0.04), 0 4px 16px rgba(16, 26, 43, 0.05);
   --shadow-elevated: 0 8px 30px rgba(16, 26, 43, 0.10);
 }
@@ -51,15 +55,19 @@
     --color-border: #20304a;
     --color-fg: #e7eef7;
     --color-muted: #8598b0;
-    --color-primary: #22d3ee;
-    --color-primary-dim: #0e7490;
-    --color-on-accent: #04121a;
+    --color-primary: #8b5cf6;
+    --color-primary-dim: #7c3aed;
+    --color-secondary: #3b82f6;
+    --color-on-accent: #ffffff;
     --color-ok: #34d399;
     --color-warn: #fbbf24;
     --color-fail: #f87171;
     --color-info: #60a5fa;
     --color-idle: #6b7c93;
-    --grid-line: rgba(34, 211, 238, 0.045);
+    --grid-line: rgba(139, 92, 246, 0.05);
+    --glow-primary: rgba(139, 92, 246, 0.35);
+    --atmos-1: rgba(139, 92, 246, 0.14);
+    --atmos-2: rgba(59, 130, 246, 0.10);
     --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.30), 0 6px 20px rgba(0, 0, 0, 0.28);
     --shadow-elevated: 0 12px 40px rgba(0, 0, 0, 0.45);
   }
@@ -222,6 +230,52 @@ h1, h2, h3, .font-display {
   outline-offset: 2px;
   border-radius: 0.35rem;
 }
+
+/* Atmospheric backdrop — deep-space-inspired but restrained: two soft
+   radial washes in the accent hues, layered under the technical grid. */
+.atmos {
+  position: relative;
+  background:
+    radial-gradient(1100px 620px at 12% -8%, var(--atmos-1), transparent 60%),
+    radial-gradient(900px 560px at 100% 0%, var(--atmos-2), transparent 55%);
+}
+
+/* ── Chronos Core ────────────────────────────────────────────────────────── */
+@keyframes core-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+@keyframes core-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+@keyframes core-spin-rev {
+  from { transform: rotate(360deg); }
+  to { transform: rotate(0deg); }
+}
+@keyframes core-flare {
+  0%, 100% { opacity: 0.35; }
+  50% { opacity: 0.75; }
+}
+.core-breathe { animation: core-breathe 4s ease-in-out infinite; transform-origin: center; }
+.core-spin { animation: core-spin 18s linear infinite; transform-origin: center; }
+.core-spin-fast { animation: core-spin 7s linear infinite; transform-origin: center; }
+.core-spin-rev { animation: core-spin-rev 26s linear infinite; transform-origin: center; }
+.core-flare { animation: core-flare 3s ease-in-out infinite; }
+
+/* Node pulse for the intelligence map / status when an event lands. */
+@keyframes node-pulse {
+  0% { box-shadow: 0 0 0 0 var(--glow-primary); }
+  70% { box-shadow: 0 0 0 10px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+.node-pulse { animation: node-pulse 2.2s ease-out infinite; }
+
+/* Flowing dash for data-stream lines. */
+@keyframes flow-dash {
+  to { stroke-dashoffset: -24; }
+}
+.flow-line { stroke-dasharray: 3 6; animation: flow-dash 1.2s linear infinite; }
 
 @media (prefers-reduced-motion: reduce) {
   *,
