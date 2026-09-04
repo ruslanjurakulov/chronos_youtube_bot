@@ -155,7 +155,10 @@ class PerformanceAnalyzer:
     database unintentionally.
     """
 
-    def __init__(self, state_store=None):
+    def __init__(self, state_store=None, channel_id: str | None = None):
+        # `channel_id` scopes every read to one channel. None keeps the
+        # pre-multi-channel behaviour: analyse every video in the store.
+        self.channel_id = channel_id
         if state_store is not None:
             self.state_store = state_store
         else:
@@ -190,7 +193,9 @@ class PerformanceAnalyzer:
             return []
 
         try:
-            videos = self.state_store.list_videos(limit=limit, since=since)
+            videos = self.state_store.list_videos(
+                limit=limit, since=since, channel_id=self.channel_id
+            )
         except Exception:
             logger.warning("Failed to list videos from state store; returning no analysis", exc_info=True)
             return []

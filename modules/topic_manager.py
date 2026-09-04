@@ -19,8 +19,19 @@ MAX_TOPIC_ATTEMPTS = 3
 
 
 class TopicManager:
-    def __init__(self):
+    """Chooses what to make next.
+
+    With a ``channel``, every input it consults is that channel's own: its
+    queue, its past videos, its learned topic scores. Cross-channel
+    contamination here would be the worst kind — it would pick History topics
+    because Finance did well — so the channel id is passed down to each
+    collaborator rather than left to a global.
+    """
+
+    def __init__(self, channel=None):
         TOPIC_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        self.channel = channel
+        self.channel_id = str(channel.channel_id) if channel is not None else None
         self.history = self._load()
         self.client = make_client()
         self.originality = OriginalityEngine()
@@ -47,6 +58,8 @@ class TopicManager:
 
     def _safe_make_content_planner(self) -> ContentPlanner | None:
         try:
+            if self.channel_id is not None:
+                return ContentPlanner(channel_id=self.channel_id)
             return ContentPlanner()
         except Exception as e:
             logger.warning(
@@ -62,7 +75,7 @@ class TopicManager:
         construction failure isn't covered by that guarantee.
         """
         try:
-            return PerformanceAnalyzer()
+            return PerformanceAnalyzer(channel_id=self.channel_id)
         except Exception as e:
             logger.warning(
                 "Failed to construct PerformanceAnalyzer (%s: %s) — proceeding without "
@@ -77,7 +90,7 @@ class TopicManager:
         on failure, but constructing it opens a StateStore, so guard that too.
         """
         try:
-            return FeedbackEngine()
+            return FeedbackEngine(channel_id=self.channel_id)
         except Exception as e:
             logger.warning(
                 "Failed to construct FeedbackEngine (%s: %s) — proceeding without "

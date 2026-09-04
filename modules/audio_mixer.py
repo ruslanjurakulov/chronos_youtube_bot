@@ -40,8 +40,22 @@ PATTERN_INTERRUPT_INTERVAL = 35  # seconds
 
 
 class AudioMixer:
-    def __init__(self, topic_slug: str):
+    """Builds one video's audio.
+
+    An optional ``channel`` supplies that channel's TTS provider and narrator
+    voice, so Extinct World and Chronos Finance can sound different without two
+    mixers existing. Without one, the values come from ``config.py`` exactly as
+    before. The secondary voice is a fixed contrast voice in both cases — it is
+    a dramatic device inside the script format, not a channel identity.
+    """
+
+    def __init__(self, topic_slug: str, channel=None):
         self.slug = topic_slug
+        self.channel = channel
+        agent = channel.agent if channel is not None else None
+        self.tts_provider = agent.tts_provider if agent else TTS_PROVIDER
+        self.main_elevenlabs_voice = agent.elevenlabs_voice_id if agent else ELEVENLABS_VOICE_ID
+        self.main_edge_voice = agent.edge_tts_voice if agent else EDGE_TTS_VOICE
         self.work_dir = OUTPUT_DIR / topic_slug / "audio"
         self.work_dir.mkdir(parents=True, exist_ok=True)
 
@@ -73,15 +87,18 @@ class AudioMixer:
         would then contradict its own subtitles and SFX placement, with nothing
         in the log to say so.
         """
-        digest = hashlib.sha1(f"{voice_role}:{text}".encode("utf-8")).hexdigest()[:12]
+        # The voice is part of the cache key: two channels narrating the same
+        # sentence must not share one rendered segment.
+        voice_key = f"{self.tts_provider}:{self.main_elevenlabs_voice}:{self.main_edge_voice}"
+        digest = hashlib.sha1(f"{voice_key}:{voice_role}:{text}".encode("utf-8")).hexdigest()[:12]
         out = self.work_dir / f"seg_{digest}_{voice_role}.mp3"
         if out.exists():
             return out
-        if TTS_PROVIDER == "elevenlabs":
-            vid = ELEVENLABS_VOICE_ID if voice_role == "main" else "D38z5RcWu1voky8WS1ja"
+        if self.tts_provider == "elevenlabs":
+            vid = self.main_elevenlabs_voice if voice_role == "main" else "D38z5RcWu1voky8WS1ja"
             self._tts_elevenlabs(text, vid, out)
         else:
-            voice = EDGE_TTS_VOICE if voice_role == "main" else EDGE_TTS_SECONDARY_VOICE
+            voice = self.main_edge_voice if voice_role == "main" else EDGE_TTS_SECONDARY_VOICE
             asyncio.run(self._tts_edge(text, voice, out))
         return out
 

@@ -67,6 +67,10 @@ _BAND = 0.20
 # average (ratio 1.0). Double the average -> 100; half -> 25.
 _NEUTRAL_SCORE = 50.0
 
+# Mirrors modules.channels.DEFAULT_CHANNEL_ID. Kept local so the learning loop
+# has no import dependency on the channel model.
+_DEFAULT_CHANNEL_ID = "default"
+
 # Fewer analyzed videos than this and there is no channel average worth
 # comparing against, so no signals or scores are produced.
 _MIN_VIDEOS = 2
@@ -97,7 +101,12 @@ def _classify(value: float | None, baseline: float | None, high: str, low: str) 
 
 
 class FeedbackEngine:
-    def __init__(self, state_store=None):
+    def __init__(self, state_store=None, channel_id: str | None = None):
+        # Learning is per channel: a Finance video's numbers must never move a
+        # Prehistoric History topic score. `channel_id` scopes both the videos
+        # this engine reads and the scores it writes. None = every video, and
+        # scores written to the shared table — exactly the previous behaviour.
+        self.channel_id = channel_id
         if state_store is not None:
             self.state_store = state_store
         else:
@@ -119,7 +128,7 @@ class FeedbackEngine:
         if self.state_store is None:
             return []
         try:
-            videos = self.state_store.list_videos(limit=limit)
+            videos = self.state_store.list_videos(limit=limit, channel_id=self.channel_id)
         except Exception:
             logger.warning("Failed to list videos; feedback analysis produced nothing", exc_info=True)
             return []
@@ -251,19 +260,52 @@ class FeedbackEngine:
                 if reason_parts
                 else f"{len(topic_records)} video(s); insufficient comparable metrics"
             )
+            avg_vpd = round(topic_vpd, 4) if topic_vpd is not None else None
             try:
-                self.state_store.upsert_topic_performance(
+                # Channel-scoped score: the isolated verdict, keyed on
+                # (channel_id, topic).
+                self.state_store.upsert_channel_topic_performance(
+                    channel_id=self.channel_id or _DEFAULT_CHANNEL_ID,
                     topic=topic,
                     score=score,
                     videos_analyzed=len(topic_records),
                     updated_at=analyzed_date,
-                    avg_views_per_day=round(topic_vpd, 4) if topic_vpd is not None else None,
+                    avg_views_per_day=avg_vpd,
                     reason=reason,
                 )
+                # Shared table, kept in step for the default channel only. Its
+                # key is `topic` alone, so writing a second channel's verdict
+                # here would overwrite the first — which is exactly the
+                # cross-channel contamination this phase exists to prevent.
+                if self.channel_id in (None, _DEFAULT_CHANNEL_ID):
+                    self.state_store.upsert_topic_performance(
+                        topic=topic,
+                        score=score,
+                        videos_analyzed=len(topic_records),
+                        updated_at=analyzed_date,
+                        avg_views_per_day=avg_vpd,
+                        reason=reason,
+                    )
                 scored += 1
             except Exception:
                 logger.warning("Failed to upsert topic performance for %r", topic, exc_info=True)
         return scored
+
+    def _read_topic_scores(self, limit: int) -> list[dict]:
+        """Learned topic rows for this engine's channel.
+
+        Reads the channel-scoped table when a channel is set. Falls back to the
+        shared table when that returns nothing, so a deployment whose scores
+        predate the channel-scoped table still gets its learned guidance
+        instead of silently losing it.
+        """
+        if self.channel_id is not None:
+            rows = self.state_store.list_channel_topic_performance(
+                channel_id=self.channel_id, limit=limit
+            )
+            if rows or self.channel_id != _DEFAULT_CHANNEL_ID:
+                return rows
+        return self.state_store.list_topic_performance(limit=limit)
 
     # -- prompt rendering --------------------------------------------------
 
@@ -279,7 +321,7 @@ class FeedbackEngine:
         if self.state_store is None:
             return ""
         try:
-            rows = self.state_store.list_topic_performance(limit=limit)
+            rows = self._read_topic_scores(limit)
         except Exception:
             logger.warning("Failed to list topic performance; no learned-score prompt text", exc_info=True)
             return ""

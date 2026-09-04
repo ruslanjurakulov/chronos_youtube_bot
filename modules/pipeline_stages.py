@@ -33,6 +33,10 @@ from typing import Optional
 
 from config import HISTORY_DIR
 
+# Mirrors modules.channels.DEFAULT_CHANNEL_ID, kept local so the state machine
+# has no import dependency on the channel model.
+DEFAULT_CHANNEL_ID = "default"
+
 
 class PipelineStage(enum.Enum):
     """Ordered stages of the content pipeline.
@@ -86,6 +90,7 @@ class PipelineRun:
     human_approved: bool = False
     approved_by: Optional[str] = None
     approved_at: Optional[str] = None
+    channel_id: str = DEFAULT_CHANNEL_ID
 
     def to_dict(self) -> dict:
         return {
@@ -96,6 +101,7 @@ class PipelineRun:
             "human_approved": self.human_approved,
             "approved_by": self.approved_by,
             "approved_at": self.approved_at,
+            "channel_id": self.channel_id,
         }
 
     @staticmethod
@@ -108,6 +114,8 @@ class PipelineRun:
             human_approved=d.get("human_approved", False),
             approved_by=d.get("approved_by"),
             approved_at=d.get("approved_at"),
+            # Runs recorded before Phase 5 belong to the default channel.
+            channel_id=d.get("channel_id") or DEFAULT_CHANNEL_ID,
         )
 
 
@@ -121,7 +129,11 @@ class PipelineStateMachine:
     (a handful of runs at a time, single process).
     """
 
-    def __init__(self, store_path: Optional[Path] = None):
+    def __init__(self, store_path: Optional[Path] = None, channel_id: str = DEFAULT_CHANNEL_ID):
+        """`channel_id` is the channel new runs are started for. Approval and
+        stage transitions are addressed by run_id and so are unaffected by it;
+        one file holds every channel's runs."""
+        self.channel_id = channel_id
         self.store_path = Path(store_path) if store_path is not None else (HISTORY_DIR / "pipeline_runs.json")
 
     # -- storage -----------------------------------------------------
@@ -142,14 +154,19 @@ class PipelineStateMachine:
 
     # -- public API ----------------------------------------------------
 
-    def start_run(self, topic: str) -> PipelineRun:
-        """Create a new pipeline run at PipelineStage.TOPIC and persist it."""
+    def start_run(self, topic: str, channel_id: Optional[str] = None) -> PipelineRun:
+        """Create a new pipeline run at PipelineStage.TOPIC and persist it.
+
+        `channel_id` defaults to the machine's own channel, so an existing
+        single-argument caller records a default-channel run exactly as before.
+        """
         run_id = uuid.uuid4().hex[:12]
         run = PipelineRun(
             run_id=run_id,
             topic=topic,
             current_stage=PipelineStage.TOPIC,
             history=[StageTransition(stage=PipelineStage.TOPIC, timestamp=_now_iso(), note="run started")],
+            channel_id=channel_id or self.channel_id,
         )
         runs = self._load_all()
         runs[run_id] = run
@@ -237,6 +254,13 @@ class PipelineStateMachine:
         runs = self._load_all()
         return runs.get(run_id)
 
-    def list_runs(self) -> list:
-        runs = self._load_all()
-        return list(runs.values())
+    def list_runs(self, channel_id: Optional[str] = None) -> list:
+        """Every run, or only one channel's when `channel_id` is given.
+
+        Unfiltered by default: the Supabase mirror wants all of them, and a
+        caller that predates channels expects all of them.
+        """
+        runs = list(self._load_all().values())
+        if channel_id is not None:
+            runs = [r for r in runs if r.channel_id == channel_id]
+        return runs

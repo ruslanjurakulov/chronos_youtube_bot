@@ -155,6 +155,7 @@ class SupabaseSync:
             "metrics_snapshots": None,  # no bulk lister; handled below
             "feedback_signals": lambda: store.list_feedback_signals(limit=100000),
             "topic_performance": lambda: store.list_topic_performance(limit=100000),
+            "channel_topic_performance": lambda: store.list_channel_topic_performance(limit=100000),
             "competitor_snapshots": lambda: store.list_competitor_snapshots(limit=100000),
             "trending_snapshots": lambda: store.list_trending_snapshots(limit=100000),
         }
@@ -213,7 +214,8 @@ class SupabaseSync:
                 from modules.content_planner import ContentPlanner
 
                 planner = ContentPlanner()
-            rows = [self._queue_row(e) for e in planner.list_entries()]
+            # Every channel's entries — the Command Center filters, the mirror does not.
+            rows = [self._queue_row(e) for e in planner.list_entries(channel_id=None)]
             counts["content_queue"] = self.upsert(
                 "content_queue", rows, on_conflict=_UPSERT_TABLES["content_queue"]
             )
@@ -321,6 +323,7 @@ class SupabaseSync:
             "source": d.get("source") or None,
             "rationale": d.get("rationale") or None,
             "status": d.get("status") or "queued",
+            "channel_id": d.get("channel_id") or "default",
         }
 
     @staticmethod
@@ -342,6 +345,7 @@ class SupabaseSync:
             "history": history,
             "started_at": stamps[0] if stamps else None,
             "updated_at": stamps[-1] if stamps else None,
+            "channel_id": d.get("channel_id") or "default",
         }
 
     @staticmethod
@@ -352,6 +356,8 @@ class SupabaseSync:
 
     @staticmethod
     def _event_row(row: dict) -> dict:
+        # channel_id rides along untouched: null stays null, and null means
+        # "global" in this table (see supabase/migrations/0001_multi_channel.sql).
         out = {k: v for k, v in row.items() if k != "id"}
         out["event_key"] = f"{row.get('ts', '')}|{row.get('event', '')}|{row.get('id', '')}"
         return out

@@ -81,6 +81,10 @@ from config import HISTORY_DIR
 
 logger = logging.getLogger(__name__)
 
+# Mirrors modules.channels.DEFAULT_CHANNEL_ID, kept local so the queue has no
+# import dependency on the channel model.
+DEFAULT_CHANNEL_ID = "default"
+
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -96,6 +100,7 @@ class CalendarEntry:
     source: str
     rationale: str = ""
     status: str = "queued"  # "queued" | "published" | "skipped"
+    channel_id: str = DEFAULT_CHANNEL_ID
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -109,6 +114,9 @@ class CalendarEntry:
             source=d.get("source", ""),
             rationale=d.get("rationale", ""),
             status=d.get("status", "queued"),
+            # Entries written before Phase 5 have no channel — they are the
+            # default channel's, which is what the backfill says everywhere else.
+            channel_id=d.get("channel_id") or DEFAULT_CHANNEL_ID,
         )
 
 
@@ -122,7 +130,16 @@ class ContentPlanner:
     project's scale (a handful of queued topics at a time, single process).
     """
 
-    def __init__(self, store_path: Optional[Union[Path, str]] = None):
+    def __init__(
+        self,
+        store_path: Optional[Union[Path, str]] = None,
+        channel_id: str = DEFAULT_CHANNEL_ID,
+    ):
+        """`channel_id` is the channel this planner enqueues for and, unless a
+        caller asks otherwise, the only channel it reads back. One shared file
+        holds every channel's entries; the filtering is what keeps a Finance
+        topic from ever being handed to the History pipeline."""
+        self.channel_id = channel_id
         self.store_path = (
             Path(store_path) if store_path is not None else (HISTORY_DIR / "content_calendar.json")
         )
@@ -156,7 +173,13 @@ class ContentPlanner:
         """
         entries = self._load_all()
         for entry in entries.values():
-            if entry.topic == topic and entry.status == "queued":
+            # Dedup is per channel: two channels may legitimately both queue
+            # "The Fall of Rome" — they are different videos.
+            if (
+                entry.topic == topic
+                and entry.status == "queued"
+                and entry.channel_id == self.channel_id
+            ):
                 logger.info("Duplicate queued topic %r — reusing entry %s", topic, entry.entry_id)
                 return entry
 
@@ -168,6 +191,7 @@ class ContentPlanner:
             source=source,
             rationale=rationale,
             status="queued",
+            channel_id=self.channel_id,
         )
         entries[entry_id] = entry
         self._save_all(entries)
@@ -192,7 +216,11 @@ class ContentPlanner:
         """Return the oldest still-`"queued"` entry (FIFO by `added_at`), or
         None if the queue is empty. Peeking only — does not mutate status.
         """
-        queued = [e for e in self._load_all().values() if e.status == "queued"]
+        queued = [
+            e
+            for e in self._load_all().values()
+            if e.status == "queued" and e.channel_id == self.channel_id
+        ]
         if not queued:
             return None
         return min(queued, key=lambda e: e.added_at)
@@ -223,9 +251,19 @@ class ContentPlanner:
         self._save_all(entries)
         return entry
 
-    def list_entries(self, status: Optional[str] = None) -> list:
-        """All entries, optionally filtered by `status`, oldest first."""
+    def list_entries(
+        self, status: Optional[str] = None, channel_id: Optional[str] = ""
+    ) -> list:
+        """Entries oldest first, optionally filtered by `status`.
+
+        `channel_id` defaults to this planner's own channel. Pass None for
+        every channel — what the Supabase mirror does, so the Command Center can
+        show one channel or all of them.
+        """
         entries = list(self._load_all().values())
+        wanted = self.channel_id if channel_id == "" else channel_id
+        if wanted is not None:
+            entries = [e for e in entries if e.channel_id == wanted]
         if status is not None:
             entries = [e for e in entries if e.status == status]
         entries.sort(key=lambda e: e.added_at)

@@ -67,6 +67,14 @@ UPLOAD_STARTED = "upload.started"
 UPLOAD_COMPLETED = "upload.completed"
 UPLOAD_FAILED = "upload.failed"
 VIDEO_PUBLISHED = "video.published"
+# Channels (Phase 5). Lifecycle only — the per-stage events above already
+# carry a channel_id, so there is no channel.job.* duplicate of job.*.
+CHANNEL_CREATED = "channel.created"
+CHANNEL_UPDATED = "channel.updated"
+CHANNEL_PAUSED = "channel.paused"
+CHANNEL_ACTIVATED = "channel.activated"
+CHANNEL_OAUTH_CONNECTED = "channel.oauth.connected"
+CHANNEL_OAUTH_FAILED = "channel.oauth.failed"
 # Analytics / feedback loop
 ANALYTICS_UPDATED = "analytics.updated"
 FEEDBACK_GENERATED = "feedback.generated"
@@ -120,6 +128,7 @@ def emit(
     status: str | None = None,
     duration_ms: float | None = None,
     metadata: dict | None = None,
+    channel_id: str | None = None,
     store=None,
 ) -> bool:
     """Record one observability event. Returns True on success, False if it was
@@ -127,6 +136,11 @@ def emit(
 
     Pass `store` (an open StateStore) on a hot path to avoid re-opening the DB;
     otherwise a short-lived store is opened and closed for this one event.
+
+    `channel_id` marks the event as one channel's work. Leave it None for
+    genuinely global events — a system heartbeat or an infrastructure failure
+    belongs to no channel, and tagging it with one would make the Command
+    Center attribute shared infrastructure to whichever channel ran last.
     """
     try:
         ts = datetime.utcnow().isoformat()
@@ -135,6 +149,7 @@ def emit(
             store.record_event(
                 event=event, ts=ts, video_id=video_id, job_id=job_id,
                 agent=agent, status=status, duration_ms=duration_ms, metadata=payload,
+                channel_id=channel_id,
             )
             return True
         from modules.state_store import StateStore
@@ -143,6 +158,7 @@ def emit(
             own_store.record_event(
                 event=event, ts=ts, video_id=video_id, job_id=job_id,
                 agent=agent, status=status, duration_ms=duration_ms, metadata=payload,
+                channel_id=channel_id,
             )
         return True
     except Exception as e:
