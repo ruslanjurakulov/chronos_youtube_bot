@@ -193,16 +193,27 @@ def run_feedback_analysis() -> dict:
 def mirror_to_supabase() -> dict:
     """Mirror the current local state into Supabase for the Command Center.
     No-op (returns {}) when SUPABASE_URL / SUPABASE_SERVICE_KEY aren't set, so
-    the bot stays fully local until you provision Supabase. Never raises."""
+    the bot stays fully local until you provision Supabase. Never raises.
+
+    Mirrors two things: the StateStore tables, and the operational state the
+    bot keeps under history/ (ContentPlanner's queue and PipelineStateMachine's
+    runs, both restored between workflow runs by actions/cache). The second is
+    observability only — nothing reads those rows back into the pipeline.
+    """
     sync = SupabaseSync()
     if not sync.enabled:
         return {}
+    counts: dict = {}
     try:
         with StateStore() as store:
-            return sync.mirror_from_store(store)
+            counts.update(sync.mirror_from_store(store))
     except Exception as e:
         logger.warning("Supabase mirror failed (%s: %s)", type(e).__name__, e)
-        return {}
+    try:
+        counts.update(sync.mirror_planner_and_runs())
+    except Exception as e:
+        logger.warning("Supabase operational mirror failed (%s: %s)", type(e).__name__, e)
+    return counts
 
 
 def main():

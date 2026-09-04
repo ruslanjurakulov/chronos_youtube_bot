@@ -48,6 +48,8 @@ _UPSERT_TABLES = {
     "topic_performance": "topic",
     "competitor_snapshots": "video_id,polled_date",
     "trending_snapshots": "video_id,polled_date,region_code",
+    "content_queue": "entry_id",
+    "pipeline_runs": "run_id",
 }
 
 
@@ -153,6 +155,88 @@ class SupabaseSync:
 
         logger.info("Supabase mirror complete: %s", counts)
         return counts
+
+    def mirror_planner_and_runs(self, planner=None, machine=None) -> dict:
+        """Mirror the two pieces of operational state the bot keeps on disk —
+        ContentPlanner's queue and PipelineStateMachine's runs — into Supabase
+        so the Command Center can see them.
+
+        Purely additive observability: nothing reads these rows back into the
+        pipeline, and the publish path is untouched. `human_approved` is
+        mirrored as the audit-trail flag it already is; mirroring it does not
+        gate anything.
+
+        Constructs its own ContentPlanner / PipelineStateMachine when none is
+        injected (tests inject fakes). Never raises — a failure here must not
+        affect the poll that called it.
+        """
+        if not self.enabled:
+            return {}
+
+        counts: dict[str, int] = {}
+
+        # -- content queue --
+        try:
+            if planner is None:
+                from modules.content_planner import ContentPlanner
+
+                planner = ContentPlanner()
+            rows = [self._queue_row(e) for e in planner.list_entries()]
+            counts["content_queue"] = self.upsert(
+                "content_queue", rows, on_conflict=_UPSERT_TABLES["content_queue"]
+            )
+        except Exception as e:
+            logger.warning("Failed mirroring content_queue (%s: %s)", type(e).__name__, e)
+
+        # -- pipeline runs --
+        try:
+            if machine is None:
+                from modules.pipeline_stages import PipelineStateMachine
+
+                machine = PipelineStateMachine()
+            rows = [self._run_row(r) for r in machine.list_runs()]
+            counts["pipeline_runs"] = self.upsert(
+                "pipeline_runs", rows, on_conflict=_UPSERT_TABLES["pipeline_runs"]
+            )
+        except Exception as e:
+            logger.warning("Failed mirroring pipeline_runs (%s: %s)", type(e).__name__, e)
+
+        logger.info("Supabase operational mirror complete: %s", counts)
+        return counts
+
+    @staticmethod
+    def _queue_row(entry) -> dict:
+        """One CalendarEntry as a content_queue row."""
+        d = entry.to_dict() if hasattr(entry, "to_dict") else dict(entry)
+        return {
+            "entry_id": d.get("entry_id"),
+            "topic": d.get("topic"),
+            "added_at": d.get("added_at"),
+            "source": d.get("source") or None,
+            "rationale": d.get("rationale") or None,
+            "status": d.get("status") or "queued",
+        }
+
+    @staticmethod
+    def _run_row(run) -> dict:
+        """One PipelineRun as a pipeline_runs row. `started_at` / `updated_at`
+        are the first and last real stage-transition timestamps, so the Command
+        Center can order runs without inventing a clock."""
+        d = run.to_dict() if hasattr(run, "to_dict") else dict(run)
+        history = d.get("history") or []
+        stamps = [t.get("timestamp") for t in history if isinstance(t, dict) and t.get("timestamp")]
+        stamps.sort()
+        return {
+            "run_id": d.get("run_id"),
+            "topic": d.get("topic"),
+            "current_stage": d.get("current_stage"),
+            "human_approved": bool(d.get("human_approved", False)),
+            "approved_by": d.get("approved_by"),
+            "approved_at": d.get("approved_at"),
+            "history": history,
+            "started_at": stamps[0] if stamps else None,
+            "updated_at": stamps[-1] if stamps else None,
+        }
 
     @staticmethod
     def _strip_local_id(row: dict) -> dict:

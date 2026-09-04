@@ -21,6 +21,7 @@ const NAV: { href: string; key: NavKey; hotkey?: string }[] = [
   { href: "/decisions", key: "decisions", hotkey: "c" },
   { href: "/learning", key: "learning", hotkey: "n" },
   { href: "/memory", key: "memory", hotkey: "m" },
+  { href: "/autonomy", key: "autonomy", hotkey: "u" },
   { href: "/timemachine", key: "timeMachine", hotkey: "t" },
   { href: "/errors", key: "errors" },
   { href: "/logs", key: "logs", hotkey: "l" },

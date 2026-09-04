@@ -75,3 +75,38 @@ export interface DemandSignalRow {
   example_comment_ids: string | null;
   polled_date: string;
 }
+
+/**
+ * Operational state mirrored for observability (Phase 4, step 1). These two
+ * tables mirror what the bot already keeps under history/; nothing reads them
+ * back into the pipeline and the publish path is unaffected.
+ */
+export interface ContentQueueRow {
+  entry_id: string;
+  topic: string;
+  added_at: string;
+  source: string | null;
+  rationale: string | null;
+  status: string;
+  synced_at: string | null;
+}
+
+export interface PipelineRunStage {
+  stage: string;
+  timestamp: string;
+  note?: string;
+}
+
+export interface PipelineRunRow {
+  run_id: string;
+  topic: string;
+  current_stage: string;
+  /** The audit-trail flag set by tools/approve_run.py. Nothing gates publishing on it. */
+  human_approved: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
+  history: PipelineRunStage[] | null;
+  started_at: string | null;
+  updated_at: string | null;
+  synced_at: string | null;
+}

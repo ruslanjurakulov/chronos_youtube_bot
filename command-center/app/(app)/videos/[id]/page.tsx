@@ -6,6 +6,7 @@ import { Panel, StatCard, EmptyState, StatusPill } from "@/components/ui";
 import { ViewsSparkline } from "@/components/videos/ViewsSparkline";
 import { VideoLifecycle } from "@/components/videos/VideoLifecycle";
 import { IntelligenceTrace } from "@/components/intel/IntelligenceTrace";
+import { QualityGate } from "@/components/autonomy/QualityGate";
 import { buildTrace } from "@/lib/decisions";
 import { num, decimal, relativeTime, timeOfDay, statusTone } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
@@ -138,7 +139,11 @@ export default async function VideoDetail({
       </Panel>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title={t.ops.lifecycleTitle}>
+        <Panel title={t.auto.gateTitle}>
+        <QualityGate events={events} />
+      </Panel>
+
+      <Panel title={t.ops.lifecycleTitle}>
           <VideoLifecycle events={events} hasMetrics={snapshots.length > 0} hasLearning={learningSignals.length > 0} />
         </Panel>
         <Panel title={t.intel.traceTitle}>
