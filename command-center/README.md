@@ -70,3 +70,14 @@ produces the production build.
   anon key alone reads nothing — a signed-in user is required.
 - The service-role key never appears in this app; only the bot (server-side, in
   GitHub Actions secrets) holds it.
+
+## Vercel deployment notes
+
+This app deploys as its **own** Vercel project, separate from the Python bot in
+the repo root. When creating the project, two settings are essential:
+
+- **Framework Preset:** `Next.js` (Vercel will otherwise auto-detect the Python
+  bot at the repo root and try to build `main.py` — set this explicitly).
+- **Root Directory:** `command-center` (so Vercel builds only this folder).
+
+Set both, plus the two `NEXT_PUBLIC_SUPABASE_*` env vars, then deploy.
