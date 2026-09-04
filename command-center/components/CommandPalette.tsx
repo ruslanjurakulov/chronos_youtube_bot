@@ -10,6 +10,7 @@ import { relativeTime } from "@/lib/format";
 type NavKey = keyof Dictionary["nav"];
 const NAV: { href: string; key: NavKey; hotkey?: string }[] = [
   { href: "/", key: "command", hotkey: "d" },
+  { href: "/channels", key: "channels", hotkey: "h" },
   { href: "/videos", key: "videos", hotkey: "v" },
   { href: "/pipeline", key: "pipeline", hotkey: "p" },
   { href: "/agents", key: "agents" },

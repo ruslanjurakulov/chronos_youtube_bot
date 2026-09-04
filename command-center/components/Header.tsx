@@ -6,13 +6,25 @@ import { LanguageSelector } from "@/components/LanguageSelector";
 import { SignOutButton } from "@/components/SignOutButton";
 import { NotificationsCenter } from "@/components/NotificationsCenter";
 import { UtcClock } from "@/components/UtcClock";
+import { ChannelSwitcher } from "@/components/ChannelSwitcher";
+import { ALL_CHANNELS, type ChannelSelection } from "@/lib/channels";
+import type { ChannelRow } from "@/lib/types";
 
 /**
- * App header: brand wordmark, a UTC clock, a command-palette search trigger,
- * notifications, then the operator controls — language, theme, sign out.
- * Primary navigation lives in the sidebar (and the mobile strip below).
+ * App header: brand wordmark, a UTC clock, the channel switcher, a
+ * command-palette search trigger, notifications, then the operator controls —
+ * language, theme, sign out. Primary navigation lives in the sidebar (and the
+ * mobile strip below).
  */
-export function Header({ userEmail }: { userEmail?: string | null }) {
+export function Header({
+  userEmail,
+  channels = [],
+  selection = ALL_CHANNELS,
+}: {
+  userEmail?: string | null;
+  channels?: ChannelRow[];
+  selection?: ChannelSelection;
+}) {
   const { t } = useI18n();
 
   function openPalette() {
@@ -32,6 +44,7 @@ export function Header({ userEmail }: { userEmail?: string | null }) {
       </div>
 
       <div className="flex items-center gap-2">
+        <ChannelSwitcher channels={channels} selection={selection} />
         <button
           type="button"
           onClick={openPalette}

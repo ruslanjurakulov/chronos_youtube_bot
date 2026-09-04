@@ -6,6 +6,8 @@ import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { ExplainScore } from "@/components/topics/ExplainScore";
 import { num, decimal, relativeTime } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
+import { fetchTopicScores, getChannelContext, getChannelSelection } from "@/lib/channels-server";
+import { ALL_CHANNELS, scopeQuery } from "@/lib/channels";
 import { fmt } from "@/lib/i18n";
 import type { DemandSignalRow, FeedbackSignalRow, TopicPerformanceRow } from "@/lib/types";
 
@@ -15,6 +17,9 @@ export const revalidate = 0;
 export default async function TopicManager() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope every channel-owned query to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const supabase = await createClient();
   let topics: TopicPerformanceRow[] = [];
@@ -24,16 +29,14 @@ export default async function TopicManager() {
 
   if (supabase) {
     const [tp, ds, fs] = await Promise.all([
-      supabase.from("topic_performance").select("*").order("score", { ascending: false }),
-      supabase
-        .from("demand_signals")
-        .select("*")
+      fetchTopicScores(supabase, selection),
+      scopeQuery(supabase.from("demand_signals").select("*"), selection)
         .order("polled_date", { ascending: false })
         .limit(50),
-      supabase.from("feedback_signals").select("*").order("analyzed_date", { ascending: false }).limit(300),
+      scopeQuery(supabase.from("feedback_signals").select("*"), selection).order("analyzed_date", { ascending: false }).limit(300),
     ]);
-    if (tp.error || ds.error) dbError = true;
-    topics = (tp.data as TopicPerformanceRow[]) ?? [];
+    if (ds.error) dbError = true;
+    topics = tp;
     demand = (ds.data as DemandSignalRow[]) ?? [];
     signals = (fs.data as FeedbackSignalRow[]) ?? [];
   }
@@ -47,6 +50,11 @@ export default async function TopicManager() {
     else signalsByTopic.set(s.topic, [s]);
   }
 
+  // Say plainly which scores these are. Per-channel verdicts are never merged,
+  // so the all-channels view shows the shared table rather than an average.
+  const { channels } = await getChannelContext();
+  const showSharedNote = selection === ALL_CHANNELS && channels.length > 1;
+
   const scored = topics.length;
   const strong = topics.filter((tp) => tp.score >= 50).length;
   const topScore = topics.length > 0 ? topics[0].score : null;
@@ -59,6 +67,10 @@ export default async function TopicManager() {
           <p className="mono text-[11px] text-[var(--color-muted)]">{t.topics.subtitle}</p>
         </div>
       </div>
+
+      {showSharedNote && (
+        <p className="text-[11px] leading-relaxed text-[var(--color-muted)]">{t.channels.sharedScoresNote}</p>
+      )}
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         <StatCard label={t.topics.scored} value={<AnimatedNumber value={scored} />} sub={t.topics.scoredSub} />

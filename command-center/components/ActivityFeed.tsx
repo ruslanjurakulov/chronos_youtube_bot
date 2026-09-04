@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRealtimeEvents } from "@/lib/useRealtimeEvents";
+import { ALL_CHANNELS, type ChannelSelection } from "@/lib/channels";
 import { statusTone, timeOfDay } from "@/lib/format";
 import { categorize, type EventCategory } from "@/lib/intelligence";
 import type { SystemEventRow } from "@/lib/types";
@@ -31,9 +32,15 @@ const FILTERS: { key: Filter; label: keyof Dictionary["ops"] }[] = [
  * Supabase Realtime — real events only. New arrivals animate in; category
  * filters (derived from real event names) let an operator narrow the stream.
  */
-export function ActivityFeed({ initial }: { initial: SystemEventRow[] }) {
+export function ActivityFeed({
+  initial,
+  selection = ALL_CHANNELS,
+}: {
+  initial: SystemEventRow[];
+  selection?: ChannelSelection;
+}) {
   const { t } = useI18n();
-  const { events, connected, freshKey } = useRealtimeEvents(initial, "system_events_feed");
+  const { events, connected, freshKey } = useRealtimeEvents(initial, "system_events_feed", selection);
   const [filter, setFilter] = useState<Filter>("all");
   const live = connected === true;
 

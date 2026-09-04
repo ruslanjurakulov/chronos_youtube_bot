@@ -4,6 +4,8 @@ import { NotConfigured } from "@/components/NotConfigured";
 import { IntelligenceMap } from "@/components/intelligence/IntelligenceMap";
 import { ChronosCore } from "@/components/ChronosCore";
 import { getDictionary } from "@/lib/i18n/server";
+import { getChannelSelection } from "@/lib/channels-server";
+import { scopeQuery } from "@/lib/channels";
 import type { SystemEventRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -12,13 +14,17 @@ export const revalidate = 0;
 export default async function IntelligencePage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope channel-owned queries to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
   if (supabase) {
-    const { data } = await supabase
-      .from("system_events")
-      .select("*")
+    const { data } = await scopeQuery(
+        supabase.from("system_events").select("*"),
+        selection, { nullIsGlobal: true },
+      )
       .order("ts", { ascending: false })
       .limit(500);
     events = (data as SystemEventRow[]) ?? [];
@@ -33,10 +39,10 @@ export default async function IntelligencePage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="panel flex items-center justify-center p-5">
-          <ChronosCore initial={events} size={200} />
+          <ChronosCore initial={events} size={200} selection={selection} />
         </div>
         <div className="lg:col-span-2">
-          <IntelligenceMap initial={events} />
+          <IntelligenceMap initial={events} selection={selection} />
         </div>
       </div>
     </div>

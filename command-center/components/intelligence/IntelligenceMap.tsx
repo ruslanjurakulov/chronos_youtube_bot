@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useRealtimeEvents } from "@/lib/useRealtimeEvents";
+import { ALL_CHANNELS, type ChannelSelection } from "@/lib/channels";
 import { useI18n } from "@/lib/i18n/context";
 import type { Dictionary } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
@@ -86,9 +87,15 @@ function matches(node: NodeKey, ev: string): boolean {
 /** How Chronos intelligence flows. Each node lights up when a matching real
  *  event landed in the last 24h; edges animate out of an active source. No
  *  activity anywhere means the map is honestly quiet, not faked into motion. */
-export function IntelligenceMap({ initial }: { initial: SystemEventRow[] }) {
+export function IntelligenceMap({
+  initial,
+  selection = ALL_CHANNELS,
+}: {
+  initial: SystemEventRow[];
+  selection?: ChannelSelection;
+}) {
   const { t } = useI18n();
-  const { events } = useRealtimeEvents(initial, "chronos_intel");
+  const { events } = useRealtimeEvents(initial, "chronos_intel", selection);
 
   const active = useMemo(() => {
     const recent = events.filter((e) => Date.now() - new Date(e.ts).getTime() < DAY_MS);

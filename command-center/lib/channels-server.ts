@@ -1,0 +1,144 @@
+import { cookies } from "next/headers";
+import { createClient } from "@/lib/supabase/server";
+import {
+  ALL_CHANNELS,
+  CHANNEL_COOKIE,
+  DEFAULT_CHANNEL_ID,
+  resolveSelection,
+  type ChannelSelection,
+} from "@/lib/channels";
+import type {
+  ChannelCredentialRow,
+  ChannelRow,
+  ChannelTopicPerformanceRow,
+  TopicPerformanceRow,
+} from "@/lib/types";
+
+/**
+ * Server-side channel context: the channels this user can see, and which one
+ * they have selected.
+ *
+ * Kept out of lib/channels.ts so that module stays pure and unit-testable —
+ * this file is the only part that touches cookies and the database.
+ *
+ * `channels` is empty (not an error) when the multi-channel migration has not
+ * been applied yet. Callers then render exactly as they did before Phase 5,
+ * which is what a single-channel deployment should see.
+ */
+export interface ChannelContextData {
+  channels: ChannelRow[];
+  credentials: ChannelCredentialRow[];
+  selection: ChannelSelection;
+  /** True once more than one channel exists — the switcher is noise before that. */
+  multi: boolean;
+  /** True when the `channels` table isn't there yet (migration not applied). */
+  notMigrated: boolean;
+}
+
+export async function getChannelContext(): Promise<ChannelContextData> {
+  const supabase = await createClient();
+  const cookieStore = await cookies();
+  const raw = cookieStore.get(CHANNEL_COOKIE)?.value;
+
+  if (!supabase) {
+    return { channels: [], credentials: [], selection: ALL_CHANNELS, multi: false, notMigrated: false };
+  }
+
+  const [ch, cr] = await Promise.all([
+    supabase.from("channels").select("*").order("channel_id", { ascending: true }),
+    supabase.from("channel_credentials").select("*"),
+  ]);
+
+  // PGRST205: the table doesn't exist. That is a "not migrated yet" state, not
+  // a failure to report as broken — say so plainly where it matters and
+  // otherwise behave like the single-channel app.
+  const notMigrated = Boolean(ch.error && /does not exist|PGRST205/i.test(ch.error.message));
+  const channels = (ch.data as ChannelRow[]) ?? [];
+  const credentials = (cr.data as ChannelCredentialRow[]) ?? [];
+
+  return {
+    channels,
+    credentials,
+    selection: resolveSelection(raw, channels),
+    multi: channels.length > 1,
+    notMigrated,
+  };
+}
+
+/** Just the selection, for pages that don't need the channel list. */
+export async function getChannelSelection(): Promise<ChannelSelection> {
+  return (await getChannelContext()).selection;
+}
+
+/**
+ * Learned topic scores for the current view.
+ *
+ * Two tables hold scores and they are not interchangeable:
+ *
+ * * `channel_topic_performance` is keyed on (channel_id, topic) and is the
+ *   isolated, per-channel verdict.
+ * * `topic_performance` is keyed on `topic` alone. It predates channels and is
+ *   still written for the default channel, so it remains correct for a
+ *   single-channel deployment and for historical data — but it structurally
+ *   cannot hold two channels' scores for the same topic.
+ *
+ * So: scoped to a channel, read that channel's own rows (falling back to the
+ * shared table for the default channel, whose scores may predate Phase 5).
+ * Across all channels, read the shared table and do NOT merge per-channel rows
+ * — averaging a Finance verdict with a History one would invent a number that
+ * describes neither. The topics page says so where more than one channel
+ * exists.
+ */
+export async function fetchTopicScores(
+  supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>,
+  selection: ChannelSelection,
+  limit = 200,
+): Promise<TopicPerformanceRow[]> {
+  if (selection !== ALL_CHANNELS) {
+    return fetchChannelTopicScores(supabase, selection, limit);
+  }
+  const { data } = await supabase
+    .from("topic_performance")
+    .select("*")
+    .order("score", { ascending: false })
+    .limit(limit);
+  return (data as TopicPerformanceRow[]) ?? [];
+}
+
+/** One channel's scores, by id — used where the channel is known from the row
+ *  being rendered (a video's own channel) rather than from the switcher. */
+export async function fetchChannelTopicScores(
+  supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>,
+  channelId: string,
+  limit = 200,
+): Promise<TopicPerformanceRow[]> {
+  const { data, error } = await supabase
+    .from("channel_topic_performance")
+    .select("*")
+    .eq("channel_id", channelId)
+    .order("score", { ascending: false })
+    .limit(limit);
+
+  const rows = (data as ChannelTopicPerformanceRow[]) ?? [];
+  if (rows.length > 0) {
+    // Same shape minus the key column, so every existing consumer works unchanged.
+    return rows.map((r) => ({
+      topic: r.topic,
+      score: r.score,
+      videos_analyzed: r.videos_analyzed,
+      avg_views_per_day: r.avg_views_per_day,
+      reason: r.reason,
+      updated_at: r.updated_at,
+    }));
+  }
+  // No per-channel rows: for the default channel that means its scores predate
+  // the channel-scoped table, so fall back rather than show it as unscored. For
+  // any other channel, empty is the truth — it simply has not been scored yet.
+  if (error || channelId !== DEFAULT_CHANNEL_ID) return [];
+  const legacy = await supabase
+    .from("topic_performance")
+    .select("*")
+    .order("score", { ascending: false })
+    .limit(limit);
+  return (legacy.data as TopicPerformanceRow[]) ?? [];
+}

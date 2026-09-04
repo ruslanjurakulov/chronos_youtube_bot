@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useRealtimeEvents } from "@/lib/useRealtimeEvents";
+import { ALL_CHANNELS, type ChannelSelection } from "@/lib/channels";
 import { deriveCoreState, type CoreState } from "@/lib/intelligence";
 import { relativeTime } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/context";
@@ -45,13 +46,15 @@ export function ChronosCore({
   initial,
   size = 200,
   showCycle = true,
+  selection = ALL_CHANNELS,
 }: {
   initial: SystemEventRow[];
   size?: number;
   showCycle?: boolean;
+  selection?: ChannelSelection;
 }) {
   const { t } = useI18n();
-  const { events, connected } = useRealtimeEvents(initial, "chronos_core");
+  const { events, connected } = useRealtimeEvents(initial, "chronos_core", selection);
   // Optimistic before the first subscribe callback so we don't flash "disconnected".
   const state = useMemo(() => deriveCoreState(events, connected ?? true), [events, connected]);
 

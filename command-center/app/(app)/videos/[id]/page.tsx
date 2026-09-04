@@ -10,6 +10,7 @@ import { QualityGate } from "@/components/autonomy/QualityGate";
 import { buildTrace } from "@/lib/decisions";
 import { num, decimal, relativeTime, timeOfDay, statusTone } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
+import { fetchChannelTopicScores } from "@/lib/channels-server";
 import { fmt } from "@/lib/i18n";
 import type { FeedbackSignalRow, MetricsSnapshotRow, SystemEventRow, TopicPerformanceRow, VideoRow } from "@/lib/types";
 
@@ -51,7 +52,7 @@ export default async function VideoDetail({
   let topicPerf: TopicPerformanceRow[] = [];
 
   if (supabase) {
-    const [vid, snap, ev, fs, tp] = await Promise.all([
+    const [vid, snap, ev, fs] = await Promise.all([
       supabase.from("videos").select("*").eq("video_id", id).maybeSingle(),
       supabase
         .from("metrics_snapshots")
@@ -64,13 +65,17 @@ export default async function VideoDetail({
         .eq("video_id", id)
         .order("ts", { ascending: true }),
       supabase.from("feedback_signals").select("*").eq("video_id", id).limit(50),
-      supabase.from("topic_performance").select("*"),
     ]);
     video = (vid.data as VideoRow | null) ?? null;
     snapshots = (snap.data as MetricsSnapshotRow[]) ?? [];
     events = (ev.data as SystemEventRow[]) ?? [];
     learningSignals = (fs.data as FeedbackSignalRow[]) ?? [];
-    topicPerf = (tp.data as TopicPerformanceRow[]) ?? [];
+    // Scored against its OWN channel, not the switcher: a link to a video is
+    // valid whatever channel is selected, and the score that explains this
+    // video is the one its channel learned.
+    if (video) {
+      topicPerf = await fetchChannelTopicScores(supabase, video.channel_id);
+    }
   }
 
   if (!video) {

@@ -5,6 +5,8 @@ import { StatCard, Panel, EmptyState } from "@/components/ui";
 import { VideoTable } from "@/components/videos/VideoTable";
 import { isToday, num } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
+import { getChannelSelection } from "@/lib/channels-server";
+import { scopeQuery } from "@/lib/channels";
 import type { MetricsSnapshotRow, VideoRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -17,6 +19,9 @@ export interface VideoWithMetrics extends VideoRow {
 export default async function VideoLibrary() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  // Scope channel-owned queries to the selected channel (view control;
+  // RLS still decides what may be read at all).
+  const selection = await getChannelSelection();
 
   const supabase = await createClient();
   let videos: VideoRow[] = [];
@@ -24,9 +29,10 @@ export default async function VideoLibrary() {
   let dbError = false;
 
   if (supabase) {
-    const vid = await supabase
-      .from("videos")
-      .select("*")
+    const vid = await scopeQuery(
+        supabase.from("videos").select("*"),
+        selection,
+      )
       .order("published_at", { ascending: false })
       .limit(100);
     if (vid.error) dbError = true;

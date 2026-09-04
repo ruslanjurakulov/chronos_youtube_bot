@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import { useRealtimeEvents } from "@/lib/useRealtimeEvents";
+import { ALL_CHANNELS, type ChannelSelection } from "@/lib/channels";
 import { subsystemHealth, overallStatus, type SubsystemKey, type Subsystem } from "@/lib/intelligence";
 import { relativeTime } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/context";
@@ -37,9 +38,17 @@ const TONE_COLOR: Record<string, string> = {
  * warning/error — the whole board never turns red for one failure. Realtime
  * reflects the live connection state.
  */
-export function SystemStatus({ initial, dbOk }: { initial: SystemEventRow[]; dbOk: boolean }) {
+export function SystemStatus({
+  initial,
+  dbOk,
+  selection = ALL_CHANNELS,
+}: {
+  initial: SystemEventRow[];
+  dbOk: boolean;
+  selection?: ChannelSelection;
+}) {
   const { t } = useI18n();
-  const { events, connected } = useRealtimeEvents(initial, "chronos_status");
+  const { events, connected } = useRealtimeEvents(initial, "chronos_status", selection);
   const subs = useMemo(() => subsystemHealth(events, dbOk, connected ?? true), [events, dbOk, connected]);
   const overall = overallStatus(subs);
 
