@@ -2,7 +2,10 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { StatCard, Panel, EmptyState } from "@/components/ui";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { statusTone } from "@/lib/format";
+import { getDictionary } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 import { ErrorTable } from "@/components/errors/ErrorTable";
 
@@ -20,6 +23,7 @@ function isFailure(e: SystemEventRow): boolean {
 
 export default async function ErrorCenter() {
   if (!isSupabaseConfigured) return <NotConfigured />;
+  const { t } = await getDictionary();
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
@@ -45,44 +49,40 @@ export default async function ErrorCenter() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">Error Center</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">
-            Failures derived from the system_events stream — real events only
-          </p>
+          <h1 className="text-lg font-semibold">{t.errors.title}</h1>
+          <p className="mono text-[11px] text-[var(--color-muted)]">{t.errors.subtitle}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard
-          label="Errors (24h)"
-          value={errors24h}
+          label={t.errors.errors24h}
+          value={<AnimatedNumber value={errors24h} />}
           tone={errors24h ? "fail" : "ok"}
-          sub={errors24h ? "needs attention" : "none"}
+          sub={errors24h ? t.errors.needsAttention : t.errors.none}
         />
         <StatCard
-          label="Errors (shown)"
-          value={errors.length}
+          label={t.errors.errorsShown}
+          value={<AnimatedNumber value={errors.length} />}
           tone={errors.length ? "warn" : "ok"}
-          sub={`of ${events.length} recent events`}
+          sub={fmt(t.errors.ofRecent, { n: events.length })}
         />
         <StatCard
-          label="Scanned"
-          value={events.length}
-          sub={`most recent ${FETCH_LIMIT}`}
+          label={t.errors.scanned}
+          value={<AnimatedNumber value={events.length} />}
+          sub={fmt(t.errors.mostRecent, { n: FETCH_LIMIT })}
         />
         <StatCard
-          label="Last error"
-          value={lastError ? "SEEN" : "NONE"}
+          label={t.errors.lastError}
+          value={lastError ? t.errors.seen : t.errors.noneUpper}
           tone={lastError ? "warn" : "ok"}
-          sub={lastError ? "see table below" : "clean window"}
+          sub={lastError ? t.errors.seeTable : t.errors.cleanWindow}
         />
       </div>
 
-      <Panel title="Failure Events">
+      <Panel title={t.errors.failureEvents}>
         {queryFailed ? (
-          <EmptyState>
-            Could not read system_events — the database query failed. No data shown.
-          </EmptyState>
+          <EmptyState>{t.errors.readErr}</EmptyState>
         ) : (
           <ErrorTable rows={errors} />
         )}

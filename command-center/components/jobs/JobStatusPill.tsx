@@ -1,4 +1,7 @@
+"use client";
+
 import { StatusPill } from "@/components/ui";
+import { useI18n } from "@/lib/i18n/context";
 
 export type JobStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED";
 
@@ -11,5 +14,12 @@ const MAP: Record<JobStatus, "run" | "ok" | "fail" | "idle"> = {
 
 /** A status pill for a derived job, mapping the job status to a UI tone. */
 export function JobStatusPill({ status }: { status: JobStatus }) {
-  return <StatusPill tone={MAP[status]} label={status} />;
+  const { t } = useI18n();
+  const label: Record<JobStatus, string> = {
+    QUEUED: t.status.queued,
+    RUNNING: t.status.running,
+    COMPLETED: t.status.completed,
+    FAILED: t.status.failed,
+  };
+  return <StatusPill tone={MAP[status]} label={label[status]} live={status === "RUNNING"} />;
 }

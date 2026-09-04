@@ -11,7 +11,7 @@ interface Point {
  * numbers — points with no views value are dropped from the line and shown as
  * N/A in the list. No client JS needed.
  */
-export function ViewsSparkline({ points }: { points: Point[] }) {
+export function ViewsSparkline({ points, label = "Views over time" }: { points: Point[]; label?: string }) {
   const series = points.filter((p): p is { date: string; views: number } => p.views != null);
 
   const W = 480;
@@ -41,7 +41,7 @@ export function ViewsSparkline({ points }: { points: Point[] }) {
           preserveAspectRatio="none"
           className="h-16 w-full"
           role="img"
-          aria-label="Views over time"
+          aria-label={label}
         >
           <path
             d={path}

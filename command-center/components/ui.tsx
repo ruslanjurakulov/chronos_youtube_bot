@@ -8,11 +8,23 @@ const TONE: Record<string, { fg: string; label: string }> = {
   idle: { fg: "var(--color-idle)", label: "IDLE" },
 };
 
-export function StatusPill({ tone, label }: { tone: keyof typeof TONE; label?: string }) {
+export function StatusPill({
+  tone,
+  label,
+  live = false,
+}: {
+  tone: keyof typeof TONE;
+  label?: string;
+  /** Breathe the dot (for genuinely-active states like a live connection). */
+  live?: boolean;
+}) {
   const t = TONE[tone] ?? TONE.idle;
   return (
     <span className="inline-flex items-center gap-1.5 mono text-[10px] font-semibold tracking-wider">
-      <span className="glow-dot inline-block size-1.5 rounded-full" style={{ color: t.fg, background: t.fg }} />
+      <span
+        className={`glow-dot inline-block size-1.5 rounded-full${live ? " live-ring" : ""}`}
+        style={{ color: t.fg, background: t.fg }}
+      />
       <span style={{ color: t.fg }}>{label ?? t.label}</span>
     </span>
   );
@@ -31,7 +43,7 @@ export function StatCard({
 }) {
   const color = tone ? (TONE[tone]?.fg ?? "var(--color-fg)") : "var(--color-fg)";
   return (
-    <div className="panel p-4">
+    <div className="panel p-4 transition-transform duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary-dim)]">
       <div className="mono text-[10px] font-semibold uppercase tracking-widest text-[var(--color-muted)]">
         {label}
       </div>
@@ -47,7 +59,7 @@ export function StatCard({
 
 export function Panel({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
-    <section className="panel flex flex-col overflow-hidden">
+    <section className="panel flex flex-col overflow-hidden transition-colors hover:border-[color-mix(in_srgb,var(--color-border)_60%,var(--color-primary-dim))]">
       <header className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2.5">
         <h2 className="mono text-xs font-bold uppercase tracking-widest text-[var(--color-fg)]">{title}</h2>
         {right}

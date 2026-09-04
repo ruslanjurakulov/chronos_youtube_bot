@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { relativeTime, timeOfDay } from "@/lib/format";
 import type { SystemEventRow } from "@/lib/types";
 import { EmptyState } from "@/components/ui";
+import { useI18n } from "@/lib/i18n/context";
 
 /** Pull a human-readable error string out of an event's jsonb metadata:
  *  `metadata.error` when present, otherwise the whole metadata stringified.
@@ -22,12 +23,12 @@ function errorText(metadata: Record<string, unknown> | null): string {
 
 /** All rows handed here are already failures (see errors/page.tsx). Severity is
  *  derived: `.failed` events (or failed/error status) are ERROR. */
-function severity(e: SystemEventRow): string {
-  return e.event.endsWith(".failed") ||
+function isError(e: SystemEventRow): boolean {
+  return (
+    e.event.endsWith(".failed") ||
     (e.status ?? "").toLowerCase() === "failed" ||
     (e.status ?? "").toLowerCase() === "error"
-    ? "ERROR"
-    : "WARN";
+  );
 }
 
 /**
@@ -36,6 +37,7 @@ function severity(e: SystemEventRow): string {
  * component or a specific failure without a round-trip.
  */
 export function ErrorTable({ rows }: { rows: SystemEventRow[] }) {
+  const { t } = useI18n();
   const [query, setQuery] = useState("");
 
   const filtered = useMemo(() => {
@@ -64,8 +66,8 @@ export function ErrorTable({ rows }: { rows: SystemEventRow[] }) {
           type="text"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Filter errors — agent, event, id, message…"
-          className="mono w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-xs text-[var(--color-fg)] outline-none placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)]"
+          placeholder={t.errors.filter}
+          className="mono w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-xs text-[var(--color-fg)] outline-none transition-colors placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)]"
         />
         <span className="mono shrink-0 text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
           {filtered.length} / {rows.length}
@@ -73,33 +75,29 @@ export function ErrorTable({ rows }: { rows: SystemEventRow[] }) {
       </div>
 
       {filtered.length === 0 ? (
-        <EmptyState>
-          {rows.length === 0
-            ? "No errors recorded — clean."
-            : "No errors match this filter."}
-        </EmptyState>
+        <EmptyState>{rows.length === 0 ? t.errors.noneClean : t.errors.noMatch}</EmptyState>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-                <th className="px-4 py-2 font-semibold">When</th>
-                <th className="px-4 py-2 font-semibold">Component</th>
-                <th className="px-4 py-2 font-semibold">Event</th>
-                <th className="px-4 py-2 font-semibold">Related</th>
-                <th className="px-4 py-2 font-semibold">Message</th>
-                <th className="px-4 py-2 font-semibold">Severity</th>
+                <th className="px-4 py-2 font-semibold">{t.errors.thWhen}</th>
+                <th className="px-4 py-2 font-semibold">{t.errors.thComponent}</th>
+                <th className="px-4 py-2 font-semibold">{t.errors.thEvent}</th>
+                <th className="px-4 py-2 font-semibold">{t.errors.thRelated}</th>
+                <th className="px-4 py-2 font-semibold">{t.errors.thMessage}</th>
+                <th className="px-4 py-2 font-semibold">{t.errors.thSeverity}</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((e) => (
-                <tr key={e.event_key} className="border-b border-[var(--color-border)]/50 align-top">
+                <tr key={e.event_key} className="border-b border-[var(--color-border)]/50 align-top transition-colors hover:bg-[var(--color-panel-2)]">
                   <td className="whitespace-nowrap px-4 py-2 mono text-[11px] text-[var(--color-muted)]">
                     <div>{relativeTime(e.ts)}</div>
                     <div className="text-[10px] opacity-70">{timeOfDay(e.ts)}</div>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2 mono text-[11px] text-[var(--color-primary)]">
-                    {e.agent ?? "system"}
+                    {e.agent ?? t.common.system}
                   </td>
                   <td className="whitespace-nowrap px-4 py-2 mono text-[11px] text-[var(--color-fg)]">
                     {e.event}
@@ -113,7 +111,7 @@ export function ErrorTable({ rows }: { rows: SystemEventRow[] }) {
                     <span className="block max-w-xl break-words">{errorText(e.metadata)}</span>
                   </td>
                   <td className="whitespace-nowrap px-4 py-2 mono text-[10px] font-semibold tracking-wider text-[var(--color-fail)]">
-                    {severity(e)}
+                    {isError(e) ? t.errors.sevError : t.errors.sevWarn}
                   </td>
                 </tr>
               ))}

@@ -2,7 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, EmptyState, StatCard } from "@/components/ui";
+import { AnimatedNumber } from "@/components/AnimatedNumber";
 import { statusTone } from "@/lib/format";
+import { getDictionary } from "@/lib/i18n/server";
 import type { SystemEventRow } from "@/lib/types";
 import { AgentCard, type AgentSummary } from "@/components/agents/AgentCard";
 
@@ -56,6 +58,7 @@ function deriveAgents(events: SystemEventRow[]): AgentSummary[] {
 
 export default async function AgentsPage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
+  const { t } = await getDictionary();
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
@@ -79,25 +82,23 @@ export default async function AgentsPage() {
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">Agents</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">
-            Derived from the live system_events stream — no separate agents table
-          </p>
+          <h1 className="text-lg font-semibold">{t.agents.title}</h1>
+          <p className="mono text-[11px] text-[var(--color-muted)]">{t.agents.subtitle}</p>
         </div>
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatCard label="Agents seen" value={agents.length} sub="distinct, recent window" />
-        <StatCard label="Running" value={running} tone={running ? "run" : "idle"} sub={running ? "active now" : "none active"} />
-        <StatCard label="Failed" value={failed} tone={failed ? "fail" : "ok"} sub={failed ? "latest event failed" : "none failing"} />
-        <StatCard label="Events scanned" value={events.length} sub="most recent 500" />
+        <StatCard label={t.agents.seen} value={<AnimatedNumber value={agents.length} />} sub={t.agents.seenSub} />
+        <StatCard label={t.agents.running} value={<AnimatedNumber value={running} />} tone={running ? "run" : "idle"} sub={running ? t.agents.activeNow : t.agents.noneActive} />
+        <StatCard label={t.agents.failed} value={<AnimatedNumber value={failed} />} tone={failed ? "fail" : "ok"} sub={failed ? t.agents.latestFailed : t.agents.noneFailing} />
+        <StatCard label={t.agents.scanned} value={<AnimatedNumber value={events.length} />} sub={t.agents.scannedSub} />
       </div>
 
-      <Panel title="Agent Roster">
+      <Panel title={t.agents.roster}>
         {dbError ? (
-          <EmptyState>Could not reach the database. The agent roster is unavailable right now.</EmptyState>
+          <EmptyState>{t.agents.dbErr}</EmptyState>
         ) : agents.length === 0 ? (
-          <EmptyState>No agent activity yet. Once the pipeline runs, each agent appears here with its latest state.</EmptyState>
+          <EmptyState>{t.agents.empty}</EmptyState>
         ) : (
           <div className="grid grid-cols-1 gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
             {agents.map((a) => (

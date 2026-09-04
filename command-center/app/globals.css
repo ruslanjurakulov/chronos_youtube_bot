@@ -1,26 +1,96 @@
 @import "tailwindcss";
 
-/* ── Chronos Command Center — dark operations palette ───────────────────────
-   A single dark theme: deep slate ground, cyan primary, semantic status hues.
-   Deliberately committed to one look (an ops console), so no light variant. */
+/* ── Chronos Command Center — design tokens ─────────────────────────────────
+   A coherent token system with two intentional themes. Components reference
+   these as var(--color-*), so theming is entirely token-level: the light and
+   dark palettes below are the single source of truth and no component sets a
+   raw color. Roles: background · surface · elevated · text · muted · border ·
+   accent · success · warning · error · info.
+
+   Theme resolution (three states):
+   - :root                              → light (the base)
+   - prefers-color-scheme: dark, no
+     explicit choice                    → dark
+   - [data-theme="dark"|"light"]        → explicit choice wins either way
+   ------------------------------------------------------------------------- */
+
 @theme {
-  --color-bg: #060a12;
-  --color-panel: #0c131f;
-  --color-panel-2: #111a29;
-  --color-border: #1e2c40;
-  --color-fg: #e6edf6;
-  --color-muted: #7d8ca3;
+  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* Light — a calm, cool operations console on paper-white. */
+:root,
+:root[data-theme="light"] {
+  --color-bg: #eceff5;
+  --color-panel: #ffffff;
+  --color-panel-2: #f3f6fb;
+  --color-border: #d6deea;
+  --color-fg: #101a2b;
+  --color-muted: #56687f;
+  --color-primary: #0e7490;
+  --color-primary-dim: #0891b2;
+  --color-on-accent: #ffffff;
+  --color-ok: #059669;
+  --color-warn: #b45309;
+  --color-fail: #dc2626;
+  --color-info: #2563eb;
+  --color-idle: #94a3b8;
+  --grid-line: rgba(14, 116, 144, 0.05);
+  --shadow-panel: 0 1px 2px rgba(16, 26, 43, 0.04), 0 4px 16px rgba(16, 26, 43, 0.05);
+  --shadow-elevated: 0 8px 30px rgba(16, 26, 43, 0.10);
+}
+
+/* Dark — deep slate ground, cyan accent (the original ops-console look, refined). */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --color-bg: #070b13;
+    --color-panel: #0d1521;
+    --color-panel-2: #131e2d;
+    --color-border: #20304a;
+    --color-fg: #e7eef7;
+    --color-muted: #8598b0;
+    --color-primary: #22d3ee;
+    --color-primary-dim: #0e7490;
+    --color-on-accent: #04121a;
+    --color-ok: #34d399;
+    --color-warn: #fbbf24;
+    --color-fail: #f87171;
+    --color-info: #60a5fa;
+    --color-idle: #6b7c93;
+    --grid-line: rgba(34, 211, 238, 0.045);
+    --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.30), 0 6px 20px rgba(0, 0, 0, 0.28);
+    --shadow-elevated: 0 12px 40px rgba(0, 0, 0, 0.45);
+  }
+}
+
+:root[data-theme="dark"] {
+  --color-bg: #070b13;
+  --color-panel: #0d1521;
+  --color-panel-2: #131e2d;
+  --color-border: #20304a;
+  --color-fg: #e7eef7;
+  --color-muted: #8598b0;
   --color-primary: #22d3ee;
   --color-primary-dim: #0e7490;
+  --color-on-accent: #04121a;
   --color-ok: #34d399;
   --color-warn: #fbbf24;
   --color-fail: #f87171;
-  --color-idle: #64748b;
-  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  --color-info: #60a5fa;
+  --color-idle: #6b7c93;
+  --grid-line: rgba(34, 211, 238, 0.045);
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.30), 0 6px 20px rgba(0, 0, 0, 0.28);
+  --shadow-elevated: 0 12px 40px rgba(0, 0, 0, 0.45);
 }
 
 * {
   border-color: var(--color-border);
+}
+
+html {
+  color-scheme: light dark;
 }
 
 html,
@@ -28,34 +98,49 @@ body {
   background: var(--color-bg);
   color: var(--color-fg);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 body {
-  font-family:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
+  /* Themes cross-fade rather than snap when toggled. */
+  transition: background-color 0.4s ease, color 0.25s ease;
+}
+
+h1, h2, h3, .font-display {
+  font-family: var(--font-display);
+  letter-spacing: -0.01em;
 }
 
 /* Subtle grid backdrop for the ops-console feel. */
 .grid-bg {
   background-image:
-    linear-gradient(to right, rgba(34, 211, 238, 0.04) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(34, 211, 238, 0.04) 1px, transparent 1px);
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
   background-size: 40px 40px;
 }
 
 .panel {
   background: var(--color-panel);
   border: 1px solid var(--color-border);
-  border-radius: 0.6rem;
+  border-radius: 0.7rem;
+  box-shadow: var(--shadow-panel);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.4s ease;
 }
 
 .mono {
   font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1;
 }
 
 .glow-dot {
   box-shadow: 0 0 8px 0 currentColor;
 }
+
+/* ── Motion ─────────────────────────────────────────────────────────────────
+   Fast, subtle, consistent. Entrance reveals, realtime row-in, skeleton
+   shimmer, a soft status pulse, and a page-transition fade. Everything is
+   disabled under prefers-reduced-motion at the bottom of this file. */
 
 @keyframes pulse-soft {
   0%, 100% { opacity: 1; }
@@ -63,4 +148,88 @@ body {
 }
 .pulse {
   animation: pulse-soft 1.8s ease-in-out infinite;
+}
+
+@keyframes reveal-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+/* Applied to sections/cards on mount. Stagger with inline --i (index). */
+.reveal {
+  animation: reveal-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation-delay: calc(var(--i, 0) * 55ms);
+}
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.page-enter {
+  animation: page-in 0.35s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes row-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+/* New realtime rows: a brief accent wash that settles to transparent. */
+@keyframes row-flash {
+  from { background-color: color-mix(in srgb, var(--color-primary) 14%, transparent); }
+  to { background-color: transparent; }
+}
+.row-enter {
+  animation:
+    row-in 0.3s cubic-bezier(0.22, 1, 0.36, 1) both,
+    row-flash 1.6s ease-out both;
+}
+
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-panel-2) 0%,
+    color-mix(in srgb, var(--color-border) 60%, var(--color-panel-2)) 50%,
+    var(--color-panel-2) 100%
+  );
+  background-size: 800px 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: 0.4rem;
+}
+
+/* Micro-interactions: buttons/links get a tactile press. */
+.press {
+  transition: transform 0.12s ease, opacity 0.15s ease, background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.press:active {
+  transform: translateY(1px) scale(0.985);
+}
+
+/* Live connection dot — a soft breathing ring, calmer than a blink. */
+@keyframes ring-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, currentColor 55%, transparent); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 0%, transparent); }
+}
+.live-ring {
+  animation: ring-breathe 2.4s ease-in-out infinite;
+}
+
+/* Keyboard focus — visible in both themes. */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+  border-radius: 0.35rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

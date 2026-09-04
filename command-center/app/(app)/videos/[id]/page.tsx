@@ -5,6 +5,8 @@ import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, StatCard, EmptyState, StatusPill } from "@/components/ui";
 import { ViewsSparkline } from "@/components/videos/ViewsSparkline";
 import { num, decimal, relativeTime, timeOfDay, statusTone } from "@/lib/format";
+import { getDictionary } from "@/lib/i18n/server";
+import { fmt } from "@/lib/i18n";
 import type { MetricsSnapshotRow, SystemEventRow, VideoRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -35,6 +37,7 @@ export default async function VideoDetail({
 }) {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { id } = await params;
+  const { t } = await getDictionary();
 
   const supabase = await createClient();
   let video: VideoRow | null = null;
@@ -67,12 +70,12 @@ export default async function VideoDetail({
           href="/videos"
           className="mono text-[11px] text-[var(--color-primary)] hover:underline"
         >
-          ← Video Library
+          {t.videoDetail.back}
         </Link>
-        <Panel title="Video Not Found">
+        <Panel title={t.videoDetail.notFound}>
           <EmptyState>
-            No video with id <span className="mono text-[var(--color-fg)]">{id}</span> exists in the
-            library.
+            {t.videoDetail.notFoundBodyA} <span className="mono text-[var(--color-fg)]">{id}</span>{" "}
+            {t.videoDetail.notFoundBodyB}
           </EmptyState>
         </Panel>
       </div>
@@ -89,46 +92,46 @@ export default async function VideoDetail({
             href="/videos"
             className="mono text-[11px] text-[var(--color-primary)] hover:underline"
           >
-            ← Video Library
+            {t.videoDetail.back}
           </Link>
           <h1 className="mt-1 truncate text-lg font-semibold">{video.title ?? video.video_id}</h1>
           <p className="mono text-[11px] text-[var(--color-muted)]">
-            {video.topic ?? "no topic"} · published {relativeTime(video.published_at)}
+            {video.topic ?? t.videoDetail.noTopic} · {fmt(t.videoDetail.published, { t: relativeTime(video.published_at) })}
           </p>
         </div>
         <StatusPill
           tone={video.privacy === "public" ? "ok" : "idle"}
-          label={(video.privacy ?? "unknown").toUpperCase()}
+          label={(video.privacy ?? t.videoDetail.unknown).toUpperCase()}
         />
       </div>
 
-      <Panel title="Content">
+      <Panel title={t.videoDetail.content}>
         <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 lg:grid-cols-3">
-          <Field label="Title" value={video.title ?? "N/A"} />
-          <Field label="Topic" value={video.topic ?? "N/A"} />
-          <Field label="Slug" value={video.slug ?? "N/A"} />
-          <Field label="Privacy" value={video.privacy ?? "N/A"} />
+          <Field label={t.videoDetail.fTitle} value={video.title ?? t.common.na} />
+          <Field label={t.videoDetail.fTopic} value={video.topic ?? t.common.na} />
+          <Field label={t.videoDetail.fSlug} value={video.slug ?? t.common.na} />
+          <Field label={t.videoDetail.fPrivacy} value={video.privacy ?? t.common.na} />
           <Field
-            label="Published"
+            label={t.videoDetail.fPublished}
             value={
               video.published_at ? (
                 <span className="mono text-[13px]">{video.published_at}</span>
               ) : (
-                "N/A"
+                t.common.na
               )
             }
           />
           <Field
-            label="Video ID"
+            label={t.videoDetail.fVideoId}
             value={<span className="mono text-[13px]">{video.video_id}</span>}
           />
         </div>
       </Panel>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Panel title="Pipeline">
+        <Panel title={t.videoDetail.pipeline}>
           {events.length === 0 ? (
-            <EmptyState>No pipeline events recorded for this video yet.</EmptyState>
+            <EmptyState>{t.videoDetail.noPipeline}</EmptyState>
           ) : (
             <ol className="divide-y divide-[var(--color-border)]">
               {events.map((e) => {
@@ -143,7 +146,7 @@ export default async function VideoDetail({
                       style={{ color: TONE_COLOR[tone], background: TONE_COLOR[tone] }}
                     />
                     <span className="mono shrink-0 text-[11px] text-[var(--color-primary)]">
-                      {e.agent ?? "system"}
+                      {e.agent ?? t.common.system}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-[var(--color-fg)]">
                       {e.event}
@@ -163,38 +166,37 @@ export default async function VideoDetail({
           )}
         </Panel>
 
-        <Panel title="Analytics">
+        <Panel title={t.videoDetail.analytics}>
           {latest === null ? (
-            <EmptyState>
-              No metrics snapshots yet. Analytics appear once the bot polls YouTube for this video.
-            </EmptyState>
+            <EmptyState>{t.videoDetail.noAnalytics}</EmptyState>
           ) : (
             <div className="flex flex-col gap-4 p-4">
               <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-                <StatCard label="Views" value={num(latest.views)} tone="ok" />
-                <StatCard label="Likes" value={num(latest.likes)} />
-                <StatCard label="Comments" value={num(latest.comment_count)} />
+                <StatCard label={t.videoDetail.views} value={num(latest.views)} tone="ok" />
+                <StatCard label={t.videoDetail.likes} value={num(latest.likes)} />
+                <StatCard label={t.videoDetail.comments} value={num(latest.comment_count)} />
                 <StatCard
-                  label="Watch time (min)"
+                  label={t.videoDetail.watchTime}
                   value={decimal(latest.watch_time_minutes)}
                 />
                 <StatCard
-                  label="Avg view (s)"
+                  label={t.videoDetail.avgView}
                   value={decimal(latest.average_view_duration_seconds)}
                 />
                 <StatCard
-                  label="Snapshots"
+                  label={t.videoDetail.snapshots}
                   value={num(snapshots.length)}
-                  sub={`latest ${relativeTime(latest.snapshot_date)}`}
+                  sub={fmt(t.videoDetail.latestT, { t: relativeTime(latest.snapshot_date) })}
                 />
               </div>
 
               {snapshots.length >= 2 && (
                 <div className="flex flex-col gap-2">
                   <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
-                    Views over time
+                    {t.videoDetail.viewsOverTime}
                   </div>
                   <ViewsSparkline
+                    label={t.videoDetail.viewsOverTime}
                     points={snapshots.map((s) => ({
                       date: s.snapshot_date,
                       views: s.views,

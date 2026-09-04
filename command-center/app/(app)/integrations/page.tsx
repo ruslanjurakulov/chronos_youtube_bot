@@ -3,6 +3,8 @@ import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, StatusPill } from "@/components/ui";
 import { relativeTime } from "@/lib/format";
+import { getDictionary } from "@/lib/i18n/server";
+import { fmt, type Dictionary } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -10,9 +12,11 @@ export const revalidate = 0;
 
 const RECENT_MS = 3 * 24 * 60 * 60 * 1000; // "recent" = last 3 days
 
+type DetailKey = keyof Dictionary["integrations"];
+
 interface Health {
   name: string;
-  detail: string;
+  detailKey: DetailKey;
   tone: "ok" | "warn" | "fail" | "idle";
   status: string;
   lastSuccess: string | null;
@@ -26,18 +30,25 @@ function latest(events: SystemEventRow[], names: string[], failedOnly = false): 
   return hit?.ts ?? null;
 }
 
-function derive(name: string, ok: string[], fail: string[], events: SystemEventRow[]): Health {
+function derive(
+  name: string,
+  ok: string[],
+  fail: string[],
+  events: SystemEventRow[],
+  t: Dictionary,
+): Health {
   const lastOk = latest(events, ok);
   const lastFail = latest(events, fail, true);
   const recent = lastOk && Date.now() - new Date(lastOk).getTime() < RECENT_MS;
-  if (recent) return { name, detail: "recent successful activity", tone: "ok", status: "HEALTHY", lastSuccess: lastOk };
-  if (lastFail) return { name, detail: "recent failures, no success", tone: "warn", status: "DEGRADED", lastSuccess: lastOk };
-  if (lastOk) return { name, detail: "last activity is stale", tone: "idle", status: "UNKNOWN", lastSuccess: lastOk };
-  return { name, detail: "no activity in the event stream", tone: "idle", status: "UNKNOWN", lastSuccess: null };
+  if (recent) return { name, detailKey: "recentSuccess", tone: "ok", status: t.status.healthy, lastSuccess: lastOk };
+  if (lastFail) return { name, detailKey: "recentFailures", tone: "warn", status: t.status.degraded, lastSuccess: lastOk };
+  if (lastOk) return { name, detailKey: "stale", tone: "idle", status: t.status.unknown, lastSuccess: lastOk };
+  return { name, detailKey: "noActivity", tone: "idle", status: t.status.unknown, lastSuccess: null };
 }
 
 export default async function IntegrationsPage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
+  const { t } = await getDictionary();
 
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
@@ -54,50 +65,43 @@ export default async function IntegrationsPage() {
 
   const items: Health[] = [
     {
-      name: "Supabase / Database",
-      detail: dbOk ? "query succeeded this request" : "query failed",
+      name: t.integrations.supabase,
+      detailKey: dbOk ? "querySucceeded" : "queryFailed",
       tone: dbOk ? "ok" : "fail",
-      status: dbOk ? "HEALTHY" : "OFFLINE",
+      status: dbOk ? t.status.healthy : t.status.offline,
       lastSuccess: dbOk ? new Date().toISOString() : null,
     },
-    derive("YouTube", ["upload.completed", "video.published"], ["upload.failed"], events),
-    derive("Gemini (script/topic)", ["script.completed", "topic.selected"], ["agent.failed"], events),
-    derive("Intelligence poll", ["system.heartbeat"], [], events),
-    derive("Feedback loop", ["feedback.generated", "feedback.applied"], [], events),
+    derive(t.integrations.youtube, ["upload.completed", "video.published"], ["upload.failed"], events, t),
+    derive(t.integrations.gemini, ["script.completed", "topic.selected"], ["agent.failed"], events, t),
+    derive(t.integrations.intelPoll, ["system.heartbeat"], [], events, t),
+    derive(t.integrations.feedbackLoop, ["feedback.generated", "feedback.applied"], [], events, t),
   ];
 
   return (
     <div className="flex flex-col gap-4">
       <div>
-        <h1 className="text-lg font-semibold">Integration Health</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">
-          Derived from the real event stream — the bot has no live health-check endpoint, so no recent events means
-          UNKNOWN, not necessarily down. No response times are invented.
-        </p>
+        <h1 className="text-lg font-semibold">{t.integrations.title}</h1>
+        <p className="mono text-[11px] text-[var(--color-muted)]">{t.integrations.subtitle}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {items.map((h) => (
-          <div key={h.name} className="panel p-4">
+          <div key={h.name} className="panel p-4 transition-transform duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary-dim)]">
             <div className="flex items-center justify-between">
               <span className="text-sm font-semibold text-[var(--color-fg)]">{h.name}</span>
-              <StatusPill tone={h.tone} label={h.status} />
+              <StatusPill tone={h.tone} label={h.status} live={h.tone === "ok"} />
             </div>
-            <p className="mt-1.5 mono text-[11px] text-[var(--color-muted)]">{h.detail}</p>
+            <p className="mt-1.5 mono text-[11px] text-[var(--color-muted)]">{t.integrations[h.detailKey]}</p>
             <p className="mt-0.5 mono text-[11px] text-[var(--color-muted)]">
-              last success: {h.lastSuccess ? relativeTime(h.lastSuccess) : "N/A"}
+              {fmt(t.integrations.lastSuccess, { t: h.lastSuccess ? relativeTime(h.lastSuccess) : t.common.na })}
             </p>
           </div>
         ))}
       </div>
 
-      <Panel title="How this is measured">
+      <Panel title={t.integrations.measuredTitle}>
         <div className="p-4 text-[11px] leading-relaxed text-[var(--color-muted)]">
-          Each integration&apos;s status comes from the presence and recency of its own events in{" "}
-          <code className="mono text-[var(--color-primary)]">system_events</code>: e.g. YouTube is HEALTHY when an{" "}
-          <code className="mono">upload.completed</code> / <code className="mono">video.published</code> event landed in
-          the last 3 days, DEGRADED on recent failures, UNKNOWN when the stream is silent. This is honest by
-          construction — it reports what actually happened, never a fabricated ping.
+          {t.integrations.measuredBody}
         </div>
       </Panel>
     </div>
