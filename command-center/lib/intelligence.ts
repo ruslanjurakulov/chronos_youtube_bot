@@ -134,7 +134,7 @@ export function overallStatus(subs: Subsystem[]): "operational" | "degraded" | "
   return "operational";
 }
 
-const PIPELINE_ORDER = [
+export const PIPELINE_ORDER = [
   "topic",
   "research",
   "script",
