@@ -20,11 +20,9 @@ import type { ChannelRow } from "@/lib/types";
  * read as an admin console rather than the product.
  */
 export function Header({
-  userEmail,
   channels = [],
   selection = ALL_CHANNELS,
 }: {
-  userEmail?: string | null;
   channels?: ChannelRow[];
   selection?: ChannelSelection;
 }) {
@@ -36,7 +34,7 @@ export function Header({
 
   return (
     <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_78%,transparent)] px-[clamp(0.75rem,3vw,56px)] py-4 backdrop-blur-md sm:py-5">
-      <div className="bar-measure flex flex-wrap items-center justify-between gap-x-6 gap-y-3 sm:flex-nowrap">
+      <div className="bar-measure flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 items-center gap-6 xl:gap-10">
         <Link
           href="/"
@@ -47,7 +45,7 @@ export function Header({
         <TopNav />
       </div>
 
-      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap sm:gap-3">
         <ChannelSwitcher channels={channels} selection={selection} />
         <button
           type="button"
@@ -61,11 +59,6 @@ export function Header({
           </svg>
           <span className="mono pill border border-[var(--color-border)] px-1.5 text-[9px] tracking-wider">⌘K</span>
         </button>
-        {userEmail && (
-          <span className="hidden max-w-[160px] truncate text-[12px] font-light text-[var(--color-muted)] 2xl:inline">
-            {userEmail}
-          </span>
-        )}
         <UtcClock />
         <NotificationsCenter />
         <LanguageSelector />

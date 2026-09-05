@@ -18,14 +18,14 @@ type NavKey = Exclude<keyof Dictionary["nav"], "more">;
  */
 const PRIMARY: { href: string; key: NavKey }[] = [
   { href: "/", key: "command" },
-  { href: "/channels", key: "channels" },
   { href: "/videos", key: "videos" },
   { href: "/pipeline", key: "pipeline" },
   { href: "/analytics", key: "analytics" },
-  { href: "/intelligence", key: "intelligence" },
 ];
 
 const SECONDARY: { href: string; key: NavKey }[] = [
+  { href: "/channels", key: "channels" },
+  { href: "/intelligence", key: "intelligence" },
   { href: "/agents", key: "agents" },
   { href: "/jobs", key: "jobs" },
   { href: "/topics", key: "topics" },
@@ -74,7 +74,7 @@ export function TopNav() {
   }, [open]);
 
   return (
-    <nav className="hidden items-center gap-1 xl:flex">
+    <nav className="hidden items-center gap-1 min-[1366px]:flex">
       {PRIMARY.map((item) => {
         const active = isActive(item.href);
         return (
@@ -138,7 +138,7 @@ export function NarrowNav() {
   const { t } = useI18n();
   const isActive = useIsActive();
   return (
-    <nav className="bar-measure flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-[clamp(0.75rem,3vw,56px)] py-3 xl:hidden">
+    <nav className="bar-measure flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-[clamp(0.75rem,3vw,56px)] py-3 min-[1366px]:hidden">
       {ALL_NAV.map((item) => {
         const active = isActive(item.href);
         return (

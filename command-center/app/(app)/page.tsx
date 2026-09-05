@@ -156,13 +156,13 @@ export default async function CommandCenter() {
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
-            <Link href="/pipeline" className="btn-sky is-solid pill px-7 py-3.5 text-[14px]">
+            <Link href="/pipeline" className="btn-sky is-solid pill px-[30px] py-3.5 text-[14px]">
               {t.dashboard.openPipeline}
               <span className="btn-arrow" aria-hidden>
                 →
               </span>
             </Link>
-            <Link href="/videos" className="btn-sky pill px-7 py-3.5 text-[14px]">
+            <Link href="/videos" className="btn-sky pill px-[30px] py-3.5 text-[14px]">
               {t.dashboard.openVideos}
             </Link>
             <CustomizeButton />
@@ -182,7 +182,7 @@ export default async function CommandCenter() {
                 {recentVideos.map((v) => (
                   <li
                     key={v.video_id}
-                    className="row-sweep flex items-baseline justify-between gap-6 border-b border-[var(--color-border)] py-4"
+                    className="row-sweep flex items-baseline justify-between gap-6 border-b border-[var(--color-border)] py-[15px]"
                   >
                     <span className="min-w-0 truncate text-[16px]">{v.title ?? v.video_id}</span>
                     <span className="mono shrink-0 text-[13px] text-[var(--color-muted)]">
