@@ -167,6 +167,66 @@ class CredentialIsolationTestCase(unittest.TestCase):
 
         self.assertEqual(token_path(legacy_default_channel()), Path(YOUTUBE_TOKEN_FILE))
 
+    def test_the_unsuffixed_token_the_workflows_write_is_still_found(self):
+        """The CI failure this fallback exists for.
+
+        config.YOUTUBE_TOKEN_FILE gains a _<YOUTUBE_CHANNEL_ID> suffix whenever
+        that env var is set, but both workflows restore the YOUTUBE_TOKEN_JSON
+        secret to the plain `youtube_token.json` — and export YOUTUBE_CHANNEL_ID
+        in the same job. Without the fallback the token is written under one
+        name, looked for under another, and the run dies claiming there is no
+        token at all.
+        """
+        from modules.channel_credentials import LEGACY_TOKEN_NAME, token_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            suffixed = Path(tmp) / "youtube_token_UCabc123.json"
+            plain = Path(tmp) / LEGACY_TOKEN_NAME
+            plain.write_text(json.dumps({"token": "x", "refresh_token": "r"}))
+            with patch("modules.channel_credentials.cfg.BASE_DIR", Path(tmp)), patch(
+                "modules.channel_credentials.cfg.YOUTUBE_TOKEN_FILE", suffixed
+            ):
+                self.assertEqual(token_path(legacy_default_channel()), plain)
+
+    def test_the_fallback_never_shadows_a_real_suffixed_token(self):
+        # Both files present: the configured one wins. The fallback may only
+        # ever find a token, never replace the one this deployment configured.
+        from modules.channel_credentials import LEGACY_TOKEN_NAME, token_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            suffixed = Path(tmp) / "youtube_token_UCabc123.json"
+            suffixed.write_text(json.dumps({"token": "configured"}))
+            (Path(tmp) / LEGACY_TOKEN_NAME).write_text(json.dumps({"token": "stale"}))
+            with patch("modules.channel_credentials.cfg.BASE_DIR", Path(tmp)), patch(
+                "modules.channel_credentials.cfg.YOUTUBE_TOKEN_FILE", suffixed
+            ):
+                self.assertEqual(token_path(legacy_default_channel()), suffixed)
+
+    def test_with_no_token_at_all_a_new_one_is_written_where_config_expects(self):
+        # Nothing exists yet: the configured (suffixed) path is returned, so a
+        # freshly minted token lands where this deployment will look for it.
+        from modules.channel_credentials import token_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            suffixed = Path(tmp) / "youtube_token_UCabc123.json"
+            with patch("modules.channel_credentials.cfg.BASE_DIR", Path(tmp)), patch(
+                "modules.channel_credentials.cfg.YOUTUBE_TOKEN_FILE", suffixed
+            ):
+                self.assertEqual(token_path(legacy_default_channel()), suffixed)
+
+    def test_a_named_channel_is_unaffected_by_the_fallback(self):
+        # The fallback is only for the legacy default channel. A named channel
+        # must never pick up the default channel's token — that would publish
+        # one channel's video to another's.
+        from modules.channel_credentials import LEGACY_TOKEN_NAME, token_path
+
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / LEGACY_TOKEN_NAME).write_text(json.dumps({"token": "default"}))
+            with patch("modules.channel_credentials.cfg.BASE_DIR", Path(tmp)):
+                self.assertNotEqual(
+                    token_path(finance()), Path(tmp) / LEGACY_TOKEN_NAME
+                )
+
     def test_missing_token_reports_not_connected_not_error(self):
         from modules.channel_credentials import NOT_CONNECTED, credential_status
 
