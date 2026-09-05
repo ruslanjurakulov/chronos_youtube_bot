@@ -5,8 +5,8 @@ import { I18nProvider } from "@/lib/i18n/context";
 import { NO_FLASH_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
-  title: "Chronos Command Center",
-  description: "Real-time monitoring & control plane for the Chronos content-automation bot.",
+  title: "Nightshift Command Center",
+  description: "Real-time monitoring & control plane for the Nightshift content-automation bot.",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {

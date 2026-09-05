@@ -10,7 +10,7 @@
  */
 export const en = {
   brand: {
-    name: "CHRONOS",
+    name: "Nightshift",
     tagline: "COMMAND CENTER",
     operations: "OPERATIONS",
   },

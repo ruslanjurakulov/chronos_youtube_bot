@@ -4,7 +4,6 @@ import { NotConfigured } from "@/components/NotConfigured";
 import { StatCard, EmptyState, StatusPill } from "@/components/ui";
 import { ActivityFeed } from "@/components/ActivityFeed";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
-import { ChronosCore } from "@/components/ChronosCore";
 import { SystemStatus } from "@/components/SystemStatus";
 import { DailyMission } from "@/components/DailyMission";
 import { NextAction } from "@/components/NextAction";
@@ -84,11 +83,9 @@ export default async function CommandCenter() {
         </div>
       </div>
 
-      {/* Hero band — Chronos Core + real system status + today's mission */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="panel flex items-center justify-center p-5">
-          <ChronosCore initial={events} size={200} selection={selection} />
-        </div>
+      {/* Real system status and today's mission. The decorative orb that used
+          to open this row is gone: it reported nothing a number here doesn't. */}
+      <div className="grid grid-cols-1 gap-10 lg:grid-cols-2">
         <Widget id="status" title={t.ops.statusTitle}>
           <SystemStatus initial={events} dbOk={dbHealthy} selection={selection} />
         </Widget>

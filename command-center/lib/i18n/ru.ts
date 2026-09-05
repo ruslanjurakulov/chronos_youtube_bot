@@ -4,7 +4,7 @@ import type { Dictionary } from "./index";
  *  Supabase, Gemini, YouTube, CTR) намеренно не переводятся. */
 export const ru: Dictionary = {
   brand: {
-    name: "CHRONOS",
+    name: "Nightshift",
     tagline: "ЦЕНТР УПРАВЛЕНИЯ",
     operations: "ОПЕРАЦИИ",
   },

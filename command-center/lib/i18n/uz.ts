@@ -4,7 +4,7 @@ import type { Dictionary } from "./index";
  *  Supabase, Gemini, YouTube, CTR) atayin tarjima qilinmaydi. */
 export const uz: Dictionary = {
   brand: {
-    name: "CHRONOS",
+    name: "Nightshift",
     tagline: "BOSHQARUV MARKAZI",
     operations: "OPERATSIYALAR",
   },

@@ -2,7 +2,6 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { IntelligenceMap } from "@/components/intelligence/IntelligenceMap";
-import { ChronosCore } from "@/components/ChronosCore";
 import { getDictionary } from "@/lib/i18n/server";
 import { getChannelSelection } from "@/lib/channels-server";
 import { scopeQuery } from "@/lib/channels";
@@ -37,14 +36,7 @@ export default async function IntelligencePage() {
         <p className="t-lead mt-4">{t.ops.intelSubtitle}</p>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="panel flex items-center justify-center p-5">
-          <ChronosCore initial={events} size={200} selection={selection} />
-        </div>
-        <div className="lg:col-span-2">
-          <IntelligenceMap initial={events} selection={selection} />
-        </div>
-      </div>
+      <IntelligenceMap initial={events} selection={selection} />
     </div>
   );
 }
