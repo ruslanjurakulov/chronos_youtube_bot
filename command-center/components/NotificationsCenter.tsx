@@ -142,11 +142,21 @@ export function NotificationsCenter() {
         <div className="drawer-enter absolute right-0 z-50 mt-3 w-80 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-elevated)]">
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
             <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--color-fg)]">{t.ops.notifTitle}</span>
-            {notifications.length > 0 && (
-              <button type="button" onClick={clearAll} className="btn-sky is-quiet pill px-3 py-1 text-[11px] font-light">
-                {t.ops.notifClear}
+            <span className="flex items-center gap-1">
+              {notifications.length > 0 && (
+                <button type="button" onClick={clearAll} className="btn-sky is-quiet pill px-3 py-1 text-[11px] font-light">
+                  {t.ops.notifClear}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label={t.ops.shortcutsClose}
+                className="sheet-close size-7 text-[15px]"
+              >
+                ✕
               </button>
-            )}
+            </span>
           </div>
           <ul className="max-h-[60vh] overflow-y-auto">
             {notifications.length === 0 ? (

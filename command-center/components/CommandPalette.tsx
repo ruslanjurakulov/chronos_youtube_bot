@@ -195,17 +195,27 @@ export function CommandPalette() {
             className="sheet-enter w-full max-w-xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-elevated)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setActive(0);
-              }}
-              onKeyDown={onListKey}
-              placeholder={t.ops.palettePlaceholder}
-              className="w-full border-b border-[var(--color-border)] bg-transparent px-4 py-3 text-sm outline-none placeholder:text-[var(--color-muted)]"
-            />
+            <div className="flex items-center gap-2 border-b border-[var(--color-border)] pr-3">
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setActive(0);
+                }}
+                onKeyDown={onListKey}
+                placeholder={t.ops.palettePlaceholder}
+                className="w-full bg-transparent px-4 py-3 text-sm outline-none placeholder:text-[var(--color-muted)]"
+              />
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label={t.ops.shortcutsClose}
+                className="sheet-close shrink-0"
+              >
+                ✕
+              </button>
+            </div>
             <ul className="max-h-[50vh] overflow-y-auto p-1">
               {results.length === 0 && (
                 <li className="p-4 text-center mono text-xs text-[var(--color-muted)]">{t.ops.paletteNoResults}</li>
@@ -237,7 +247,17 @@ export function CommandPalette() {
       {help && (
         <div className="scrim-enter fixed inset-0 z-[100] flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm" onClick={() => setHelp(false)}>
           <div className="sheet-enter w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] p-6" onClick={(e) => e.stopPropagation()}>
-            <h2 className="font-display text-sm font-semibold">{t.ops.shortcutsTitle}</h2>
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="font-display text-base font-semibold">{t.ops.shortcutsTitle}</h2>
+              <button
+                type="button"
+                onClick={() => setHelp(false)}
+                aria-label={t.ops.shortcutsClose}
+                className="sheet-close -mr-1 -mt-1 shrink-0"
+              >
+                ✕
+              </button>
+            </div>
             <dl className="mt-3 flex flex-col gap-2">
               {[
                 { k: "⌘/Ctrl + K", v: t.ops.shortcutsPalette },

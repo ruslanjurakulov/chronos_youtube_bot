@@ -347,6 +347,29 @@ h1, h2, h3, .font-display {
 /* Controls are pills, as on the reference. */
 .pill { border-radius: 999px; }
 
+/* The ✕ that closes an opened panel, sitting where the direction puts it: top
+   right, quiet until you reach for it. Kept off the accent so it never competes
+   with the panel's real action. */
+.sheet-close {
+  display: inline-grid;
+  place-items: center;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  color: var(--color-muted);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  background: none;
+  transition: color 0.22s ease, border-color 0.22s ease, background-color 0.22s ease;
+}
+.sheet-close:hover {
+  color: var(--color-fg);
+  border-color: var(--color-border);
+  background: var(--color-panel-2);
+}
+
 /* A bar nav link carries the same sweep as every other control: the fill rises
    from the bottom edge on hover and the press scales in. The page you are on
    keeps that fill parked, so the current section reads without a second device. */
