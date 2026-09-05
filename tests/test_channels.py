@@ -188,6 +188,36 @@ class CredentialIsolationTestCase(unittest.TestCase):
             ):
                 self.assertEqual(token_path(legacy_default_channel()), plain)
 
+    def test_a_caller_with_no_channel_finds_the_same_token(self):
+        """The half of the fallback the first fix missed.
+
+        tools/run_intelligence_poll.py constructs its first poller as
+        IntelligencePoller() — no channel — and every client's channel-is-None
+        branch read config.YOUTUBE_TOKEN_FILE directly, so it never reached the
+        fallback. The poll then looked for the suffixed name, missed the file
+        the workflow had written, and reported "no usable token" while the token
+        sat right there. Both doors must give the same answer.
+        """
+        from modules.analytics_client import AnalyticsClient
+        from modules.channel_credentials import LEGACY_TOKEN_NAME, token_path
+        from modules.comment_fetcher import CommentFetcher
+        from modules.youtube_uploader import YouTubeUploader
+
+        with tempfile.TemporaryDirectory() as tmp:
+            suffixed = Path(tmp) / "youtube_token_UCabc123.json"
+            plain = Path(tmp) / LEGACY_TOKEN_NAME
+            plain.write_text(json.dumps({"token": "x", "refresh_token": "r"}))
+            with patch("modules.channel_credentials.cfg.BASE_DIR", Path(tmp)), patch(
+                "modules.channel_credentials.cfg.YOUTUBE_TOKEN_FILE", suffixed
+            ):
+                with_channel = token_path(legacy_default_channel())
+                for client in (AnalyticsClient, CommentFetcher, YouTubeUploader):
+                    with self.subTest(client=client.__name__):
+                        self.assertEqual(
+                            Path(client._resolve_token_file(None)), with_channel
+                        )
+                self.assertEqual(with_channel, plain)
+
     def test_the_fallback_never_shadows_a_real_suffixed_token(self):
         # Both files present: the configured one wins. The fallback may only
         # ever find a token, never replace the one this deployment configured.

@@ -105,6 +105,27 @@ def env_var_name(channel: ChannelContext) -> str:
 LEGACY_TOKEN_NAME = "youtube_token.json"
 
 
+def legacy_token_path() -> Path:
+    """The single-channel token path, with the unsuffixed fallback.
+
+    Split out of token_path() because the callers that pass no channel at all —
+    ``AnalyticsClient(channel=None)`` and friends, which is how
+    ``tools/run_intelligence_poll.py`` constructs its first poller — used
+    ``cfg.YOUTUBE_TOKEN_FILE`` directly and so never reached the fallback. The
+    result was that the poll looked for the suffixed name, missed the file the
+    workflow had actually written, and reported "no usable token" while the
+    token sat right there.
+
+    One function, so there is one answer to "where is the default channel's
+    token" no matter which door the caller came through.
+    """
+    primary = Path(cfg.YOUTUBE_TOKEN_FILE)
+    if primary.exists():
+        return primary
+    fallback = Path(cfg.BASE_DIR) / LEGACY_TOKEN_NAME
+    return fallback if fallback.exists() else primary
+
+
 def token_path(channel: ChannelContext) -> Path:
     """Where this channel's token file lives on disk.
 
@@ -132,11 +153,7 @@ def token_path(channel: ChannelContext) -> Path:
     deployment expects it.
     """
     if channel.is_default and not channel.credential.ref:
-        primary = Path(cfg.YOUTUBE_TOKEN_FILE)
-        if primary.exists():
-            return primary
-        fallback = Path(cfg.BASE_DIR) / LEGACY_TOKEN_NAME
-        return fallback if fallback.exists() else primary
+        return legacy_token_path()
     key = channel.credential.ref or str(channel.channel_id)
     safe = re.sub(r"[^a-zA-Z0-9_-]+", "-", key)
     return cfg.BASE_DIR / f"youtube_token_{safe}.json"

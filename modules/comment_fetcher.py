@@ -43,9 +43,10 @@ from google_auth_oauthlib.flow import InstalledAppFlow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-from config import YOUTUBE_CLIENT_SECRET, YOUTUBE_SCOPES, YOUTUBE_TOKEN_FILE
+from config import YOUTUBE_CLIENT_SECRET, YOUTUBE_SCOPES
 from modules.channel_credentials import (
     client_secret_problem,
+    legacy_token_path,
     materialize_token,
     require_interactive_consent_possible,
     token_path,
@@ -76,7 +77,7 @@ class CommentFetcher:
     @staticmethod
     def _resolve_token_file(channel) -> Path:
         if channel is None:
-            return Path(YOUTUBE_TOKEN_FILE)
+            return legacy_token_path()
         materialize_token(channel)
         return token_path(channel)
 

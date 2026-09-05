@@ -34,11 +34,11 @@ from config import (
     YOUTUBE_CLIENT_SECRET,
     YOUTUBE_PRIVACY,
     YOUTUBE_SCOPES,
-    YOUTUBE_TOKEN_FILE,
 )
 from modules.channels import ChannelContext
 from modules.channel_credentials import (
     client_secret_problem,
+    legacy_token_path,
     materialize_token,
     require_interactive_consent_possible,
     token_path,
@@ -70,7 +70,7 @@ class YouTubeUploader:
         then read from that channel's own path.
         """
         if channel is None:
-            return Path(YOUTUBE_TOKEN_FILE)
+            return legacy_token_path()
         materialize_token(channel)
         return token_path(channel)
 
