@@ -80,7 +80,7 @@ export default async function VideoDetail({
 
   if (!video) {
     return (
-      <div className="rhythm">
+      <div className="rhythm stagger-enter">
         <Link
           href="/videos"
           className="mono text-[11px] text-[var(--color-primary)] hover:underline"

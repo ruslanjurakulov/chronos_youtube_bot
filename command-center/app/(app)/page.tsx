@@ -67,7 +67,7 @@ export default async function CommandCenter() {
   const next = inferNextStage(events);
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="t-hero">{t.dashboard.title}</h1>
@@ -133,7 +133,7 @@ export default async function CommandCenter() {
           ) : (
             <ul className="divide-y divide-[var(--color-border)]">
               {topics.map((tp) => (
-                <li key={tp.topic} className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--color-panel-2)]">
+                <li key={tp.topic} className="row-sweep flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--color-panel-2)]">
                   <div className="min-w-0">
                     <div className="truncate text-sm text-[var(--color-fg)]">{tp.topic}</div>
                     <div className="truncate mono text-[10px] text-[var(--color-muted)]">{tp.reason}</div>

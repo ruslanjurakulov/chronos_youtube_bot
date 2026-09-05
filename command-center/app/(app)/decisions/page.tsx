@@ -49,7 +49,7 @@ export default async function DecisionsPage() {
   }
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div>
         <h1 className="t-hero">{t.intel.decisionsTitle}</h1>
         <p className="t-lead mt-4">{t.intel.decisionsSubtitle}</p>

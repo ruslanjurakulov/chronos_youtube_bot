@@ -67,7 +67,7 @@ export default async function VideoLibrary() {
   const publishedToday = rows.filter((r) => isToday(r.published_at)).length;
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="t-hero">{t.videos.title}</h1>

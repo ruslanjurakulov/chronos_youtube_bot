@@ -52,7 +52,7 @@ export default async function FeedbackPage() {
   const lastRun = signals[0]?.analyzed_date ?? null;
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div>
         <h1 className="t-hero">{t.feedback.title}</h1>
         <p className="t-lead mt-4">{t.feedback.subtitle}</p>

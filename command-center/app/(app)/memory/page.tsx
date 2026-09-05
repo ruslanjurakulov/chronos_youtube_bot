@@ -38,7 +38,7 @@ export default async function MemoryPage() {
   const opportunities = deriveOpportunities(topicPerf, demand);
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div>
         <h1 className="t-hero">{t.intel.memoryTitle}</h1>
         <p className="t-lead mt-4">{t.intel.memorySubtitle}</p>

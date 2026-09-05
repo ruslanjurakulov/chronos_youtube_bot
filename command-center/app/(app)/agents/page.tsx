@@ -85,7 +85,7 @@ export default async function AgentsPage() {
   const failed = agents.filter((a) => a.status === "FAILED").length;
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="t-hero">{t.agents.title}</h1>

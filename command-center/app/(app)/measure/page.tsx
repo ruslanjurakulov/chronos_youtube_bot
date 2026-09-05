@@ -117,7 +117,7 @@ export default async function MeasurePage() {
               });
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div>
         <h1 className="t-hero">{t.measure.title}</h1>
         <p className="t-lead mt-4">{t.measure.subtitle}</p>

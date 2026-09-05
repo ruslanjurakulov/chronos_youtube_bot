@@ -405,6 +405,16 @@ h1, h2, h3, .font-display {
   animation: reveal-in 0.4s cubic-bezier(0.2, 0.8, 0.25, 1) both;
   animation-delay: calc(0.12s + var(--i, 0) * 60ms);
 }
+/* Where no --i is set, position in the container supplies the order, so a
+   plain list of sections still arrives one after another instead of at once.
+   Capped at six: past that the last section is waiting on an animation rather
+   than the page being ready. */
+.stagger-enter > *:nth-child(1) { --i: 0; }
+.stagger-enter > *:nth-child(2) { --i: 1; }
+.stagger-enter > *:nth-child(3) { --i: 2; }
+.stagger-enter > *:nth-child(4) { --i: 3; }
+.stagger-enter > *:nth-child(5) { --i: 4; }
+.stagger-enter > *:nth-child(n + 6) { --i: 5; }
 
 /* A gauge arc that draws itself in. Set --arc to the circle's circumference. */
 @keyframes arc-draw {

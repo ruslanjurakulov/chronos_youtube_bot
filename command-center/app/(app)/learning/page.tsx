@@ -41,7 +41,7 @@ export default async function LearningPage() {
   const topics = deriveTopicIntel(topicPerf, signals, videos);
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div>
         <h1 className="t-hero">{t.intel.learningTitle}</h1>
         <p className="t-lead mt-4">{t.intel.learningSubtitle}</p>

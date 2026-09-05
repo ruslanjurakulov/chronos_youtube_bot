@@ -136,7 +136,7 @@ export default async function JobsPage() {
   const completed = jobs.filter((j) => j.status === "COMPLETED").length;
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="t-hero">{t.jobs.title}</h1>

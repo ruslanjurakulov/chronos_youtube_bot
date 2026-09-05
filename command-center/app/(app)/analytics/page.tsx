@@ -189,7 +189,7 @@ export default async function AnalyticsPage() {
   const maxRet = byRetention.length ? byRetention[0].retention ?? 1 : 1;
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div>
         <h1 className="t-hero">{t.analytics.title}</h1>
         <p className="t-lead mt-4">{t.analytics.subtitle}</p>

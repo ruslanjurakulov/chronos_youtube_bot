@@ -53,7 +53,7 @@ export default async function ChannelsPage() {
   const stats = channelStats(channels, videos, snapshots);
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="t-hero">{t.channels.title}</h1>

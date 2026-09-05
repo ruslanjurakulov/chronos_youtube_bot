@@ -30,7 +30,7 @@ export default async function IntelligencePage() {
   }
 
   return (
-    <div className="rhythm">
+    <div className="rhythm stagger-enter">
       <div>
         <h1 className="t-hero">{t.ops.intelTitle}</h1>
         <p className="t-lead mt-4">{t.ops.intelSubtitle}</p>
