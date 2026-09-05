@@ -43,8 +43,18 @@ jobs:
 
       - name: Restore YouTube token
         run: |
+          # Say which way this went. Silence here meant a run could look
+          # perfectly normal while no token was ever written, and the failure
+          # only surfaced later as "no usable token" from deep inside the
+          # OAuth path. Only the fact is printed, never any part of the value.
           if [ -n "${{ secrets.YOUTUBE_TOKEN_JSON }}" ]; then
             echo '${{ secrets.YOUTUBE_TOKEN_JSON }}' > youtube_token.json
+            echo "YOUTUBE_TOKEN_JSON is set — wrote youtube_token.json ($(wc -c < youtube_token.json) bytes)."
+          else
+            echo "YOUTUBE_TOKEN_JSON is EMPTY OR UNSET — no token file written, so"
+            echo "publishing and analytics will be skipped. Check that it is stored"
+            echo "under Settings -> Secrets and variables -> Actions -> Repository"
+            echo "secrets (an Environment or Dependabot secret is NOT visible here)."
           fi
 
       - name: Restore YouTube client secret
