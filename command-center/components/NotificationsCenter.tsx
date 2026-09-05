@@ -141,7 +141,7 @@ export function NotificationsCenter() {
       {open && (
         <div className="drawer-enter absolute right-0 z-50 mt-3 w-80 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-elevated)]">
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
-            <span className="mono text-[10px] font-bold uppercase tracking-widest text-[var(--color-fg)]">{t.ops.notifTitle}</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--color-fg)]">{t.ops.notifTitle}</span>
             {notifications.length > 0 && (
               <button type="button" onClick={clearAll} className="press text-[11px] font-light text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]">
                 {t.ops.notifClear}

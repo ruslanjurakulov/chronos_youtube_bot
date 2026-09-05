@@ -32,7 +32,7 @@ export function LearningView({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.intel.sigMetric}</th>
                   <th className="px-4 py-2 font-semibold">{t.intel.sigDirection}</th>
                   <th className="px-4 py-2 font-semibold">{t.intel.sigTopic}</th>
@@ -72,7 +72,7 @@ export function LearningView({
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                  <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                     <th className="px-4 py-2 font-semibold">{t.intel.decTopic}</th>
                     <th className="px-4 py-2 text-right font-semibold">{t.intel.decScore}</th>
                     <th className="px-4 py-2 font-semibold">{t.intel.tiState}</th>

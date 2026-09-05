@@ -78,7 +78,7 @@ export function StageLegend() {
   return (
     <div className="flex flex-wrap items-center gap-4">
       {items.map((it) => (
-        <span key={it.state} className="inline-flex items-center gap-1.5 mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+        <span key={it.state} className="inline-flex items-center gap-1.5 text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
           <span
             style={{
               width: 10,

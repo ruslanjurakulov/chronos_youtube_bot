@@ -39,7 +39,7 @@ export function OperationsPanels({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.auto.qTopic}</th>
                   <th className="px-4 py-2 font-semibold">{t.auto.qStatus}</th>
                   <th className="px-4 py-2 font-semibold">{t.auto.qSource}</th>
@@ -55,7 +55,7 @@ export function OperationsPanels({
                         <div className="mono truncate text-[10px] text-[var(--color-muted)]">{q.rationale}</div>
                       )}
                     </td>
-                    <td className="px-4 py-2 mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: STATUS_COLOR[q.status] ?? "var(--color-idle)" }}>
+                    <td className="px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: STATUS_COLOR[q.status] ?? "var(--color-idle)" }}>
                       {q.status}
                     </td>
                     <td className="px-4 py-2 mono text-[11px] text-[var(--color-muted)]">{q.source ?? t.common.dash}</td>
@@ -80,7 +80,7 @@ export function OperationsPanels({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.auto.rRun}</th>
                   <th className="px-4 py-2 font-semibold">{t.auto.rStage}</th>
                   <th className="px-4 py-2 font-semibold">{t.auto.rApproved}</th>
@@ -95,7 +95,7 @@ export function OperationsPanels({
                       <div className="mono truncate text-[10px] text-[var(--color-muted)]">{r.run_id}</div>
                     </td>
                     <td className="px-4 py-2 mono text-[11px] text-[var(--color-primary)]">{r.current_stage}</td>
-                    <td className="px-4 py-2 mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: r.human_approved ? "var(--color-ok)" : "var(--color-idle)" }}>
+                    <td className="px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: r.human_approved ? "var(--color-ok)" : "var(--color-idle)" }}>
                       {r.human_approved ? t.auto.rApprovedYes : t.auto.rApprovedNo}
                       {r.approved_by && <span className="ml-1 normal-case text-[var(--color-muted)]">({r.approved_by})</span>}
                     </td>

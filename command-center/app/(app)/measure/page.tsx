@@ -170,7 +170,7 @@ export default async function MeasurePage() {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="mono border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                      <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                         <th className="px-4 py-2 font-semibold">{t.measure.thVideo}</th>
                         <th className="px-4 py-2 text-right font-semibold">{t.measure.thCost}</th>
                         <th className="px-4 py-2 text-right font-semibold">{t.measure.thEntries}</th>
@@ -257,7 +257,7 @@ export default async function MeasurePage() {
                             background: "var(--color-panel-2)",
                           }}
                         >
-                          <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                          <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                             {arm.variant === "A" ? t.measure.variantA : t.measure.variantB}
                           </div>
                           <div

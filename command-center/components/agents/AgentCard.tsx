@@ -50,7 +50,7 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
           <div className="mono truncate text-sm font-bold text-[var(--color-primary)]">
             {agent.agent}
           </div>
-          <div className="mono mt-0.5 text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+          <div className="mt-0.5 text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
             {fmt(t.agents.recentEvents, { n: agent.eventCount })}
           </div>
         </div>
@@ -58,7 +58,7 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
       </div>
 
       <div className="rounded-md border-l-2 px-3 py-2" style={{ borderColor: accent, background: "var(--color-panel-2)" }}>
-        <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+        <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
           {t.agents.currentTask}
         </div>
         <div className="mono mt-0.5 truncate text-sm text-[var(--color-fg)]">{agent.currentTask}</div>
@@ -70,7 +70,7 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
 
       <dl className="grid grid-cols-2 gap-2">
         <div>
-          <dt className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+          <dt className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
             {t.agents.lastSuccess}
           </dt>
           <dd className="mono mt-0.5 text-[11px]" style={{ color: agent.lastSuccess ? "var(--color-ok)" : "var(--color-muted)" }}>
@@ -78,7 +78,7 @@ export function AgentCard({ agent }: { agent: AgentSummary }) {
           </dd>
         </div>
         <div>
-          <dt className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+          <dt className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
             {t.agents.lastFailure}
           </dt>
           <dd className="mono mt-0.5 text-[11px]" style={{ color: agent.lastFailure ? "var(--color-fail)" : "var(--color-muted)" }}>

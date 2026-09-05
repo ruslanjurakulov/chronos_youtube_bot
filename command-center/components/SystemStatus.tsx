@@ -77,7 +77,7 @@ export function SystemStatus({
                 {s.lastSuccess && (
                   <span className="mono hidden text-[9px] text-[var(--color-muted)] sm:inline">{relativeTime(s.lastSuccess)}</span>
                 )}
-                <span className="mono text-[9px] font-semibold uppercase tracking-wider" style={{ color }}>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.22em]" style={{ color }}>
                   {String(t.ops[STATE_KEY[s.state]])}
                 </span>
               </span>

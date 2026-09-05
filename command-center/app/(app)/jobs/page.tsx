@@ -161,7 +161,7 @@ export default async function JobsPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                  <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                     <th className="px-4 py-2 font-semibold">{t.jobs.thJob}</th>
                     <th className="px-4 py-2 font-semibold">{t.jobs.thAgents}</th>
                     <th className="px-4 py-2 font-semibold">{t.jobs.thLatest}</th>
@@ -176,7 +176,7 @@ export default async function JobsPage() {
                     <tr key={`${j.keyedBy}-${j.id}`} className="border-b border-[var(--color-border)]/50 align-top transition-colors hover:bg-[var(--color-panel-2)]">
                       <td className="px-4 py-2">
                         <div className="mono truncate text-[12px] text-[var(--color-fg)]">{j.id}</div>
-                        <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                        <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                           {j.keyedBy === "job_id" ? t.jobs.byJobId : t.jobs.byVideo}
                         </div>
                       </td>

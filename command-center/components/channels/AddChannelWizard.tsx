@@ -151,7 +151,7 @@ export function AddChannelWizard() {
           <li
             key={s}
             aria-current={i === step ? "step" : undefined}
-            className="mono rounded px-2 py-0.5 text-[9px] uppercase tracking-widest"
+            className="rounded px-2 py-0.5 text-[9px] uppercase tracking-[0.22em]"
             style={{
               background: i === step ? "var(--color-panel-2)" : "transparent",
               color:
@@ -378,7 +378,7 @@ const inputClass =
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{label}</span>
+      <span className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{label}</span>
       {children}
       {hint && <span className="text-[10px] text-[var(--color-muted)]">{hint}</span>}
     </label>

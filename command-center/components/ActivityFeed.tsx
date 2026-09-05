@@ -52,7 +52,7 @@ export function ActivityFeed({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2">
-        <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+        <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
           {fmt(t.feed.events, { n: shown.length })}
         </span>
         <StatusPill tone={live ? "run" : "idle"} label={live ? t.status.live : t.status.polled} live={live} />

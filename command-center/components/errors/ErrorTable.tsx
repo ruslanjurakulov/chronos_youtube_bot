@@ -69,7 +69,7 @@ export function ErrorTable({ rows }: { rows: SystemEventRow[] }) {
           placeholder={t.errors.filter}
           className="mono w-full max-w-md rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-1.5 text-xs text-[var(--color-fg)] outline-none transition-colors placeholder:text-[var(--color-muted)] focus:border-[var(--color-primary)]"
         />
-        <span className="mono shrink-0 text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+        <span className="shrink-0 text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
           {filtered.length} / {rows.length}
         </span>
       </div>
@@ -80,7 +80,7 @@ export function ErrorTable({ rows }: { rows: SystemEventRow[] }) {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+              <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                 <th className="px-4 py-2 font-semibold">{t.errors.thWhen}</th>
                 <th className="px-4 py-2 font-semibold">{t.errors.thComponent}</th>
                 <th className="px-4 py-2 font-semibold">{t.errors.thEvent}</th>

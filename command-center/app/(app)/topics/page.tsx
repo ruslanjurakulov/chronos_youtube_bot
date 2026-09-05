@@ -97,7 +97,7 @@ export default async function TopicManager() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.topics.thTopic}</th>
                   <th className="px-4 py-2 text-right font-semibold">{t.topics.thScore}</th>
                   <th className="px-4 py-2 text-right font-semibold">{t.topics.thVideos}</th>
@@ -161,7 +161,7 @@ export default async function TopicManager() {
                   <div className="mono text-lg font-bold tabular-nums text-[var(--color-primary)]">
                     {num(d.mention_count)}
                   </div>
-                  <div className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">
+                  <div className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                     {t.topics.mentions}
                   </div>
                 </div>

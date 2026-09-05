@@ -279,7 +279,7 @@ export default async function AnalyticsPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                  <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                     <th className="px-4 py-2 font-semibold">{t.analytics.thTitle}</th>
                     <th className="px-4 py-2 font-semibold">{t.analytics.thTopic}</th>
                     <th className="px-4 py-2 text-right font-semibold">{t.analytics.thViews}</th>

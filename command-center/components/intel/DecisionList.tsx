@@ -57,7 +57,7 @@ export function DecisionList({
           <li key={d.id} className="p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="min-w-0">
-                <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   {t.intel.decType} · {timeOfDay(d.ts)} · {relativeTime(d.ts)}
                 </div>
                 <div className="truncate text-sm font-semibold text-[var(--color-fg)]">
@@ -69,7 +69,7 @@ export function DecisionList({
                   {d.score == null ? t.common.na : d.score.toFixed(0)}
                 </span>
                 <ConfidenceBadge confidence={d.confidence} />
-                <span className="mono text-[9px] font-semibold uppercase tracking-widest" style={{ color: OUTCOME_COLOR[d.outcome] }}>
+                <span className="text-[9px] font-semibold uppercase tracking-[0.22em]" style={{ color: OUTCOME_COLOR[d.outcome] }}>
                   {String(t.intel[OUTCOME_KEY[d.outcome]])}
                 </span>
                 <button
@@ -90,17 +90,17 @@ export function DecisionList({
                   <div className="flex flex-col gap-3">
                     {d.reason && (
                       <div>
-                        <div className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{t.intel.decReason}</div>
+                        <div className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{t.intel.decReason}</div>
                         <div className="text-[12px] text-[var(--color-fg)]">{d.reason}</div>
                       </div>
                     )}
 
                     {d.signals.length > 0 && (
                       <div className="overflow-x-auto">
-                        <div className="mono mb-1 text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{t.intel.decSignals}</div>
+                        <div className="mb-1 text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{t.intel.decSignals}</div>
                         <table className="w-full text-[11px]">
                           <thead>
-                            <tr className="text-left mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">
+                            <tr className="text-left text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                               <th className="py-1 pr-3">{t.intel.sigMetric}</th>
                               <th className="py-1 pr-3">{t.intel.sigDirection}</th>
                               <th className="py-1 pr-3 text-right">{t.intel.sigValue}</th>
@@ -127,7 +127,7 @@ export function DecisionList({
 
                     {rows.length > 0 && (
                       <div className="overflow-x-auto">
-                        <div className="mono mb-1 text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{t.intel.lineageTitle}</div>
+                        <div className="mb-1 text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{t.intel.lineageTitle}</div>
                         <table className="w-full text-[11px]">
                           <tbody>
                             {rows.map((r) => (

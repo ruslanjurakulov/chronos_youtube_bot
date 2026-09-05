@@ -91,7 +91,7 @@ export default async function FeedbackPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.feedback.thTopic}</th>
                   <th className="px-4 py-2 font-semibold">{t.feedback.thScore}</th>
                   <th className="px-4 py-2 font-semibold">{t.feedback.thVideos}</th>
@@ -125,7 +125,7 @@ export default async function FeedbackPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.feedback.sgSignal}</th>
                   <th className="px-4 py-2 font-semibold">{t.feedback.sgTopic}</th>
                   <th className="px-4 py-2 font-semibold">{t.feedback.sgVideo}</th>

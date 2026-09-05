@@ -99,7 +99,7 @@ export function ChannelCard({
       {/* -- health ------------------------------------------------------ */}
       <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+          <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
             {t.channels.health}
           </span>
           <StatusPill
@@ -131,7 +131,7 @@ export function ChannelCard({
       {/* -- youtube ----------------------------------------------------- */}
       <div className="rounded-md border border-[var(--color-border)] p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+          <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
             {t.channels.youtube}
           </span>
           {credential ? (
@@ -212,14 +212,14 @@ export function ChannelCard({
 
       {agent.visual_style_prompt && (
         <p className="text-[11px] leading-relaxed text-[var(--color-muted)]">
-          <span className="mono text-[9px] uppercase tracking-widest">{t.channels.visualStyle}: </span>
+          <span className="text-[9px] uppercase tracking-[0.22em]">{t.channels.visualStyle}: </span>
           {agent.visual_style_prompt}
         </p>
       )}
 
       <Link
         href={`/videos?channel=${encodeURIComponent(channel.channel_id)}`}
-        className="mono text-[10px] uppercase tracking-widest text-[var(--color-primary)] hover:underline"
+        className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-primary)] hover:underline"
       >
         {t.channels.videos} →
       </Link>
@@ -230,7 +230,7 @@ export function ChannelCard({
 function Field({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
-      <dt className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{label}</dt>
+      <dt className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{label}</dt>
       <dd className="truncate text-[12px] text-[var(--color-fg)]">{value || "—"}</dd>
     </div>
   );

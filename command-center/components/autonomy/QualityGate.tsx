@@ -25,11 +25,11 @@ export function QualityGate({ events }: { events: SystemEventRow[] }) {
   return (
     <div className="p-4">
       <div className="mb-3 flex items-center justify-between">
-        <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+        <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
           {gate.failures > 0 ? fmt(t.auto.gFailures, { n: gate.failures }) : ""}
         </span>
         <span
-          className="mono text-[10px] font-semibold uppercase tracking-widest"
+          className="text-[10px] font-semibold uppercase tracking-[0.22em]"
           style={{ color: gate.ready ? "var(--color-ok)" : "var(--color-idle)" }}
         >
           {gate.ready ? t.auto.gReady : t.auto.gNotReady}

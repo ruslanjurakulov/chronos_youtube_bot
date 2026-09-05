@@ -59,7 +59,7 @@ export default function LoginPage() {
 
         <form onSubmit={onSubmit} className="mt-8 flex flex-col gap-4">
           <label className="flex flex-col gap-1">
-            <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+            <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
               {t.auth.email}
             </span>
             <input
@@ -71,7 +71,7 @@ export default function LoginPage() {
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+            <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
               {t.auth.password}
             </span>
             <input

@@ -27,7 +27,7 @@ const TONE_COLOR: Record<string, string> = {
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+      <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
         {label}
       </div>
       <div className="text-sm text-[var(--color-fg)] break-words">{value}</div>
@@ -190,7 +190,7 @@ export default async function VideoDetail({
                     </span>
                     {e.status && (
                       <span
-                        className="mono shrink-0 text-[10px] uppercase tracking-wider"
+                        className="shrink-0 text-[10px] uppercase tracking-[0.22em]"
                         style={{ color: TONE_COLOR[tone] }}
                       >
                         {e.status}
@@ -229,7 +229,7 @@ export default async function VideoDetail({
 
               {snapshots.length >= 2 && (
                 <div className="flex flex-col gap-2">
-                  <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                  <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                     {t.videoDetail.viewsOverTime}
                   </div>
                   <ViewsSparkline

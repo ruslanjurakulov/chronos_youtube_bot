@@ -220,7 +220,7 @@ export function CommandPalette() {
                     style={{ background: i === active ? "var(--color-panel-2)" : "transparent" }}
                   >
                     <span className="min-w-0 truncate text-[var(--color-fg)]">{item.label}</span>
-                    <span className="mono shrink-0 text-[9px] uppercase tracking-widest text-[var(--color-muted)]">
+                    <span className="shrink-0 text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                       {item.sub ?? sectionLabel[item.section]}
                     </span>
                   </button>

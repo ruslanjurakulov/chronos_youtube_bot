@@ -82,7 +82,7 @@ export function VideoLifecycle({
               <span className="text-[13px]" style={{ color: filled ? "var(--color-fg)" : "var(--color-muted)" }}>
                 {String(label)}
               </span>
-              <span className="mono text-[9px] uppercase tracking-widest" style={{ color }}>
+              <span className="text-[9px] uppercase tracking-[0.22em]" style={{ color }}>
                 {st.s.ts ? timeOfDay(st.s.ts) : ""}
               </span>
             </div>
