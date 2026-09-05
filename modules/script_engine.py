@@ -300,6 +300,10 @@ class ScriptEngine:
         self.channel = channel
         self.client = make_client()
         self.performance_analyzer = self._safe_make_performance_analyzer(channel)
+        self.retention_analyzer = self._safe_make_retention_analyzer(channel)
+        # The most recent Gemini response, so the caller can record what the
+        # generation actually cost. None until generate() runs.
+        self.last_response = None
 
     def _safe_make_performance_analyzer(self, channel=None) -> "PerformanceAnalyzer | None":
         """PerformanceAnalyzer's own methods already degrade to "" on any
@@ -319,6 +323,42 @@ class ScriptEngine:
                 type(e).__name__, e,
             )
             return None
+
+    def _safe_make_retention_analyzer(self, channel=None):
+        """Same guarantee as the performance analyzer: its reads already degrade
+        to "" on failure, but constructing it opens a StateStore, and that must
+        not stop a script being written."""
+        try:
+            from modules.retention_analyzer import RetentionAnalyzer
+
+            channel_id = str(channel.channel_id) if channel is not None else None
+            return RetentionAnalyzer(channel_id=channel_id)
+        except Exception as e:
+            logger.warning(
+                "Failed to construct RetentionAnalyzer (%s: %s) — writing the script "
+                "without retention context",
+                type(e).__name__, e,
+            )
+            return None
+
+    def _retention_context(self) -> str:
+        """Where this channel's viewers actually stop watching.
+
+        The strongest signal a writer can act on, and the one the feedback loop
+        cannot give: topic scores say *what* to make, retention says *how* the
+        last one lost people. Returns "" below the evidence floor.
+        """
+        if self.retention_analyzer is None:
+            return ""
+        try:
+            return self.retention_analyzer.as_prompt_text()
+        except Exception as e:
+            logger.warning(
+                "RetentionAnalyzer.as_prompt_text failed (%s: %s) — writing the script "
+                "without retention context",
+                type(e).__name__, e,
+            )
+            return ""
 
     def _performance_context(self) -> str:
         """Real past-performance numbers for this channel's own videos,
@@ -358,6 +398,7 @@ class ScriptEngine:
             system_instruction=system,
         ) if system else None
         response = generate_with_retry(self.client, GEMINI_MODEL, prompt, config)
+        self.last_response = response
         return response.text
 
     def generate(self, topic: str, research_brief: "ResearchBrief | None" = None) -> Script:
@@ -365,6 +406,9 @@ class ScriptEngine:
         performance_context = self._performance_context()
         if performance_context:
             prompt += f"\n\n{performance_context}"
+        retention_context = self._retention_context()
+        if retention_context:
+            prompt += f"\n\n{retention_context}"
         logger.info("Generating script for: %s", topic)
         text = self._gen(prompt, system=SCRIPT_SYSTEM_PROMPT)
         raw = self._extract_json(text)

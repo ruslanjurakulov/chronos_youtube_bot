@@ -60,6 +60,8 @@ function video(over: Partial<VideoRow> & { video_id: string; channel_id: string 
     privacy: null,
     category_id: null,
     local_path: null,
+    thumbnail_variant: over.thumbnail_variant ?? null,
+    title_variant: over.title_variant ?? null,
   };
 }
 
@@ -72,6 +74,8 @@ function snap(video_id: string, views: number): MetricsSnapshotRow {
     comment_count: null,
     watch_time_minutes: null,
     average_view_duration_seconds: null,
+    impressions: null,
+    impression_ctr: null,
   };
 }
 

@@ -330,6 +330,8 @@ describe("deriveTopicIntel", () => {
         privacy: null,
         category_id: null,
         local_path: null,
+        thumbnail_variant: null,
+        title_variant: null,
       },
     ];
     const [t] = deriveTopicIntel([perf({ topic: "T", score: 70, videos_analyzed: 5 })], [], videos);

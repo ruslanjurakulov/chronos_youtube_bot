@@ -16,6 +16,7 @@ import json
 import logging
 import re
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -26,8 +27,13 @@ Path("output").mkdir(exist_ok=True)
 
 from config import OUTPUT_DIR, VIDEO_HEIGHT, VIDEO_WIDTH, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
 from modules import event_log as events
+from modules import publish_gate
+from modules.ab_testing import choose_variant, variant_performance
 from modules.audio_mixer import AudioMixer
 from modules.channels import ChannelContext, resolve_channel
+from modules.cost_ledger import (
+    CostLedger, PEXELS_REQUESTS, RENDER_SECONDS, TTS_CHARACTERS, UPLOAD_BYTES,
+)
 from modules.claim_extractor import extract_claims
 from modules.compositor import Compositor
 from modules.fact_checker import fact_check_claims
@@ -51,6 +57,27 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("chronos")
+
+
+def _pick_variant(channel_id: str) -> str:
+    """Which A/B arm this video ships on.
+
+    Reads the channel's own published count and current verdict. Any failure
+    falls back to "A", which is exactly what the pipeline did before this
+    existed — a broken experiment must not stop a video.
+    """
+    try:
+        with StateStore() as store:
+            videos = store.list_videos(limit=100000, channel_id=channel_id)
+            snapshots = [
+                m
+                for v in videos
+                if (m := store.latest_metrics(v.get("video_id", ""))) is not None
+            ]
+        return choose_variant(len(videos), variant_performance(videos, snapshots))
+    except Exception as e:
+        logger.warning("A/B variant selection failed (%s: %s) — shipping A", type(e).__name__, e)
+        return "A"
 
 
 def slugify(text: str) -> str:
@@ -81,6 +108,9 @@ def run(
     channel_id = str(ctx.channel_id)
     niche = niche or ctx.niche or "history mysteries"
     logger.info("=== Chronos YouTube Bot starting [channel: %s] ===", channel_id)
+    # What this run consumes. Recorded whether or not it ends in an upload —
+    # a render that is later blocked still cost real money.
+    costs = CostLedger(channel_id=channel_id)
     # Observability events (event_log.emit never raises and never alters the
     # pipeline — see modules/event_log.py). They feed the Command Center's live
     # activity feed and per-video pipeline timeline.
@@ -145,7 +175,9 @@ def run(
     if not script_file:
         events.emit(events.SCRIPT_STARTED, agent="script_engine", status=events.STATUS_RUNNING,
                     channel_id=channel_id, metadata={"topic": topic})
-        script = ScriptEngine(channel=ctx).generate(topic, research_brief=research_brief)
+        engine = ScriptEngine(channel=ctx)
+        script = engine.generate(topic, research_brief=research_brief)
+        costs.add_gemini_usage(engine.last_response, stage="script")
 
     slug = slugify(topic)
     logger.info("Script: '%s'", script.title)
@@ -157,9 +189,12 @@ def run(
         saved = script.save(OUTPUT_DIR / slug / "script.json")
         logger.info("Script saved: %s — reuse with --script-file", saved)
 
-    # ── Fact-check pass (advisory only — see modules/fact_checker.py)
-    # Flags claims for human review; never blocks generation or upload itself.
+    # ── Fact-check pass
+    # Claims are flagged here; the pre-publish gate below decides what that
+    # means. `None` (rather than []) survives a checker crash and tells the gate
+    # the check did not run — which is a warning, not a silent pass.
     pipeline.advance(run_record.run_id, PipelineStage.FACT_CHECK)
+    fact_results = None
     try:
         claims = extract_claims(script)
         fact_results = fact_check_claims(claims) if claims else []
@@ -186,6 +221,8 @@ def run(
     events.emit(events.VOICE_STARTED, agent="audio_mixer", status=events.STATUS_RUNNING, channel_id=channel_id)
     mixer = AudioMixer(slug, channel=ctx)
     audio_path, timeline = mixer.build(script)
+    # Only what was actually synthesized — cached segments cost nothing this run.
+    costs.add(TTS_CHARACTERS, mixer.characters_synthesized, stage="voice")
     events.emit(events.VOICE_COMPLETED, agent="audio_mixer", status=events.STATUS_COMPLETED, channel_id=channel_id)
 
     # ── Stage 4: Media
@@ -199,6 +236,8 @@ def run(
 
     videos = fetcher.fetch_videos(all_keywords, count=12)
     images = fetcher.fetch_images(all_keywords, count=8)
+    # API searches, not bytes: the Pexels quota is spent per search.
+    costs.add(PEXELS_REQUESTS, fetcher.searches_made, stage="media")
     logger.info("Media: %d videos, %d images", len(videos), len(images))
     events.emit(events.MEDIA_COMPLETED, agent="media_fetcher", status=events.STATUS_COMPLETED,
                 channel_id=channel_id, metadata={"videos": len(videos), "images": len(images)})
@@ -210,6 +249,11 @@ def run(
     word_clips_specs = sub_gen.word_clips(word_timestamps, VIDEO_WIDTH, VIDEO_HEIGHT)
 
     # ── Stage 6: Thumbnails
+    # Which arm this video ships on. Both thumbnails have always been rendered;
+    # until now A was uploaded every time and B was thrown away, so the
+    # experiment never ran. See modules/ab_testing.py.
+    variant = _pick_variant(channel_id)
+    logger.info("[channel: %s] A/B variant for this video: %s", channel_id, variant)
     events.emit(events.THUMBNAIL_STARTED, agent="thumbnail_generator", status=events.STATUS_RUNNING, channel_id=channel_id)
     bg_a = images[0] if images else None
     bg_b = images[1] if len(images) > 1 else None
@@ -220,11 +264,18 @@ def run(
         background_a=bg_a,
         background_b=bg_b,
     )
-    logger.info("Thumbnails: %s | %s", thumb_a.name, thumb_b.name)
+    chosen_thumb = thumb_b if variant == "B" else thumb_a
+    # The B title only exists when Gemini produced one; falling back to A is
+    # honest, and the recorded title_variant then says "A" so the readback is
+    # not attributed to an experiment that did not happen.
+    chosen_title = (script.title_ab or "").strip() if variant == "B" else ""
+    title_variant = "B" if chosen_title else "A"
+    logger.info("Thumbnails: %s | %s — shipping %s", thumb_a.name, thumb_b.name, chosen_thumb.name)
     events.emit(events.THUMBNAIL_COMPLETED, agent="thumbnail_generator", status=events.STATUS_COMPLETED, channel_id=channel_id)
 
     # ── Stage 7: Compositor
     events.emit(events.RENDER_STARTED, agent="compositor", status=events.STATUS_RUNNING, channel_id=channel_id)
+    render_started = time.monotonic()
     comp = Compositor(slug)
     video_path = comp.render(
         script=script,
@@ -234,6 +285,8 @@ def run(
         word_timestamps=word_clips_specs,
         section_timeline=timeline,
     )
+    costs.slug = slug
+    costs.add(RENDER_SECONDS, time.monotonic() - render_started, stage="render")
     logger.info("Video: %s", video_path)
     events.emit(events.RENDER_COMPLETED, agent="compositor", status=events.STATUS_COMPLETED,
                 channel_id=channel_id, metadata={"video_path": str(video_path)})
@@ -242,8 +295,31 @@ def run(
     # The video is already on disk by this point, so no upload failure may cost
     # us the topic registration — otherwise a bad channel ID or an expired token
     # means the same topic gets picked again next run despite the finished file.
+    # ── Pre-publish gate — the one place that can stop an upload.
+    # It only ever blocks; it never causes an upload that would not otherwise
+    # happen, and it never publishes anything itself. A blocked video stays on
+    # disk for a human. See modules/publish_gate.py.
+    gate = publish_gate.evaluate(
+        script=script,
+        video_path=video_path,
+        topic=topic,
+        fact_results=fact_results,
+        channel=ctx,
+    )
+    if not gate.allowed:
+        logger.error(
+            "[channel: %s] PUBLISH BLOCKED: %s — video kept at %s for review",
+            channel_id, ", ".join(gate.blocks), video_path,
+        )
+        print(f"\n⛔ Publish blocked ({', '.join(gate.blocks)}). Video saved: {video_path}")
+        events.emit(events.PUBLISH_BLOCKED, agent="publish_gate", status=events.STATUS_FAILED,
+                    channel_id=channel_id, metadata=gate.to_metadata())
+    elif gate.warnings:
+        events.emit(events.PUBLISH_ALLOWED, agent="publish_gate", status=events.STATUS_COMPLETED,
+                    channel_id=channel_id, metadata=gate.to_metadata())
+
     video_id, video_url = None, None
-    if not skip_upload:
+    if not skip_upload and gate.allowed:
         events.emit(events.UPLOAD_STARTED, agent="youtube_uploader", status=events.STATUS_RUNNING,
                     channel_id=channel_id, metadata={"topic": topic})
         try:
@@ -251,8 +327,18 @@ def run(
             # gate is unchanged — this is the same unconditional upload it has
             # always been, now simply aimed at the right channel.
             uploader = YouTubeUploader(channel=ctx)
-            uploaded = uploader.upload(video_path, script, thumbnail_path=thumb_a, privacy=privacy)
+            uploaded = uploader.upload(
+                video_path, script, thumbnail_path=chosen_thumb, privacy=privacy,
+                title_override=chosen_title or None,
+            )
             video_id, video_url = uploaded["id"], uploaded["url"]
+            # Recorded only on a successful upload — a failed attempt may have
+            # sent bytes, but it did not deliver a video, and guessing how many
+            # got through would be inventing a number.
+            try:
+                costs.add(UPLOAD_BYTES, float(video_path.stat().st_size), stage="upload")
+            except OSError:
+                logger.debug("Could not stat %s for the cost ledger", video_path, exc_info=True)
             logger.info("YouTube URL: %s", video_url)
             print(f"\n✓ Published: {video_url}")
             with StateStore() as store:
@@ -266,6 +352,8 @@ def run(
                     category_id=YOUTUBE_CATEGORY_ID,
                     local_path=str(video_path),
                     channel_id=channel_id,
+                    thumbnail_variant=variant,
+                    title_variant=title_variant,
                 )
                 events.emit(events.UPLOAD_COMPLETED, video_id=video_id, agent="youtube_uploader",
                             status=events.STATUS_COMPLETED, channel_id=channel_id,
@@ -281,8 +369,19 @@ def run(
             events.emit(events.UPLOAD_FAILED, agent="youtube_uploader", status=events.STATUS_FAILED,
                         channel_id=channel_id,
                         metadata={"operation": "upload", "error": f"{type(e).__name__}: {e}"})
+    elif not gate.allowed:
+        pass  # already reported above
     else:
         print(f"\n✓ Video saved (upload skipped): {video_path}")
+
+    # Cost is recorded last, once the video_id (if any) is known. A blocked or
+    # failed run still writes its entries, keyed by slug.
+    try:
+        with StateStore() as store:
+            costs.flush(store, video_id=video_id)
+    except Exception as e:
+        logger.warning("Could not record costs (%s: %s) — the run itself is unaffected",
+                       type(e).__name__, e)
 
     topic_mgr.register_topic(topic, video_path, video_id=video_id, video_url=video_url)
 

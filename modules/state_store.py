@@ -143,6 +143,41 @@ CREATE TABLE IF NOT EXISTS channel_topic_performance (
 
 CREATE INDEX IF NOT EXISTS idx_ctp_channel_score
     ON channel_topic_performance (channel_id, score DESC);
+
+-- What each video actually consumed (Phase 6). Quantities are facts the
+-- pipeline observes; `estimated_usd` is NULL unless the operator configured a
+-- rate for that unit, because an invented price quietly becomes "the cost".
+-- See modules/cost_ledger.py.
+CREATE TABLE IF NOT EXISTS video_costs (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    video_id      TEXT,
+    channel_id    TEXT NOT NULL DEFAULT 'default',
+    slug          TEXT,
+    unit          TEXT NOT NULL,
+    quantity      REAL NOT NULL,
+    stage         TEXT,
+    estimated_usd REAL,
+    recorded_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_costs_video ON video_costs (video_id);
+CREATE INDEX IF NOT EXISTS idx_costs_channel_date
+    ON video_costs (channel_id, recorded_at DESC);
+
+-- Audience-retention curve: one row per measured point of a video, where
+-- `elapsed_ratio` is 0.0-1.0 through the video and `watch_ratio` is the share
+-- of viewers still watching there. This is the strongest signal for improving
+-- hooks, and nothing recorded it before.
+CREATE TABLE IF NOT EXISTS retention_points (
+    video_id      TEXT NOT NULL,
+    elapsed_ratio REAL NOT NULL,
+    watch_ratio   REAL,
+    measured_date TEXT NOT NULL,
+    UNIQUE (video_id, elapsed_ratio, measured_date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_retention_video
+    ON retention_points (video_id, elapsed_ratio);
 """
 
 # Additive column migrations for databases created before Phase 5. Each entry is
@@ -163,6 +198,14 @@ _COLUMN_MIGRATIONS = (
     ("competitor_snapshots", "chronos_channel_id", "TEXT NOT NULL DEFAULT 'default'"),
     ("demand_signals", "channel_id", "TEXT NOT NULL DEFAULT 'default'"),
     ("system_events", "channel_id", "TEXT"),
+    # Phase 6: which thumbnail/title variant this video actually shipped with,
+    # so the CTR read back later can be attributed to something.
+    ("videos", "thumbnail_variant", "TEXT"),
+    ("videos", "title_variant", "TEXT"),
+    # CTR as YouTube reports it. Nullable and NOT defaulted to 0: an unpolled
+    # video has *unknown* click-through, which is not the same as none.
+    ("metrics_snapshots", "impressions", "INTEGER"),
+    ("metrics_snapshots", "impression_ctr", "REAL"),
 )
 
 # Kept as a literal rather than imported from modules.channels so the storage
@@ -240,6 +283,8 @@ class StateStore:
         category_id: str = "",
         local_path: str = "",
         channel_id: str = DEFAULT_CHANNEL_ID,
+        thumbnail_variant: str = "",
+        title_variant: str = "",
     ):
         """Insert a video row, or overwrite it if video_id already exists.
 
@@ -250,8 +295,9 @@ class StateStore:
             self.conn.execute(
                 """
                 INSERT INTO videos
-                    (video_id, topic, title, slug, published_at, privacy, category_id, local_path, channel_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    (video_id, topic, title, slug, published_at, privacy, category_id,
+                     local_path, channel_id, thumbnail_variant, title_variant)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(video_id) DO UPDATE SET
                     topic=excluded.topic,
                     title=excluded.title,
@@ -260,9 +306,12 @@ class StateStore:
                     privacy=excluded.privacy,
                     category_id=excluded.category_id,
                     local_path=excluded.local_path,
-                    channel_id=excluded.channel_id
+                    channel_id=excluded.channel_id,
+                    thumbnail_variant=excluded.thumbnail_variant,
+                    title_variant=excluded.title_variant
                 """,
-                (video_id, topic, title, slug, published_at, privacy, category_id, local_path, channel_id),
+                (video_id, topic, title, slug, published_at, privacy, category_id,
+                 local_path, channel_id, thumbnail_variant, title_variant),
             )
         logger.info("Recorded video: %s (%s)", video_id, title or topic)
 
@@ -307,6 +356,8 @@ class StateStore:
         comment_count: int = 0,
         watch_time_minutes: float = 0.0,
         average_view_duration_seconds: float = 0.0,
+        impressions: int | None = None,
+        impression_ctr: float | None = None,
     ):
         """Insert or replace a metrics snapshot for a video on a given date.
 
@@ -318,14 +369,20 @@ class StateStore:
                 """
                 INSERT INTO metrics_snapshots
                     (video_id, snapshot_date, views, likes, comment_count,
-                     watch_time_minutes, average_view_duration_seconds)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                     watch_time_minutes, average_view_duration_seconds,
+                     impressions, impression_ctr)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(video_id, snapshot_date) DO UPDATE SET
                     views=excluded.views,
                     likes=excluded.likes,
                     comment_count=excluded.comment_count,
                     watch_time_minutes=excluded.watch_time_minutes,
-                    average_view_duration_seconds=excluded.average_view_duration_seconds
+                    average_view_duration_seconds=excluded.average_view_duration_seconds,
+                    -- Keep a previously measured CTR when this poll did not
+                    -- return one: null here means "not measured this time",
+                    -- not "no clicks".
+                    impressions=COALESCE(excluded.impressions, metrics_snapshots.impressions),
+                    impression_ctr=COALESCE(excluded.impression_ctr, metrics_snapshots.impression_ctr)
                 """,
                 (
                     video_id,
@@ -335,6 +392,8 @@ class StateStore:
                     comment_count,
                     watch_time_minutes,
                     average_view_duration_seconds,
+                    impressions,
+                    impression_ctr,
                 ),
             )
         logger.info("Recorded metrics snapshot: %s @ %s", video_id, snapshot_date)
@@ -645,6 +704,85 @@ class StateStore:
         rows = self.conn.execute(
             "SELECT * FROM topic_performance ORDER BY score DESC, videos_analyzed DESC LIMIT ?",
             (limit,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    # -- costs -------------------------------------------------------------
+
+    def record_video_cost(
+        self,
+        unit: str,
+        quantity: float,
+        recorded_at: str,
+        video_id: str = "",
+        channel_id: str = DEFAULT_CHANNEL_ID,
+        slug: str = "",
+        stage: str = "",
+        estimated_usd: float | None = None,
+    ):
+        """Append one measured cost. Append-only: a run that was retried cost
+        real money twice, and collapsing that would understate it."""
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO video_costs
+                    (video_id, channel_id, slug, unit, quantity, stage, estimated_usd, recorded_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (video_id, channel_id, slug, unit, quantity, stage, estimated_usd, recorded_at),
+            )
+
+    def list_video_costs(
+        self, video_id: str | None = None, channel_id: str | None = None, limit: int = 1000
+    ) -> list[dict]:
+        """Recorded costs, most recent first."""
+        clauses, params = [], []
+        if video_id is not None:
+            clauses.append("video_id = ?")
+            params.append(video_id)
+        if channel_id is not None:
+            clauses.append("channel_id = ?")
+            params.append(channel_id)
+        where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = self.conn.execute(
+            f"SELECT * FROM video_costs{where} ORDER BY recorded_at DESC, id DESC LIMIT ?",
+            (*params, limit),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+    # -- retention ---------------------------------------------------------
+
+    def record_retention_point(
+        self,
+        video_id: str,
+        elapsed_ratio: float,
+        measured_date: str,
+        watch_ratio: float | None = None,
+    ):
+        """Insert or replace one point of a video's retention curve for a date."""
+        with self.conn:
+            self.conn.execute(
+                """
+                INSERT INTO retention_points (video_id, elapsed_ratio, watch_ratio, measured_date)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(video_id, elapsed_ratio, measured_date) DO UPDATE SET
+                    watch_ratio=excluded.watch_ratio
+                """,
+                (video_id, elapsed_ratio, watch_ratio, measured_date),
+            )
+
+    def retention_curve(self, video_id: str) -> list[dict]:
+        """A video's most recently measured curve, ordered through the video."""
+        rows = self.conn.execute(
+            """
+            SELECT * FROM retention_points
+            WHERE video_id = ?
+              AND measured_date = (
+                  SELECT MAX(measured_date) FROM retention_points WHERE video_id = ?
+              )
+            ORDER BY elapsed_ratio ASC
+            """,
+            (video_id, video_id),
         ).fetchall()
         return [dict(row) for row in rows]
 

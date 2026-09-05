@@ -53,7 +53,12 @@ _UPSERT_TABLES = {
     "channels": "channel_id",
     "channel_credentials": "channel_id,provider",
     "channel_topic_performance": "channel_id,topic",
+    "retention_points": "video_id,elapsed_ratio,measured_date",
 }
+
+#: video_costs is append-only and has no natural key — a run that was retried
+#: cost real money twice, and an upsert would collapse that into one charge.
+_APPEND_TABLES = ("video_costs",)
 
 
 class SupabaseSync:
@@ -177,6 +182,22 @@ class SupabaseSync:
             )
         except Exception as e:
             logger.warning("Failed gathering metrics_snapshots for mirror (%s: %s)", type(e).__name__, e)
+
+        # -- costs (append-only: no upsert, so a retried run shows both charges) --
+        try:
+            rows = [self._strip_local_id(r) for r in store.list_video_costs(limit=100000)]
+            counts["video_costs"] = self.upsert("video_costs", rows)
+        except Exception as e:
+            logger.warning("Failed mirroring video_costs (%s: %s)", type(e).__name__, e)
+
+        # -- retention curves --
+        try:
+            rows = self._gather_retention(store)
+            counts["retention_points"] = self.upsert(
+                "retention_points", rows, on_conflict=_UPSERT_TABLES["retention_points"]
+            )
+        except Exception as e:
+            logger.warning("Failed mirroring retention_points (%s: %s)", type(e).__name__, e)
 
         # -- events (append-only, synthetic-key upsert) --
         try:
@@ -361,6 +382,18 @@ class SupabaseSync:
         out = {k: v for k, v in row.items() if k != "id"}
         out["event_key"] = f"{row.get('ts', '')}|{row.get('event', '')}|{row.get('id', '')}"
         return out
+
+    def _gather_retention(self, store) -> list[dict]:
+        """Every video's most recent retention curve. StateStore exposes the
+        curve per video rather than a bulk lister, so walk the videos — the same
+        shape as _gather_metrics below."""
+        rows: list[dict] = []
+        for video in store.list_videos(limit=100000):
+            vid = video.get("video_id")
+            if not vid:
+                continue
+            rows.extend(self._strip_local_id(p) for p in store.retention_curve(vid))
+        return rows
 
     def _gather_metrics(self, store) -> list[dict]:
         """Collect every video's latest metrics snapshot. StateStore exposes

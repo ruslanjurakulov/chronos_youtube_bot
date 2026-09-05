@@ -173,13 +173,21 @@ class YouTubeUploader:
         script: Script,
         thumbnail_path: Path | None = None,
         privacy: str | None = None,
+        title_override: str | None = None,
     ) -> dict:
+        """Upload one video.
+
+        `title_override` ships the script's alternative title (the B arm of the
+        A/B test). None keeps `script.title`, which is what every caller did
+        before the experiment existed.
+        """
         privacy = privacy or YOUTUBE_PRIVACY
         tags = self._trim_tags(script.tags)
+        title = (title_override or script.title or "").strip() or script.title
 
         body = {
             "snippet": {
-                "title": script.title,
+                "title": title,
                 "description": script.description,
                 "tags": tags,
                 "categoryId": YOUTUBE_CATEGORY_ID,
@@ -202,7 +210,7 @@ class YouTubeUploader:
             chunksize=10 * 1024 * 1024,
         )
 
-        logger.info("%sYuklanmoqda: '%s' [%s]...", self._label, script.title, privacy)
+        logger.info("%sYuklanmoqda: '%s' [%s]...", self._label, title, privacy)
         request = self.service.videos().insert(
             part="snippet,status",
             body=body,

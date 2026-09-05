@@ -82,6 +82,17 @@ logger = logging.getLogger(__name__)
 
 # Core metric set used by channel_summary() and video_performance(). Keep in
 # sync with the "CONFIRMED" list in the module docstring above.
+#: Click-through metrics, asked for separately (see video_ctr).
+CTR_METRICS: list[str] = [
+    "impressions",
+    "impressionClickThroughRate",
+]
+
+#: Audience-retention metrics, paired with the elapsedVideoTimeRatio dimension.
+RETENTION_METRICS: list[str] = [
+    "audienceWatchRatio",
+]
+
 CORE_METRICS: list[str] = [
     "views",
     "estimatedMinutesWatched",
@@ -227,6 +238,74 @@ class AnalyticsClient:
         )
         rows = self._parse_report(response)
         return rows[0] if rows else {}
+
+    # -- click-through and retention (Phase 6) -----------------------------
+    #
+    # Both use metric and dimension names that YouTube can rename or gate
+    # behind report types. Rather than assume, each method treats a rejected
+    # request as "not measurable here" and returns empty: a missing CTR is a
+    # gap in the data, while a guessed one would silently become a decision.
+
+    def video_ctr(self, video_id: str, start_date: str, end_date: str) -> dict[str, Any]:
+        """Impressions and click-through rate for one video, or {} when the API
+        will not report them.
+
+        This is the number the thumbnail/title A/B test is *for*: without it the
+        variant that shipped cannot be judged, so it is worth asking for
+        explicitly rather than folding into the core metrics (where one
+        unsupported name would take the whole poll down with it).
+        """
+        try:
+            response = (
+                self.service.reports()
+                .query(
+                    ids=_default_ids(),
+                    startDate=start_date,
+                    endDate=end_date,
+                    metrics=",".join(CTR_METRICS),
+                    filters=f"video=={video_id}",
+                )
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(
+                "CTR report unavailable for %s (%s: %s) — recording no click-through "
+                "rather than a guessed one. Confirm the metric names for your "
+                "account in the YouTube Analytics API reference.",
+                video_id, type(e).__name__, e,
+            )
+            return {}
+        rows = self._parse_report(response)
+        return rows[0] if rows else {}
+
+    def video_retention(self, video_id: str, start_date: str, end_date: str) -> list[dict[str, Any]]:
+        """The audience-retention curve for one video: one row per point of
+        elapsed video time, with the share of viewers still watching.
+
+        Returns [] when the API will not report it. This is the strongest signal
+        for improving a hook — it says *where* viewers leave, which no aggregate
+        can.
+        """
+        try:
+            response = (
+                self.service.reports()
+                .query(
+                    ids=_default_ids(),
+                    startDate=start_date,
+                    endDate=end_date,
+                    metrics=",".join(RETENTION_METRICS),
+                    dimensions="elapsedVideoTimeRatio",
+                    filters=f"video=={video_id};audienceType==ORGANIC",
+                )
+                .execute()
+            )
+        except Exception as e:
+            logger.warning(
+                "Retention report unavailable for %s (%s: %s) — no curve recorded",
+                video_id, type(e).__name__, e,
+            )
+            return []
+        return self._parse_report(response)
 
     def daily_timeseries(
         self,

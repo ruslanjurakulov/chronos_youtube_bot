@@ -15,6 +15,7 @@ const NAV: { href: string; key: NavKey; glyph: string }[] = [
   { href: "/jobs", key: "jobs", glyph: "≡" },
   { href: "/topics", key: "topics", glyph: "◈" },
   { href: "/analytics", key: "analytics", glyph: "◔" },
+  { href: "/measure", key: "measure", glyph: "◍" },
   { href: "/intelligence", key: "intelligence", glyph: "✦" },
   { href: "/decisions", key: "decisions", glyph: "◆" },
   { href: "/learning", key: "learning", glyph: "∿" },

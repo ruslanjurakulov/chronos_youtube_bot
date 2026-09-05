@@ -34,6 +34,10 @@ class MediaFetcher:
         self.image_dir.mkdir(parents=True, exist_ok=True)
         self.session = requests.Session()
         self.session.headers.update({"Authorization": PEXELS_API_KEY})
+        #: Pexels API searches issued by this fetcher. Counted for the cost
+        #: ledger (modules/cost_ledger.py) — searches are what the API quota is
+        #: spent on, so this is the number that matters, not bytes downloaded.
+        self.searches_made = 0
 
     # ------------------------------------------------------------------ Pexels Videos
 
@@ -45,6 +49,7 @@ class MediaFetcher:
             "per_page": PEXELS_PER_PAGE,
             "page": page,
         }
+        self.searches_made += 1
         resp = self.session.get(PEXELS_VIDEO_API, params=params, timeout=15)
         resp.raise_for_status()
         return resp.json().get("videos", [])
@@ -110,6 +115,7 @@ class MediaFetcher:
     # ------------------------------------------------------------------ Pexels Images
 
     def _pexels_photo_search(self, query: str, page: int = 1) -> list[dict]:
+        self.searches_made += 1
         resp = self.session.get(
             PEXELS_PHOTO_API,
             params={"query": query, "per_page": PEXELS_PER_PAGE, "page": page},

@@ -111,3 +111,24 @@ why `topic_performance` was deliberately left untouched.
 **Apply the migration in the Supabase SQL editor**, or the Command Center's
 Channels page will report that the tables were not found and the app will keep
 running as the single default channel.
+
+## Migration 0002 — measurement
+
+`supabase/migrations/0002_measurement.sql` adds:
+
+- `video_costs` — one row per measured quantity a video consumed. `estimated_usd`
+  is NULL unless the operator configured a rate (`CHRONOS_PRICE_*`); it is
+  append-only, because a run that was retried cost real money twice and an
+  upsert would collapse that into one charge.
+- `retention_points` — one row per measured point of a video's retention curve.
+- `videos.thumbnail_variant`, `videos.title_variant` — which A/B arm shipped.
+- `metrics_snapshots.impressions`, `metrics_snapshots.impression_ctr` —
+  click-through as YouTube reports it.
+
+Additive like 0001, and every added column is **nullable with no default**:
+"not measured" and "measured as zero" are different facts, and this schema has
+to be able to tell them apart. RLS posture is unchanged — both new tables are
+RLS-on with an authenticated-read policy and no write policy.
+
+See `docs/MEASUREMENT.md` for what reads these tables and for the pre-publish
+gate, which is the one Phase 6 change that alters publishing behaviour.
