@@ -8,12 +8,17 @@ service, matching the pattern used in `tests/test_analytics_client.py`.
 """
 
 import json
+import json
+import os
+import tempfile
 import unittest
 from types import SimpleNamespace
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from googleapiclient.errors import HttpError
 
+from modules import channel_credentials as cc
 from modules.comment_fetcher import CommentFetcher, _is_comments_disabled
 from modules.comment_intelligence import classify_comments
 
@@ -282,3 +287,46 @@ class ServiceConstructionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AuthNamesResolveTestCase(unittest.TestCase):
+    """The regression this class exists to prevent repeating.
+
+    `client_secret_problem` and `require_interactive_consent_possible` were
+    imported *inside* `_resolve_token_file`, so `_auth()` — a different method —
+    could not see them. Every scheduled Intelligence Poll then died on
+    `NameError: name 'client_secret_problem' is not defined`, which the poller
+    caught and logged as a warning, so the workflow went green while the
+    analytics, competitor and trend passes had silently not run at all.
+
+    A green tick is not evidence. These walk the real `_auth()` failure path and
+    assert it fails the way it was designed to.
+    """
+
+    def _client(self, token_file):
+        # __init__ runs OAuth, and the inside of that is exactly what is tested.
+        client = CommentFetcher.__new__(CommentFetcher)
+        client.channel = None
+        client.token_file = token_file
+        return client
+
+    def test_auth_names_the_missing_client_secret_rather_than_raising_nameerror(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            client = self._client(Path(tmp) / "no_such_token.json")
+            with patch.object(cc.cfg, "YOUTUBE_CLIENT_SECRET", Path(tmp) / "client_secret.json"):
+                with self.assertRaises(FileNotFoundError) as caught:
+                    client._auth()
+        self.assertIn("client_secret.json", str(caught.exception))
+
+    def test_auth_refuses_browser_consent_on_ci_rather_than_raising_nameerror(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            secret = Path(tmp) / "client_secret.json"
+            secret.write_text(json.dumps({"installed": {"client_id": "x"}}))
+            client = self._client(Path(tmp) / "no_such_token.json")
+            with patch.object(cc.cfg, "YOUTUBE_CLIENT_SECRET", secret), patch.dict(
+                os.environ, {"CI": "true"}, clear=False
+            ):
+                with self.assertRaises(RuntimeError) as caught:
+                    client._auth()
+        self.assertIn("CI runner", str(caught.exception))
+
