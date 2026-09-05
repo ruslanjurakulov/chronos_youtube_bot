@@ -158,10 +158,15 @@ export function channelHealth(
       : { key: "scheduler", tone: "warn", detail: "no activity in 48h" };
 
   // -- Generator / analytics: failures the backend recorded, by agent.
-  const generator = agentHealth(recent, ["script_engine", "audio_mixer", "compositor", "media_fetcher"]);
-  const analytics = agentHealth(recent, ["intelligence_poller", "feedback_engine"]);
+  const generator = agentHealth("generator", recent, [
+    "script_engine",
+    "audio_mixer",
+    "compositor",
+    "media_fetcher",
+  ]);
+  const analytics = agentHealth("analytics", recent, ["intelligence_poller", "feedback_engine"]);
 
-  const subsystems = [youtube, scheduler, { ...generator, key: "generator" as const }, { ...analytics, key: "analytics" as const }];
+  const subsystems = [youtube, scheduler, generator, analytics];
   const tone: HealthTone = subsystems.some((s) => s.tone === "fail")
     ? "fail"
     : subsystems.some((s) => s.tone === "warn")
@@ -178,13 +183,20 @@ export function channelHealth(
   };
 }
 
-function agentHealth(events: SystemEventRow[], agents: string[]): Omit<SubsystemHealth, "key"> & { key: SubsystemHealth["key"] } {
+/** Health of one named subsystem, from the failures its agents actually
+ *  recorded. Takes the key rather than hardcoding one the caller then has to
+ *  overwrite. No events at all is "idle", never a green tick. */
+function agentHealth(
+  key: SubsystemHealth["key"],
+  events: SystemEventRow[],
+  agents: string[],
+): SubsystemHealth {
   const mine = events.filter((e) => e.agent && agents.includes(e.agent));
-  if (mine.length === 0) return { key: "generator", tone: "idle", detail: "" };
+  if (mine.length === 0) return { key, tone: "idle", detail: "" };
   const failed = mine.filter((e) => e.status === "failed");
-  if (failed.length === 0) return { key: "generator", tone: "ok", detail: "" };
+  if (failed.length === 0) return { key, tone: "ok", detail: "" };
   return {
-    key: "generator",
+    key,
     tone: "fail",
     detail: `${failed.length} failure${failed.length === 1 ? "" : "s"} in 48h`,
   };

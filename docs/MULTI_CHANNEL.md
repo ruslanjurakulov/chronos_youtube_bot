@@ -227,6 +227,21 @@ the workflow file.
 With only the default channel configured, exactly one video job runs per day at
 15:00 UTC — unchanged.
 
+### When a credential is missing
+
+Both `daily_video.yml` and `intelligence_poll.yml` write `client_secret.json`
+**only when `YOUTUBE_CLIENT_SECRET_JSON` is actually set**. Writing it
+unconditionally left an *empty* file behind, which passes an `exists()` check
+and then fails deep inside the OAuth library with a bare `JSONDecodeError` — the
+error the scheduled poll was really failing with, naming neither the file nor
+the fix. `modules/channel_credentials.client_secret_problem()` now says which of
+missing / empty / malformed / not-an-OAuth-file it is.
+
+On a runner there is also no browser to consent in, so
+`require_interactive_consent_possible()` fails fast with the remedy (run
+`tools/connect_channel.py` locally) rather than blocking on `run_local_server()`
+until the job's timeout.
+
 ### Adding a channel's token secret to the workflow
 
 Actions secrets cannot be enumerated at runtime, so each channel's token secret
@@ -236,6 +251,10 @@ channel:
 ```yaml
 CHRONOS_YT_TOKEN_FINANCE: ${{ secrets.CHRONOS_YT_TOKEN_FINANCE }}
 ```
+
+The same line is needed in **`intelligence_poll.yml`**, which reads analytics
+and comments for every ACTIVE channel. Both files carry the pattern as a
+comment.
 
 The alternative, dumping `toJSON(secrets)` into a single env var, widens the leak
 surface for every secret in the repository to save one line of YAML. An unset

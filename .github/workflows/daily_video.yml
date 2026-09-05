@@ -129,7 +129,16 @@ jobs:
 
       - name: Restore YouTube client secret
         run: |
-          echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > client_secret.json
+          # Only when the secret is actually set. Writing it unconditionally
+          # left an EMPTY client_secret.json behind, which passes an exists()
+          # check and then fails deep inside the OAuth library with a bare
+          # JSONDecodeError. No file at all produces a message that names the
+          # missing secret.
+          if [ -n "${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}" ]; then
+            echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > client_secret.json
+          else
+            echo "YOUTUBE_CLIENT_SECRET_JSON is not set — YouTube API calls will be skipped."
+          fi
 
       - name: Generate audio assets
         run: python tools/generate_assets.py

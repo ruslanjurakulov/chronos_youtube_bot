@@ -49,7 +49,16 @@ jobs:
 
       - name: Restore YouTube client secret
         run: |
-          echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > client_secret.json
+          # Only when the secret is actually set. Writing it unconditionally
+          # left an EMPTY client_secret.json behind, which passes an exists()
+          # check and then fails deep inside the OAuth library with a bare
+          # JSONDecodeError. No file at all produces a message that names the
+          # missing secret.
+          if [ -n "${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}" ]; then
+            echo '${{ secrets.YOUTUBE_CLIENT_SECRET_JSON }}' > client_secret.json
+          else
+            echo "YOUTUBE_CLIENT_SECRET_JSON is not set — YouTube API calls will be skipped."
+          fi
 
       - name: Run intelligence poll
         env:
@@ -61,6 +70,14 @@ jobs:
           # Command Center. Unset = fully local, mirror is a no-op.
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # --- Per-channel tokens -------------------------------------------
+          # This poll reads analytics and comments for every ACTIVE channel, so
+          # each non-default channel needs its own token here exactly as in
+          # daily_video.yml — Actions secrets cannot be enumerated at runtime.
+          # One line per channel, added when the channel is created:
+          # CHRONOS_YT_TOKEN_FINANCE: ${{ secrets.CHRONOS_YT_TOKEN_FINANCE }}
+          # An unset secret reports as not_connected; it never falls back to
+          # another channel's token.
         run: |
           SKIP_ARG=""
           if [ "${{ github.event.inputs.skip_comments }}" = "true" ]; then
