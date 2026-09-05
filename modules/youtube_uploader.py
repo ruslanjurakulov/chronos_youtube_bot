@@ -115,7 +115,9 @@ class YouTubeUploader:
                     raise FileNotFoundError(f"{self._label}{problem}")
                 # And on CI there is no browser to consent in, so say that
                 # instead of blocking on run_local_server until the timeout.
-                require_interactive_consent_possible(self._label)
+                require_interactive_consent_possible(
+                    self._label, token_file, YOUTUBE_SCOPES
+                )
                 flow = InstalledAppFlow.from_client_secrets_file(
                     YOUTUBE_CLIENT_SECRET, YOUTUBE_SCOPES
                 )
