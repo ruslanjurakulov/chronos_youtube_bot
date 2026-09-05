@@ -149,11 +149,17 @@ def _build_prompt(batch: list[str]) -> str:
     loose into the prompt — they go through json.dumps, same defensive
     pattern used by other batched-Gemini modules in this codebase.
     """
-    payload = json.dumps({"claims": list(batch)}, ensure_ascii=False)
+    # The index each claim must come back under is carried IN the data, not
+    # only described in the instructions. The system prompt already demanded
+    # 0-based indices and the model still returned something unusable on every
+    # batch of a real run, down to batches of three; asking it to echo a number
+    # it can see beats asking it to derive one it cannot.
+    indexed = [{"index": i, "claim": claim} for i, claim in enumerate(batch)]
+    payload = json.dumps({"claims": indexed}, ensure_ascii=False)
     return (
         "Fact-check the following claims. Respond with the JSON schema "
-        "described in your instructions, one result per claim, indexed "
-        "exactly as given below.\n\n"
+        "described in your instructions: one result per claim, echoing each "
+        "claim's own `index` value exactly as given below.\n\n"
         f"{payload}"
     )
 
@@ -181,13 +187,75 @@ def _extract_json(text: str) -> dict | None:
         return None
 
 
-def _parse_batch_response(text: str, batch_len: int) -> dict[int, dict] | None:
-    """Validate the model's JSON against the expected index set.
+def _coerce_index(value) -> int | None:
+    """An index the model returned, as an int, or None if it isn't one.
 
-    Returns a dict of index -> {"verdict", "reasoning"} only when every
-    index 0..batch_len-1 is present exactly once. Otherwise returns None,
-    which the caller treats as "mismatched/missing indices" and routes into
-    the split-and-retry path.
+    `True` is an int in Python and would silently read as index 1, so bools
+    are rejected explicitly.
+    """
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        try:
+            return int(value.strip())
+        except ValueError:
+            return None
+    return None
+
+
+def describe_response_shape(text: str, batch_len: int) -> str:
+    """What came back, described without quoting any of it.
+
+    A malformed response used to be reported only as "malformed" — true, and
+    useless: it never said whether the JSON failed to parse, the top-level key
+    was different, the indices were 1-based, or half the entries were missing.
+    That cost a full production run to work out. This says which, in terms of
+    structure only: key names, counts, and types. No claim text, no reasoning
+    text, and no verdict string is ever included, because this line is logged.
+    """
+    data = _extract_json(text)
+    if data is None:
+        return f"not parseable as JSON (received {len(text or '')} chars)"
+    if not isinstance(data, dict):
+        return f"top level is {type(data).__name__}, expected an object"
+    results = data.get("results")
+    if results is None:
+        return f"no 'results' key; top-level keys were {sorted(map(str, data))}"
+    if not isinstance(results, list):
+        return f"'results' is {type(results).__name__}, expected a list"
+
+    raw = [item.get("index") if isinstance(item, dict) else None for item in results]
+    kinds = sorted({type(v).__name__ for v in raw})
+    coerced = sorted(i for i in (_coerce_index(v) for v in raw) if i is not None)
+    return (
+        f"{len(results)} result(s) for {batch_len} claim(s); "
+        f"index types {kinds}; indices {coerced}"
+    )
+
+
+def _parse_batch_response(text: str, batch_len: int) -> dict[int, dict] | None:
+    """Map the model's JSON onto claim positions, or None when it cannot be.
+
+    The strict reading — every index 0..batch_len-1, present exactly once, as
+    a JSON integer — is what a well-behaved response gives. A real production
+    run showed the model failing that on every batch, so three forgiving
+    readings are tried in turn, each one still order-independent and still
+    refusing to guess:
+
+    1. **String indices.** `"0"` means the same as `0`.
+    2. **1-based indices.** A complete 1..N set is shifted down to 0..N-1.
+       Complete-set-only, so a partial answer is never silently renumbered.
+    3. **No indices at all**, with exactly one result per claim: fall back to
+       position. This is the only reading that trusts ordering rather than
+       verifying it — it is last, and it is logged — but without it a model
+       that simply omits the field blocks every publish forever, which is a
+       worse failure than the one it risks.
+
+    Anything else returns None, and the caller splits the batch or falls back
+    to the safe default. Nothing here can mark a claim accurate that the model
+    did not mark accurate.
     """
     data = _extract_json(text)
     if not isinstance(data, dict):
@@ -196,21 +264,34 @@ def _parse_batch_response(text: str, batch_len: int) -> dict[int, dict] | None:
     if not isinstance(results, list):
         return None
 
+    items = [item for item in results if isinstance(item, dict)]
+    expected = set(range(batch_len))
+
     by_index: dict[int, dict] = {}
-    for item in results:
-        if not isinstance(item, dict):
-            continue
-        idx = item.get("index")
-        if not isinstance(idx, int):
-            continue
-        if idx in by_index:
-            continue  # duplicate index — leaves a gap, caught below
+    for item in items:
+        idx = _coerce_index(item.get("index"))
+        if idx is None or idx in by_index:
+            continue  # missing or duplicate — leaves a gap, caught below
         by_index[idx] = item
 
-    expected = set(range(batch_len))
-    if set(by_index.keys()) != expected:
-        return None
-    return by_index
+    if set(by_index) == expected:
+        return by_index
+
+    # 1-based, complete. Shift rather than reject.
+    if set(by_index) == set(range(1, batch_len + 1)):
+        logger.info("Fact-checker response used 1-based indices; shifted to 0-based")
+        return {i - 1: item for i, item in by_index.items()}
+
+    # No usable index anywhere, but exactly one result per claim: take order.
+    if not by_index and len(items) == batch_len:
+        logger.warning(
+            "Fact-checker response carried no usable index for %d claim(s) — "
+            "matching by position, which trusts the model's ordering",
+            batch_len,
+        )
+        return dict(enumerate(items))
+
+    return None
 
 
 def _check_batch(client, batch: list[str], allow_split_retry: bool = True
@@ -240,9 +321,9 @@ def _check_batch(client, batch: list[str], allow_split_retry: bool = True
         return results
 
     logger.warning(
-        "Fact-checker got a malformed/mismatched response for a batch of "
-        "%d claim(s)%s.",
+        "Fact-checker got an unusable response for a batch of %d claim(s): %s%s",
         len(batch),
+        describe_response_shape(text, len(batch)),
         " — splitting and retrying" if allow_split_retry and len(batch) > 1
         else " — no more retries left, using safe defaults",
     )
