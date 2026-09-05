@@ -15,6 +15,7 @@ export const en = {
     operations: "OPERATIONS",
   },
   nav: {
+    more: "More",
     command: "Command Center",
     videos: "Videos",
     pipeline: "Pipeline",

@@ -1,4 +1,4 @@
-import { Sidebar, MobileNav } from "@/components/Sidebar";
+import { NarrowNav } from "@/components/TopNav";
 import { Header } from "@/components/Header";
 import { CommandPalette } from "@/components/CommandPalette";
 import { getUser } from "@/lib/supabase/server";
@@ -16,13 +16,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     : { channels: [], selection: ALL_CHANNELS };
 
   return (
-    <div className="grid-bg atmos flex min-h-dvh">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Header userEmail={user?.email} channels={channels} selection={selection} />
-        <MobileNav />
-        <main className="pad-page min-w-0 flex-1 overflow-y-auto">{children}</main>
-      </div>
+    <div className="atmos flex min-h-dvh flex-col">
+      <Header userEmail={user?.email} channels={channels} selection={selection} />
+      <NarrowNav />
+      <main className="pad-page min-w-0 flex-1">{children}</main>
       <CommandPalette />
     </div>
   );

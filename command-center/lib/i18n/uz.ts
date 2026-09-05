@@ -9,6 +9,7 @@ export const uz: Dictionary = {
     operations: "OPERATSIYALAR",
   },
   nav: {
+    more: "Yana",
     command: "Boshqaruv markazi",
     videos: "Videolar",
     pipeline: "Konveyer",

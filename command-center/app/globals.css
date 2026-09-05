@@ -308,6 +308,20 @@ h1, h2, h3, .font-display {
 /* Controls are pills, as on the reference. */
 .pill { border-radius: 999px; }
 
+/* A bar nav link: light, muted, and quiet until it is the page you are on. */
+.nav-link {
+  font-size: 15px;
+  font-weight: 300;
+  color: var(--color-muted);
+  transition: color 0.22s ease;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+.nav-link:hover { color: var(--color-primary); }
+.nav-link[data-active="true"] { color: var(--color-fg); font-weight: 400; }
+
 /* ── Nightshift interactions ────────────────────────────────────────────────
    Two rules carry the reference's feel. Buttons fill with the accent from the
    bottom rather than just changing colour, so a press has a direction. And the
