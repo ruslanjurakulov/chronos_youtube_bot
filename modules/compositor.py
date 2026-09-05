@@ -54,6 +54,18 @@ class Compositor:
         # into ~60-70 slots; opening a reader for each holds that many ffmpeg
         # subprocesses (and their frame buffers) alive until the render ends.
         self._readers: dict[Path, VideoFileClip] = {}
+        # One render per distinct (text, colour), not one per clip. The word
+        # highlight works by stacking a masked copy over the whole line, so a
+        # four-word line asks for its white base line four times — byte-for-byte
+        # the same image. On a real 554-word script that was 1108 ImageMagick
+        # subprocesses and 1108 full-width rasters held at once; the render died
+        # with the runner killed mid-composite.
+        #
+        # Clips built from a cached entry are still separate clips: set_start and
+        # friends are outplace in moviepy, so each returns a copy that shares the
+        # underlying image buffer. Nothing is dropped and nothing looks different
+        # — the same picture is simply drawn once instead of four times.
+        self._text_clips: dict[tuple[str, str], TextClip] = {}
 
     # ------------------------------------------------------------------ Ken Burns
 
@@ -162,6 +174,22 @@ class Compositor:
     # ------------------------------------------------------------------ Subtitles
 
     def _make_text_clip(self, text: str, color: str) -> TextClip:
+        """A text clip for this string and colour, rendered at most once.
+
+        Callers must treat the result as read-only and derive from it with the
+        outplace setters (set_start / set_duration / set_position), which is what
+        _build_subtitle_clips does. Mutating it in place would corrupt every
+        other clip sharing the entry.
+        """
+        key = (text, color)
+        cached = self._text_clips.get(key)
+        if cached is not None:
+            return cached
+        clip = self._render_text_clip(text, color)
+        self._text_clips[key] = clip
+        return clip
+
+    def _render_text_clip(self, text: str, color: str) -> TextClip:
         return TextClip(
             text,
             fontsize=SUBTITLE_FONT_SIZE,
@@ -273,7 +301,13 @@ class Compositor:
             bg = bg.set_duration(total_duration)
 
             subtitle_clips = self._build_subtitle_clips(word_timestamps)
-            logger.info("Subtitles: %d clips", len(subtitle_clips))
+            # Both numbers, because the gap between them is the whole point:
+            # the clips are what the viewer sees, the renders are what the
+            # machine pays for.
+            logger.info(
+                "Subtitles: %d clips from %d distinct text render(s)",
+                len(subtitle_clips), len(self._text_clips),
+            )
 
             final = CompositeVideoClip([bg] + subtitle_clips,
                                        size=(VIDEO_WIDTH, VIDEO_HEIGHT))
@@ -298,6 +332,12 @@ class Compositor:
                 except Exception:
                     pass
             self._readers.clear()
+            for clip in self._text_clips.values():
+                try:
+                    clip.close()
+                except Exception:
+                    pass
+            self._text_clips.clear()
             try:
                 audio.close()
             except Exception:
