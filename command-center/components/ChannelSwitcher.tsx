@@ -66,7 +66,7 @@ export function ChannelSwitcher({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t.channels.switcherLabel}
-        className="btn-sky is-quiet pill h-10 max-w-[220px] gap-3 px-4"
+        className="btn-sky is-quiet pill h-9 max-w-[140px] gap-2 px-3 sm:h-10 sm:max-w-[220px] sm:gap-3 sm:px-4"
       >
         <span
           aria-hidden

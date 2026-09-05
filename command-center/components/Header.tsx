@@ -35,19 +35,19 @@ export function Header({
   }
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_78%,transparent)] px-[clamp(1.25rem,4vw,100px)] py-5 backdrop-blur-md">
-      <div className="bar-measure flex items-center justify-between gap-6">
-        <div className="flex min-w-0 items-center gap-10">
+    <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_78%,transparent)] px-[clamp(0.75rem,3vw,56px)] py-4 backdrop-blur-md sm:py-5">
+      <div className="bar-measure flex flex-wrap items-center justify-between gap-x-6 gap-y-3 sm:flex-nowrap">
+        <div className="flex min-w-0 items-center gap-6 xl:gap-10">
         <Link
           href="/"
-          className="font-display shrink-0 text-xl font-semibold tracking-[-0.02em] text-[var(--color-primary)]"
+          className="font-display shrink-0 text-lg font-semibold tracking-[-0.02em] text-[var(--color-primary)] sm:text-xl"
         >
           {t.brand.name}
         </Link>
         <TopNav />
       </div>
 
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex shrink-0 items-center gap-2 sm:gap-3">
         <ChannelSwitcher channels={channels} selection={selection} />
         <button
           type="button"
@@ -62,7 +62,7 @@ export function Header({
           <span className="mono pill border border-[var(--color-border)] px-1.5 text-[9px] tracking-wider">⌘K</span>
         </button>
         {userEmail && (
-          <span className="hidden max-w-[160px] truncate text-[12px] font-light text-[var(--color-muted)] xl:inline">
+          <span className="hidden max-w-[160px] truncate text-[12px] font-light text-[var(--color-muted)] 2xl:inline">
             {userEmail}
           </span>
         )}

@@ -74,7 +74,7 @@ export function TopNav() {
   }, [open]);
 
   return (
-    <nav className="hidden items-center gap-7 lg:flex">
+    <nav className="hidden items-center gap-1 xl:flex">
       {PRIMARY.map((item) => {
         const active = isActive(item.href);
         return (
@@ -138,7 +138,7 @@ export function NarrowNav() {
   const { t } = useI18n();
   const isActive = useIsActive();
   return (
-    <nav className="bar-measure flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-[clamp(1.25rem,4vw,100px)] py-3 lg:hidden">
+    <nav className="bar-measure flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-[clamp(0.75rem,3vw,56px)] py-3 xl:hidden">
       {ALL_NAV.map((item) => {
         const active = isActive(item.href);
         return (
