@@ -37,6 +37,7 @@ from modules.cost_ledger import (
 from modules import shorts
 from modules.claim_extractor import extract_claims
 from modules.compositor import Compositor
+from modules.resource_monitor import MemorySampler, log_usage
 from modules.fact_checker import fact_check_claims
 from modules.media_fetcher import MediaFetcher
 from modules.pipeline_stages import PipelineStage, PipelineStateMachine
@@ -332,6 +333,9 @@ def run(
     # API searches, not bytes: the Pexels quota is spent per search.
     costs.add(PEXELS_REQUESTS, fetcher.searches_made, stage="media")
     logger.info("Media: %d videos, %d images", len(videos), len(images))
+    # The baseline Whisper is about to be loaded on top of, and the number
+    # release_model should return the process to.
+    log_usage("before transcription")
     events.emit(events.MEDIA_COMPLETED, agent="media_fetcher", status=events.STATUS_COMPLETED,
                 channel_id=channel_id, metadata={"videos": len(videos), "images": len(images)})
 
@@ -340,6 +344,9 @@ def run(
     word_timestamps = sub_gen.transcribe(audio_path)
     sub_gen.to_srt(word_timestamps)
     word_clips_specs = sub_gen.word_clips(word_timestamps, VIDEO_WIDTH, VIDEO_HEIGHT)
+    # Nothing after this point transcribes anything, and the render two stages
+    # down is the one that keeps getting killed.
+    sub_gen.release_model()
 
     # ── Stage 6: Thumbnails
     # Which arm this video ships on. Both thumbnails have always been rendered;
@@ -370,14 +377,17 @@ def run(
     events.emit(events.RENDER_STARTED, agent="compositor", status=events.STATUS_RUNNING, channel_id=channel_id)
     render_started = time.monotonic()
     comp = Compositor(slug)
-    video_path = comp.render(
-        script=script,
-        audio_path=audio_path,
-        video_paths=videos,
-        image_paths=images,
-        word_timestamps=word_clips_specs,
-        section_timeline=timeline,
-    )
+    # Two runs have died in here without leaving a reason. If a third does,
+    # the sampler's last line is the state just before the kill.
+    with MemorySampler("render"):
+        video_path = comp.render(
+            script=script,
+            audio_path=audio_path,
+            video_paths=videos,
+            image_paths=images,
+            word_timestamps=word_clips_specs,
+            section_timeline=timeline,
+        )
     costs.slug = slug
     costs.add(RENDER_SECONDS, time.monotonic() - render_started, stage="render")
     logger.info("Video: %s", video_path)
