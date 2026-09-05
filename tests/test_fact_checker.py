@@ -9,6 +9,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from modules.fact_checker import (
+    describe_response_shape,
     MAX_BATCH_SIZE,
     FactCheckResult,
     fact_check_claims,
@@ -160,6 +161,115 @@ class FactCheckSplitRetryTests(unittest.TestCase):
         for r in results:
             self.assertEqual(r.verdict, "unverifiable")
             self.assertTrue(r.requires_human_review)
+
+
+class FactCheckForgivingIndexTests(unittest.TestCase):
+    """The readings added after a real run flagged 37/37 claims.
+
+    Every batch of that run came back unusable, down to batches of three, so the
+    gate blocked a video whose claims had never actually been judged. These are
+    the shapes the parser now accepts — each still order-independent, none able
+    to mark a claim accurate that the model did not.
+    """
+
+    @patch("modules.fact_checker.make_client")
+    @patch("modules.fact_checker.generate_with_retry")
+    def test_string_indices_are_accepted(self, mock_gen, mock_make_client):
+        mock_gen.return_value = _response(_results_json([
+            {"index": "0", "verdict": "likely_accurate", "reasoning": "ok"},
+            {"index": "1", "verdict": "unverifiable", "reasoning": "hmm"},
+        ]))
+        results = fact_check_claims(["a", "b"])
+        self.assertEqual(mock_gen.call_count, 1)  # no split-and-retry needed
+        self.assertEqual([r.verdict for r in results], ["likely_accurate", "unverifiable"])
+
+    @patch("modules.fact_checker.make_client")
+    @patch("modules.fact_checker.generate_with_retry")
+    def test_one_based_indices_are_shifted_not_rejected(self, mock_gen, mock_make_client):
+        mock_gen.return_value = _response(_results_json([
+            {"index": 1, "verdict": "likely_accurate", "reasoning": "first claim"},
+            {"index": 2, "verdict": "likely_inaccurate", "reasoning": "second claim"},
+        ]))
+        results = fact_check_claims(["a", "b"])
+        self.assertEqual(mock_gen.call_count, 1)
+        # Shifted, not reordered: index 1 is the first claim.
+        self.assertEqual(results[0].verdict, "likely_accurate")
+        self.assertEqual(results[1].verdict, "likely_inaccurate")
+
+    @patch("modules.fact_checker.make_client")
+    @patch("modules.fact_checker.generate_with_retry")
+    def test_missing_indices_fall_back_to_position(self, mock_gen, mock_make_client):
+        mock_gen.return_value = _response(_results_json([
+            {"verdict": "likely_accurate", "reasoning": "first"},
+            {"verdict": "unverifiable", "reasoning": "second"},
+        ]))
+        results = fact_check_claims(["a", "b"])
+        self.assertEqual([r.verdict for r in results], ["likely_accurate", "unverifiable"])
+
+    @patch("modules.fact_checker.make_client")
+    @patch("modules.fact_checker.generate_with_retry")
+    def test_a_partial_answer_is_not_matched_by_position(self, mock_gen, mock_make_client):
+        # Two claims, one result. Position cannot say WHICH claim was answered,
+        # so this batch must not resolve — it must split instead. (Each half is
+        # then a batch of one, where one result is unambiguous; that is the
+        # split-and-retry working, not a positional guess.)
+        mock_gen.return_value = _response(_results_json([
+            {"verdict": "likely_accurate", "reasoning": "only one"},
+        ]))
+        fact_check_claims(["a", "b"])
+        self.assertGreater(mock_gen.call_count, 1, "the mismatched batch should have split")
+
+    def test_a_bool_is_never_read_as_an_index(self):
+        # bool is an int in Python, so True would silently mean index 1.
+        from modules.fact_checker import _coerce_index
+
+        self.assertIsNone(_coerce_index(True))
+        self.assertIsNone(_coerce_index(False))
+        self.assertEqual(_coerce_index(0), 0)
+        self.assertEqual(_coerce_index("2"), 2)
+        self.assertEqual(_coerce_index(" 3 "), 3)
+        self.assertIsNone(_coerce_index("two"))
+        self.assertIsNone(_coerce_index(None))
+
+    @patch("modules.fact_checker.make_client")
+    @patch("modules.fact_checker.generate_with_retry")
+    def test_unusable_indices_with_a_full_count_fall_back_to_position(self, mock_gen, mock_make_client):
+        # Indices present but meaningless (bools), one result per claim: this is
+        # the positional path, and it resolves rather than blocking the publish.
+        mock_gen.return_value = _response(_results_json([
+            {"index": True, "verdict": "likely_accurate", "reasoning": "first"},
+            {"index": False, "verdict": "unverifiable", "reasoning": "second"},
+        ]))
+        results = fact_check_claims(["a", "b"])
+        self.assertEqual([r.verdict for r in results], ["likely_accurate", "unverifiable"])
+
+
+class FactCheckShapeReportTests(unittest.TestCase):
+    """The diagnosis line. It must say which failure it was — and quote none of it."""
+
+    def test_each_failure_names_itself(self):
+        self.assertIn("not parseable as JSON", describe_response_shape("nonsense", 2))
+        self.assertIn("top level is list", describe_response_shape("[1, 2]", 2))
+        self.assertIn("no 'results' key", describe_response_shape('{"verdicts": []}', 2))
+        self.assertIn("'results' is dict", describe_response_shape('{"results": {}}', 2))
+
+        one_based = _results_json([
+            {"index": 1, "verdict": "likely_accurate", "reasoning": "x"},
+            {"index": 2, "verdict": "likely_accurate", "reasoning": "x"},
+        ])
+        described = describe_response_shape(one_based, 2)
+        self.assertIn("2 result(s) for 2 claim(s)", described)
+        self.assertIn("[1, 2]", described)
+
+    def test_it_never_quotes_the_claim_or_the_reasoning(self):
+        # This string is logged, so it may describe the response and never
+        # reproduce it: claims come from a generated script.
+        payload = _results_json([
+            {"index": 9, "verdict": "SECRET-VERDICT", "reasoning": "SECRET-REASONING"},
+        ])
+        described = describe_response_shape(payload, 1)
+        self.assertNotIn("SECRET-VERDICT", described)
+        self.assertNotIn("SECRET-REASONING", described)
 
 
 class FactCheckBatchingMathTests(unittest.TestCase):
