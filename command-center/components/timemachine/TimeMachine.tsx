@@ -1,10 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { statusTone, timeOfDay } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/context";
 import { fmt, type Dictionary } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
+import { parseStoredTime, statusTone, storedMs, timeOfDay } from "@/lib/format";
 
 type RangeKey = "today" | "yesterday" | "7d" | "30d" | "custom";
 const RANGES: { key: RangeKey; label: keyof Dictionary["ops"] }[] = [
@@ -58,7 +58,7 @@ export function TimeMachine({ initial }: { initial: SystemEventRow[] }) {
   const [lo, hi] = bounds(range, from, to);
   const events = useMemo(
     () => initial.filter((e) => {
-      const ts = new Date(e.ts).getTime();
+      const ts = (storedMs(e.ts) ?? 0);
       return ts >= lo && ts <= hi;
     }),
     [initial, lo, hi],
@@ -68,7 +68,7 @@ export function TimeMachine({ initial }: { initial: SystemEventRow[] }) {
   const groups = useMemo(() => {
     const map = new Map<string, SystemEventRow[]>();
     for (const e of events) {
-      const key = new Date(e.ts).toISOString().slice(0, 10);
+      const key = (parseStoredTime(e.ts) ?? new Date(0)).toISOString().slice(0, 10);
       const arr = map.get(key);
       if (arr) arr.push(e);
       else map.set(key, [e]);

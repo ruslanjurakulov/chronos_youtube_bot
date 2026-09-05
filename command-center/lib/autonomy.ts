@@ -15,8 +15,8 @@
  *    in the backend at all, so they are NOT CONFIGURED rather than a toggle
  *    that changes nothing.
  */
-import { statusTone } from "@/lib/format";
 import type { MetricsSnapshotRow, SystemEventRow, VideoRow } from "@/lib/types";
+import { parseStoredTime, statusTone, storedMs } from "@/lib/format";
 
 /** How a capability actually behaves in this deployment. */
 export type CapabilityState =
@@ -55,7 +55,7 @@ function latest(events: SystemEventRow[], match: (e: SystemEventRow) => boolean)
 export function autonomyPosture(events: SystemEventRow[], now: number = Date.now()): PostureItem[] {
   const heartbeat = latest(events, (e) => e.event === "system.heartbeat");
   const feedback = latest(events, (e) => e.event === "feedback.generated" || e.event === "feedback.applied");
-  const recent = (ts: string | null) => Boolean(ts && now - new Date(ts).getTime() < AUTOMATIC_WINDOW_MS);
+  const recent = (ts: string | null) => Boolean(ts && now - (storedMs(ts) ?? 0) < AUTOMATIC_WINDOW_MS);
 
   return [
     { key: "analytics", state: recent(heartbeat) ? "automatic" : "not_configured", evidenceTs: heartbeat },
@@ -124,7 +124,7 @@ export function autonomyHealth(events: SystemEventRow[], windowHours = 24, now: 
   let failed = 0;
   let running = 0;
   for (const e of events) {
-    const t = new Date(e.ts).getTime();
+    const t = (storedMs(e.ts) ?? 0);
     if (Number.isNaN(t) || t < cutoff) continue;
     if (!e.agent) continue;
     const tone = statusTone(e.status);
@@ -196,7 +196,7 @@ export function failureLearning(events: SystemEventRow[]): FailureGroup[] {
     const existing = groups.get(key);
     if (existing) {
       existing.count += 1;
-      if (new Date(e.ts).getTime() > new Date(existing.lastTs).getTime()) {
+      if ((storedMs(e.ts) ?? 0) > (storedMs(existing.lastTs) ?? 0)) {
         existing.lastTs = e.ts;
         if (cause) existing.cause = cause;
       }
@@ -241,9 +241,11 @@ export function publishingWindow(
     if (!v.published_at) continue;
     const m = latestByVideo.get(v.video_id);
     if (!m || m.views == null) continue;
-    const published = new Date(v.published_at);
-    const measuredAt = m.snapshot_date ? new Date(m.snapshot_date) : null;
-    if (Number.isNaN(published.getTime()) || !measuredAt || Number.isNaN(measuredAt.getTime())) continue;
+    const published = parseStoredTime(v.published_at);
+    const measuredAt = m.snapshot_date ? parseStoredTime(m.snapshot_date) : null;
+    // parseStoredTime already returns null for anything unparseable, so the
+    // NaN checks this replaces are now the null checks.
+    if (!published || !measuredAt) continue;
     const days = Math.max(1, Math.floor((measuredAt.getTime() - published.getTime()) / 86400000));
     const vpd = m.views / days;
     measured += 1;

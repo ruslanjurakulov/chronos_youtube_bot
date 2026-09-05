@@ -3,13 +3,13 @@ import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { StatCard, Panel, EmptyState } from "@/components/ui";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
-import { statusTone } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
 import { getChannelSelection } from "@/lib/channels-server";
 import { scopeQuery } from "@/lib/channels";
 import { fmt } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 import { ErrorTable } from "@/components/errors/ErrorTable";
+import { statusTone, storedMs } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -47,7 +47,7 @@ export default async function ErrorCenter() {
 
   const errors = events.filter(isFailure);
   const errors24h = errors.filter(
-    (e) => Date.now() - new Date(e.ts).getTime() < DAY_MS,
+    (e) => Date.now() - (storedMs(e.ts) ?? 0) < DAY_MS,
   ).length;
   const lastError = errors[0]?.ts ?? null;
 

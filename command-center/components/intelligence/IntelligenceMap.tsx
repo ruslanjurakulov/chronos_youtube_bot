@@ -6,6 +6,7 @@ import { ALL_CHANNELS, type ChannelSelection } from "@/lib/channels";
 import { useI18n } from "@/lib/i18n/context";
 import type { Dictionary } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
+import { storedMs } from "@/lib/format";
 
 type NodeKey =
   | "audience"
@@ -98,7 +99,7 @@ export function IntelligenceMap({
   const { events } = useRealtimeEvents(initial, "chronos_intel", selection);
 
   const active = useMemo(() => {
-    const recent = events.filter((e) => Date.now() - new Date(e.ts).getTime() < DAY_MS);
+    const recent = events.filter((e) => Date.now() - (storedMs(e.ts) ?? 0) < DAY_MS);
     const set = new Set<NodeKey>();
     for (const key of Object.keys(POS) as NodeKey[]) {
       if (recent.some((e) => matches(key, e.event))) set.add(key);

@@ -3,13 +3,13 @@ import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, EmptyState, StatCard } from "@/components/ui";
 import { AnimatedNumber } from "@/components/AnimatedNumber";
-import { relativeTime, statusTone } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
 import { getChannelSelection } from "@/lib/channels-server";
 import { scopeQuery } from "@/lib/channels";
 import { fmt } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 import { JobStatusPill, type JobStatus } from "@/components/jobs/JobStatusPill";
+import { relativeTime, statusTone, storedMs } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -65,7 +65,7 @@ function deriveJobs(events: SystemEventRow[]): DerivedJob[] {
     // rows are newest-first (query order).
     const latest = rows[0];
     const times = rows
-      .map((r) => new Date(r.ts).getTime())
+      .map((r) => (storedMs(r.ts) ?? 0))
       .filter((t) => !Number.isNaN(t));
     const earliestTs = times.length ? new Date(Math.min(...times)).toISOString() : null;
     const latestTs = times.length ? new Date(Math.max(...times)).toISOString() : null;
@@ -76,7 +76,7 @@ function deriveJobs(events: SystemEventRow[]): DerivedJob[] {
     // wall-clock span of the job's events when it's finished.
     let durationMs: number | null = latest.duration_ms ?? null;
     if (durationMs === null && (status === "COMPLETED" || status === "FAILED") && earliestTs && latestTs) {
-      const span = new Date(latestTs).getTime() - new Date(earliestTs).getTime();
+      const span = new Date(latestTs).getTime() - (storedMs(earliestTs) ?? 0);
       durationMs = span > 0 ? span : null;
     }
 
