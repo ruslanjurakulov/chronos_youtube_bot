@@ -143,6 +143,7 @@ export const ru: Dictionary = {
     thLikes: "Лайки",
     thComments: "Комментарии",
     thAvgView: "Ср. просмотр (с)",
+    formatShort: "Шортс",
   },
   videoDetail: {
     back: "← Библиотека видео",

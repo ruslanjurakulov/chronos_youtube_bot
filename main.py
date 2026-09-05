@@ -34,6 +34,7 @@ from modules.channels import ChannelContext, resolve_channel
 from modules.cost_ledger import (
     CostLedger, PEXELS_REQUESTS, RENDER_SECONDS, TTS_CHARACTERS, UPLOAD_BYTES,
 )
+from modules import shorts
 from modules.claim_extractor import extract_claims
 from modules.compositor import Compositor
 from modules.fact_checker import fact_check_claims
@@ -78,6 +79,98 @@ def _pick_variant(channel_id: str) -> str:
     except Exception as e:
         logger.warning("A/B variant selection failed (%s: %s) — shipping A", type(e).__name__, e)
         return "A"
+
+
+def _publish_short(
+    *,
+    ctx,
+    script,
+    slug: str,
+    source_video: Path,
+    parent_video_id: str,
+    parent_url: str | None,
+    topic: str,
+    privacy: str,
+    timeline: list,
+    costs,
+):
+    """Cut and publish a vertical Short from the video that just went out.
+
+    Off unless the channel asked for it — a Short is a second videos.insert,
+    roughly another 1600 quota units out of the 10,000 a day. Everything here
+    is best-effort: the long video has already published, so nothing below may
+    turn a successful run into a failed one.
+    """
+    channel_id = ctx.channel_id
+    config = shorts.ShortsConfig.from_channel(ctx)
+    if not config.enabled:
+        return
+
+    seconds = shorts.hook_window(timeline, max_seconds=config.max_seconds)
+    if seconds is None:
+        logger.info("[channel: %s] No usable hook window — no Short this run", channel_id)
+        return
+
+    events.emit(events.SHORT_STARTED, agent="shorts", status=events.STATUS_RUNNING,
+                channel_id=channel_id, video_id=parent_video_id,
+                metadata={"seconds": round(seconds, 1)})
+
+    started = time.monotonic()
+    short_path = shorts.render_short(
+        source_video=source_video,
+        out_path=OUTPUT_DIR / slug / "short.mp4",
+        seconds=seconds,
+    )
+    costs.add(RENDER_SECONDS, time.monotonic() - started, stage="short_render")
+    if short_path is None:
+        events.emit(events.SHORT_FAILED, agent="shorts", status=events.STATUS_FAILED,
+                    channel_id=channel_id, video_id=parent_video_id,
+                    metadata={"operation": "render"})
+        return
+
+    try:
+        uploader = YouTubeUploader(channel=ctx)
+        uploaded = uploader.upload(
+            short_path,
+            script,
+            thumbnail_path=None,
+            privacy=privacy,
+            title_override=shorts.short_title(script.title),
+            description_override=shorts.short_description(script.title, parent_url),
+        )
+        try:
+            costs.add(UPLOAD_BYTES, float(short_path.stat().st_size), stage="short_upload")
+        except OSError:
+            logger.debug("Could not stat %s for the cost ledger", short_path, exc_info=True)
+
+        with StateStore() as store:
+            store.record_video(
+                video_id=uploaded["id"],
+                topic=topic,
+                title=shorts.short_title(script.title),
+                slug=slug,
+                published_at=datetime.utcnow().isoformat(),
+                privacy=privacy,
+                category_id=YOUTUBE_CATEGORY_ID,
+                local_path=str(short_path),
+                channel_id=channel_id,
+                # No A/B on the Short: it ships the long video's own frames, so
+                # attributing a variant to it would double-count the experiment.
+                video_format="short",
+                parent_video_id=parent_video_id,
+            )
+            events.emit(events.SHORT_COMPLETED, agent="shorts", status=events.STATUS_COMPLETED,
+                        channel_id=channel_id, video_id=uploaded["id"],
+                        metadata={"url": uploaded["url"], "parent_video_id": parent_video_id},
+                        store=store)
+        logger.info("[channel: %s] Short published: %s", channel_id, uploaded["url"])
+        print(f"\n✓ Short published: {uploaded['url']}")
+    except Exception as e:
+        logger.warning("[channel: %s] Short upload failed (%s: %s) — the long video is already out",
+                       channel_id, type(e).__name__, e)
+        events.emit(events.SHORT_FAILED, agent="shorts", status=events.STATUS_FAILED,
+                    channel_id=channel_id, video_id=parent_video_id,
+                    metadata={"operation": "upload", "error": f"{type(e).__name__}: {e}"})
 
 
 def slugify(text: str) -> str:
@@ -369,6 +462,22 @@ def run(
             events.emit(events.UPLOAD_FAILED, agent="youtube_uploader", status=events.STATUS_FAILED,
                         channel_id=channel_id,
                         metadata={"operation": "upload", "error": f"{type(e).__name__}: {e}"})
+            # ── Stage 9: Short
+            # Strictly downstream of a video that actually published: the
+            # gate has already passed, the long video is out, and a failure
+            # from here on cannot turn a successful run into a failed one.
+            _publish_short(
+                ctx=ctx,
+                script=script,
+                slug=slug,
+                source_video=video_path,
+                parent_video_id=video_id,
+                parent_url=video_url,
+                topic=topic,
+                privacy=privacy,
+                timeline=timeline,
+                costs=costs,
+            )
     elif not gate.allowed:
         pass  # already reported above
     else:

@@ -110,6 +110,17 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
                     >
                       {v.title ?? v.video_id}
                     </Link>
+                    {v.video_format === "short" && (
+                      <span
+                        className="mono ml-2 rounded border px-1.5 py-0.5 align-middle text-[9px] font-semibold uppercase tracking-widest"
+                        style={{
+                          borderColor: "var(--color-primary-dim)",
+                          color: "var(--color-primary)",
+                        }}
+                      >
+                        {t.videos.formatShort}
+                      </span>
+                    )}
                   </td>
                   <td className="px-4 py-2 text-[var(--color-muted)]">{v.topic ?? t.common.na}</td>
                   <td className="px-4 py-2 mono text-[11px] text-[var(--color-muted)]">

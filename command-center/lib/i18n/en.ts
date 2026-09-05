@@ -149,6 +149,7 @@ export const en = {
     thLikes: "Likes",
     thComments: "Comments",
     thAvgView: "Avg view (s)",
+    formatShort: "Short",
   },
   videoDetail: {
     back: "← Video Library",

@@ -143,6 +143,7 @@ export const uz: Dictionary = {
     thLikes: "Layklar",
     thComments: "Izohlar",
     thAvgView: "O'rt. ko'rish (s)",
+    formatShort: "Short",
   },
   videoDetail: {
     back: "← Video kutubxona",

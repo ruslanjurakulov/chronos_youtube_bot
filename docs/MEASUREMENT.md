@@ -161,3 +161,64 @@ page:
 `retention_points` and `metrics_snapshots` carry no `channel_id` of their own —
 they belong to a video, so the page scopes them by the videos in the current
 selection rather than by weakening the query.
+
+---
+
+# Shorts
+
+`modules/shorts.py` · migration `0003_shorts.sql`
+
+A Short is **derived from the long video that already published**, not rendered
+a second time. A second render would double the most expensive stage of the
+pipeline for a 30-second clip and would produce different cuts, different Ken
+Burns timing and different subtitle placement — the Short is meant to be a
+trailer for the long video, so it is cut from the long video.
+
+## The frame
+
+A 16:9 frame does not become 9:16 by cropping: a centre crop throws away two
+thirds of the width, and this project's subtitles are laid out nearly
+full-width, so cropping would slice words in half. Instead the whole frame is
+scaled to 1080 wide and centred on a 1080×1920 canvas, on the compositor's own
+background colour. Nothing in the frame is lost.
+
+## The window
+
+The **hook** — the opening section the script engine wrote specifically to stop
+a scroll — cut on the audio mixer's own measured section boundary, clamped to
+15–60 seconds. That needs no guessing about which moment is "best": it is the
+part of the script that already has that job. A timeline that says nothing
+usable produces no Short rather than a guessed one.
+
+## Cost, and why it is off by default
+
+**A Short is a second `videos.insert`: about 1,600 more quota units out of the
+10,000 a day.** Publishing one every day roughly halves how many long videos the
+same Google Cloud project can carry. So Shorts are opt-in per channel, and only
+an explicit `true` turns them on:
+
+```json
+{ "shorts": { "enabled": true, "max_seconds": 45 } }
+```
+
+in that channel's `agent_config`. A missing key, `"true"` as a string, or a typo
+all leave Shorts off — nothing starts spending quota because a value was
+misread.
+
+## What it can and cannot break
+
+The Short runs **strictly after** its long video has published, which means the
+publish gate has already passed and the video is out. Every step from there is
+best-effort: a missing moviepy, an unreadable source, a failed upload — each is
+logged as `short.failed` and returns. **No failure in this path can turn a
+successful run into a failed one.** There is also no A/B arm on a Short: it
+ships the long video's own frames, so attributing a thumbnail variant to it
+would double-count the experiment.
+
+## Where it lands
+
+The Short is its own row in `videos` — its own YouTube id, its own metrics, its
+own retention curve — with `video_format = 'short'` and `parent_video_id` naming
+the long video it was cut from. Everything published before migration 0003 is
+`'long'`, which is a fact about the history rather than an assumption written
+over it. The Command Center's video library marks Shorts with a badge.

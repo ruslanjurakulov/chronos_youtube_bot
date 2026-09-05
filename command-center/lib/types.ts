@@ -22,6 +22,15 @@ export interface VideoRow {
    */
   thumbnail_variant: string | null;
   title_variant: string | null;
+  /**
+   * "long" or "short". A Short is its own YouTube video with its own id and
+   * its own metrics, so it is its own row; this is what keeps it from reading
+   * as a second long video. Everything published before migration 0003 is
+   * "long", which is a fact about the history rather than an assumption.
+   */
+  video_format: string;
+  /** For a Short, the long video it was cut from. Null for a long video. */
+  parent_video_id: string | null;
 }
 
 export interface MetricsSnapshotRow {

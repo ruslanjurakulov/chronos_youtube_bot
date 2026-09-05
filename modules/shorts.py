@@ -1,0 +1,199 @@
+"""Shorts — a vertical cut of the video that was already rendered.
+
+Why derive rather than re-render
+--------------------------------
+A second full render would double the most expensive stage of the pipeline for
+a 30-second clip, and would produce a *different* video: different cuts,
+different Ken Burns timing, different subtitle placement. The short is supposed
+to be a trailer for the long video, so it is cut from the long video — same
+footage, same voice, same burnt-in subtitles, one transform.
+
+The frame
+---------
+A 16:9 frame does not become a 9:16 frame by cropping: the centre crop throws
+away two thirds of the width, and this project's subtitles are laid out nearly
+full-width, so cropping would slice words in half. Instead the whole frame is
+scaled to the short's width and centred on a tall canvas. Nothing in the frame
+is lost, and the empty space above and below is the project's own background
+colour rather than a stretched blur nobody asked for.
+
+What it is cut from
+-------------------
+The hook — the opening section the script engine wrote specifically to stop a
+scroll — clamped to `MIN_SECONDS`..`MAX_SECONDS`. That needs no guessing about
+which moment is "best"; it is the part of the script that already has that job.
+
+Cost
+----
+**A short is a second `videos.insert`: ~1600 more quota units, on a budget of
+10,000 a day.** That is why Shorts are off unless a channel turns them on, and
+why nothing here ever runs on its own — a short exists only after its long
+video has actually published.
+"""
+
+from __future__ import annotations
+
+import logging
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+#: Shorts frame. Vertical 1080p — what YouTube wants and what the source
+#: 1920x1080 can fill widthways without upscaling.
+SHORT_WIDTH = 1080
+SHORT_HEIGHT = 1920
+
+#: A clip under this says nothing; a clip over this stops being a Short.
+MIN_SECONDS = 15.0
+MAX_SECONDS = 60.0
+
+#: Same background as the compositor's own filler, so the letterboxing reads as
+#: part of the design rather than as a rendering accident.
+BACKGROUND_RGB = (15, 15, 30)
+
+
+@dataclass(frozen=True)
+class ShortsConfig:
+    """Whether this channel makes Shorts, and how long they run.
+
+    Off unless the channel explicitly turns it on. Every other per-channel flag
+    in Chronos defaults to the safe direction; here the safe direction is *not*
+    spending another 1600 quota units per day without being asked.
+    """
+
+    enabled: bool = False
+    max_seconds: float = MAX_SECONDS
+
+    @staticmethod
+    def from_channel(channel) -> "ShortsConfig":
+        raw = {}
+        try:
+            agent = getattr(channel, "agent", None)
+            raw = dict(getattr(agent, "shorts", None) or {})
+        except Exception:
+            raw = {}
+        # Only an explicit boolean true turns it on: a stray string or a typo
+        # must not start spending quota.
+        enabled = raw.get("enabled") is True
+        seconds = raw.get("max_seconds", MAX_SECONDS)
+        try:
+            seconds = float(seconds)
+        except (TypeError, ValueError):
+            seconds = MAX_SECONDS
+        return ShortsConfig(
+            enabled=enabled,
+            max_seconds=min(MAX_SECONDS, max(MIN_SECONDS, seconds)),
+        )
+
+
+def hook_window(section_timeline: list, max_seconds: float = MAX_SECONDS) -> Optional[float]:
+    """How many seconds from the start the short should cover, or None.
+
+    The timeline is the audio mixer's own measurement of where each section
+    landed, so this cuts on a real boundary rather than mid-sentence. A hook
+    that ran long is trimmed to `max_seconds`; a hook that was very short is
+    extended to `MIN_SECONDS` so the clip is not over before it starts. A
+    timeline that says nothing usable produces None — no short, rather than a
+    guessed one.
+    """
+    entries = section_timeline or []
+    if not entries:
+        return None
+    try:
+        end_ms = float(entries[0]["end_ms"])
+    except (KeyError, TypeError, ValueError, IndexError):
+        return None
+    if end_ms <= 0:
+        return None
+
+    seconds = end_ms / 1000.0
+    ceiling = min(MAX_SECONDS, max(MIN_SECONDS, float(max_seconds)))
+    return min(ceiling, max(MIN_SECONDS, seconds))
+
+
+def short_title(title: str) -> str:
+    """The long video's title, tagged, within YouTube's 100-character limit.
+
+    The tag is what makes the upload eligible to be treated as a Short, so it
+    is never the part that gets trimmed — the title is.
+    """
+    tag = " #Shorts"
+    base = (title or "").strip()
+    room = 100 - len(tag)
+    if len(base) > room:
+        base = base[: room - 1].rstrip() + "…"
+    return f"{base}{tag}"
+
+
+def short_description(title: str, video_url: str | None) -> str:
+    """A description that points at the full video, when there is one to point at."""
+    lines = [(title or "").strip()]
+    if video_url:
+        lines += ["", f"Full video: {video_url}"]
+    return "\n".join(line for line in lines if line is not None).strip()
+
+
+def render_short(
+    source_video: Path,
+    out_path: Path,
+    seconds: float,
+) -> Optional[Path]:
+    """Cut the first `seconds` of `source_video` into a vertical clip.
+
+    Returns the written file, or None when it could not be made. Never raises:
+    a short is a bonus on top of a video that has already published, and a
+    failure here must not read as a failed run.
+    """
+    try:
+        from moviepy.editor import ColorClip, CompositeVideoClip, VideoFileClip
+    except Exception:
+        logger.warning("moviepy unavailable — skipping the Short", exc_info=True)
+        return None
+
+    clip = None
+    source = None
+    try:
+        source = VideoFileClip(str(source_video))
+        duration = min(float(seconds), float(source.duration))
+        if duration <= 0:
+            logger.warning("Source video has no usable duration — skipping the Short")
+            return None
+
+        clip = source.subclip(0, duration)
+        # Scale to the short's width, keeping the aspect ratio: the whole 16:9
+        # frame survives, including the subtitles, which a centre crop would cut.
+        scaled = clip.resize(width=SHORT_WIDTH)
+        canvas = ColorClip((SHORT_WIDTH, SHORT_HEIGHT), color=BACKGROUND_RGB, duration=duration)
+        final = CompositeVideoClip(
+            [canvas, scaled.set_position(("center", "center"))],
+            size=(SHORT_WIDTH, SHORT_HEIGHT),
+        ).set_duration(duration)
+        if clip.audio is not None:
+            final = final.set_audio(clip.audio)
+
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        final.write_videofile(
+            str(out_path),
+            fps=30,
+            codec="libx264",
+            audio_codec="aac",
+            preset="fast",
+            threads=4,
+            verbose=False,
+            logger=None,
+        )
+        logger.info("Short rendered: %s (%.1fs)", out_path, duration)
+        return out_path
+    except Exception as e:
+        logger.warning("Short render failed (%s: %s) — the long video is unaffected",
+                       type(e).__name__, e)
+        return None
+    finally:
+        for handle in (clip, source):
+            try:
+                if handle is not None:
+                    handle.close()
+            except Exception:
+                pass

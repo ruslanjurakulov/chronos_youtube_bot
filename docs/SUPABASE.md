@@ -132,3 +132,16 @@ RLS-on with an authenticated-read policy and no write policy.
 
 See `docs/MEASUREMENT.md` for what reads these tables and for the pre-publish
 gate, which is the one Phase 6 change that alters publishing behaviour.
+
+## Migration 0003 — Shorts
+
+`supabase/migrations/0003_shorts.sql` adds two columns to `videos`:
+
+- `video_format` — `'long'` or `'short'`, defaulted to `'long'` because every
+  row that exists before the migration runs **is** a long video.
+- `parent_video_id` — for a Short, the long video it was cut from.
+
+A Short is its own YouTube video with its own id and its own metrics, so it is
+its own row; these columns are what keep it from reading as a second long video.
+Additive: two columns, no drop, no rename, no delete. See `docs/MEASUREMENT.md`
+for why Shorts are off unless a channel turns them on.
