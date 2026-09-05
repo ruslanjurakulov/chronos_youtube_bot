@@ -66,7 +66,7 @@ export function ChannelSwitcher({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t.channels.switcherLabel}
-        className="press pill flex h-10 max-w-[220px] items-center gap-3 border border-[var(--color-border)] px-4 text-[var(--color-fg)] transition-colors hover:border-[var(--color-primary)]"
+        className="btn-sky is-quiet pill h-10 max-w-[220px] gap-3 px-4"
       >
         <span
           aria-hidden
@@ -135,7 +135,7 @@ function Option({
       role="option"
       aria-selected={active}
       onClick={onSelect}
-      className="press pill flex w-full items-center gap-2.5 px-4 py-2.5 text-left hover:bg-[var(--color-panel-2)]"
+      className="btn-sky is-quiet pill w-full justify-start gap-2.5 border-transparent px-4 py-2.5 text-left"
       style={{ background: active ? "var(--color-panel-2)" : "transparent" }}
     >
       {tone && (

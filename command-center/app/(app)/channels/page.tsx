@@ -62,7 +62,7 @@ export default async function ChannelsPage() {
         {!notMigrated && (
           <Link
             href="/channels/new"
-            className="press rounded-md border border-[var(--color-primary-dim)] px-3 py-1.5 text-[10px] uppercase tracking-[0.22em] text-[var(--color-primary)] hover:bg-[var(--color-panel-2)]"
+            className="btn-sky pill px-5 py-2.5 text-[13px]"
           >
             + {t.channels.add}
           </Link>

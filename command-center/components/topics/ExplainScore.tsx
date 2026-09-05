@@ -46,7 +46,7 @@ export function ExplainScore({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="press pill border border-[var(--color-border)] px-3 py-1 text-[11px] font-light text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
+        className="btn-sky is-quiet pill px-3 py-1 text-[11px] font-light"
       >
         {t.ops.explainWhy}
       </button>

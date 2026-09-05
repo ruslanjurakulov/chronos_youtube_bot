@@ -119,7 +119,7 @@ export function TopNav() {
                   href={item.href}
                   role="menuitem"
                   onClick={() => setOpen(false)}
-                  className="pill block px-4 py-2.5 text-[14px] font-light transition-colors hover:bg-[var(--color-panel-2)]"
+                  className="btn-sky is-quiet pill w-full justify-start border-transparent px-4 py-2.5 text-[14px] font-light"
                   style={{ color: active ? "var(--color-primary)" : "var(--color-fg)" }}
                 >
                   {t.nav[item.key]}
@@ -138,7 +138,7 @@ export function NarrowNav() {
   const { t } = useI18n();
   const isActive = useIsActive();
   return (
-    <nav className="flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-[clamp(1.25rem,4vw,100px)] py-3 lg:hidden">
+    <nav className="bar-measure flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-[clamp(1.25rem,4vw,100px)] py-3 lg:hidden">
       {ALL_NAV.map((item) => {
         const active = isActive(item.href);
         return (
@@ -146,7 +146,7 @@ export function NarrowNav() {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className="press pill whitespace-nowrap px-4 py-2 text-sm font-light transition-colors"
+            className="btn-sky is-quiet pill whitespace-nowrap border-transparent px-4 py-2 text-sm font-light"
             style={{
               background: active ? "var(--color-panel-2)" : "transparent",
               color: active ? "var(--color-primary)" : "var(--color-muted)",

@@ -122,7 +122,7 @@ export function NotificationsCenter() {
         type="button"
         onClick={toggle}
         aria-label={t.ops.notifTitle}
-        className="press pill relative grid size-9 place-items-center border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-fg)]"
+        className="btn-sky is-quiet pill relative grid size-9 place-items-center"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
           <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -143,7 +143,7 @@ export function NotificationsCenter() {
           <div className="flex items-center justify-between border-b border-[var(--color-border)] px-3 py-2">
             <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--color-fg)]">{t.ops.notifTitle}</span>
             {notifications.length > 0 && (
-              <button type="button" onClick={clearAll} className="press text-[11px] font-light text-[var(--color-muted)] transition-colors hover:text-[var(--color-primary)]">
+              <button type="button" onClick={clearAll} className="btn-sky is-quiet pill px-3 py-1 text-[11px] font-light">
                 {t.ops.notifClear}
               </button>
             )}

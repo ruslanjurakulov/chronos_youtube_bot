@@ -43,7 +43,7 @@ export function LanguageSelector() {
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t.common.language}
-        className="press pill flex h-9 items-center gap-2 border border-[var(--color-border)] px-3.5 text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-fg)]"
+        className="btn-sky is-quiet pill h-9 gap-2 px-3.5"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
           <circle cx="12" cy="12" r="10" />
@@ -66,7 +66,7 @@ export function LanguageSelector() {
                   role="option"
                   aria-selected={active}
                   onClick={() => choose(l.code)}
-                  className="press pill flex w-full items-center justify-between px-4 py-2.5 text-left text-[14px] font-light hover:bg-[var(--color-panel-2)]"
+                  className="btn-sky is-quiet pill w-full justify-between border-transparent px-4 py-2.5 text-left text-[14px] font-light"
                   style={{ color: active ? "var(--color-primary)" : "var(--color-fg)" }}
                 >
                   <span>{l.label}</span>

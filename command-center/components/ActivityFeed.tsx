@@ -66,7 +66,7 @@ export function ActivityFeed({
               key={f.key}
               type="button"
               onClick={() => setFilter(f.key)}
-              className="press pill px-2 py-1 text-[9px] font-semibold uppercase tracking-widest transition-colors"
+              className="btn-sky is-quiet pill border-transparent px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.22em]"
               style={{
                 background: on ? "var(--color-panel-2)" : "transparent",
                 color: on ? "var(--color-primary)" : "var(--color-muted)",

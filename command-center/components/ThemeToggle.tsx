@@ -32,7 +32,7 @@ export function ThemeToggle() {
       onClick={toggle}
       title={label}
       aria-label={label}
-      className="press pill grid size-9 place-items-center border border-[var(--color-border)] text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-fg)]"
+      className="btn-sky is-quiet pill grid size-9 place-items-center"
     >
       {/* Before mount `theme` is null — render an empty, equally sized box so
           server and client first paint match, then swap in the real icon. */}

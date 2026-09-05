@@ -35,8 +35,9 @@ export function Header({
   }
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between gap-6 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_78%,transparent)] px-[clamp(1.25rem,4vw,100px)] py-5 backdrop-blur-md">
-      <div className="flex min-w-0 items-center gap-10">
+    <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_78%,transparent)] px-[clamp(1.25rem,4vw,100px)] py-5 backdrop-blur-md">
+      <div className="bar-measure flex items-center justify-between gap-6">
+        <div className="flex min-w-0 items-center gap-10">
         <Link
           href="/"
           className="font-display shrink-0 text-xl font-semibold tracking-[-0.02em] text-[var(--color-primary)]"
@@ -52,7 +53,7 @@ export function Header({
           type="button"
           onClick={openPalette}
           aria-label={t.ops.palettePlaceholder}
-          className="press pill hidden h-9 items-center gap-2 border border-[var(--color-border)] px-3.5 text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-fg)] sm:flex"
+          className="btn-sky is-quiet pill hidden h-9 gap-2 px-3.5 sm:inline-flex"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
             <circle cx="11" cy="11" r="7" />
@@ -70,6 +71,7 @@ export function Header({
         <LanguageSelector />
         <ThemeToggle />
         <SignOutButton />
+      </div>
       </div>
     </header>
   );

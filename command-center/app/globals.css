@@ -288,9 +288,32 @@ h1, h2, h3, .font-display {
   font-variant-numeric: tabular-nums;
 }
 
-/* Their 100px section gap and page inset, clamped so a phone still works. */
+/* Their 100px section gap and page inset, clamped so a phone still works.
+   The measure is capped at the 1440 the direction is drawn on and centred: past
+   that width the screen stops stretching edge to edge, which is what made it
+   read as an admin console on a wide monitor rather than a product. */
 .rhythm { display: flex; flex-direction: column; gap: clamp(2.5rem, 5vw, 100px); }
-.pad-page { padding: clamp(1.75rem, 3.5vw, 64px) clamp(1.25rem, 4vw, 100px); }
+.pad-page {
+  padding: clamp(1.75rem, 3.5vw, 64px) clamp(1.25rem, 4vw, 100px);
+  max-width: 1440px;
+  margin-inline: auto;
+  width: 100%;
+}
+/* The bar's own contents follow the same measure, so the wordmark and the
+   controls stay in line with the page under them instead of hugging the edges. */
+.bar-measure {
+  max-width: 1440px;
+  margin-inline: auto;
+  width: 100%;
+}
+
+/* Entering a section: the page rises and settles on the same curve the
+   direction's panel uses, rather than snapping in. Children stagger after it. */
+@keyframes page-rise {
+  from { opacity: 0; transform: translateY(22px) scale(0.988); }
+  to { opacity: 1; transform: none; }
+}
+.page-rise { animation: page-rise 0.44s cubic-bezier(0.16, 1, 0.3, 1) both; }
 
 /* An open section: a heading, a hairline, and space. No box, no shadow — the
    children keep their own px-4, so the head is inset to match. */
@@ -377,6 +400,13 @@ h1, h2, h3, .font-display {
 }
 .btn-sky.ghost::before { background: var(--color-panel-2); }
 .btn-sky.ghost:hover { color: var(--color-primary); box-shadow: none; }
+/* Quiet enough for a bar full of controls, and still the same sweep. */
+.btn-sky.is-quiet {
+  border-color: var(--color-border);
+  color: var(--color-muted);
+}
+.btn-sky.is-quiet::before { background: var(--color-panel-2); }
+.btn-sky.is-quiet:hover { color: var(--color-fg); border-color: var(--color-primary); box-shadow: none; }
 /* The arrow leans into the direction of travel. */
 .btn-sky .btn-arrow { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.25, 1); }
 .btn-sky:hover .btn-arrow { transform: translateX(4px); }

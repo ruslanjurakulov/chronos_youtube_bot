@@ -16,7 +16,7 @@ export function SignOutButton() {
   return (
     <button
       onClick={signOut}
-      className="press pill h-9 border border-[var(--color-border)] px-4 text-[13px] font-light text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-fg)]"
+      className="btn-sky is-quiet pill h-9 px-4 text-[13px] font-light"
     >
       {t.common.signOut}
     </button>

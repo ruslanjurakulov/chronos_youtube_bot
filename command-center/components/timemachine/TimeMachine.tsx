@@ -99,7 +99,7 @@ export function TimeMachine({ initial }: { initial: SystemEventRow[] }) {
               key={r.key}
               type="button"
               onClick={() => setRange(r.key)}
-              className="press pill px-3 py-1.5 text-[11px] uppercase tracking-widest transition-colors"
+              className="btn-sky is-quiet pill border-transparent px-3 py-1.5 text-[11px] uppercase tracking-[0.22em]"
               style={{
                 background: on ? "var(--color-panel-2)" : "transparent",
                 color: on ? "var(--color-primary)" : "var(--color-muted)",
@@ -143,7 +143,7 @@ export function TimeMachine({ initial }: { initial: SystemEventRow[] }) {
                           <button
                             type="button"
                             onClick={() => setSelected(e)}
-                            className="press pill my-0.5 flex w-full items-center gap-3 px-3 py-2 text-left text-sm transition-colors"
+                            className="btn-sky is-quiet pill my-0.5 w-full justify-start gap-3 border-transparent px-3 py-2 text-left text-sm"
                             style={{ background: on ? "var(--color-panel-2)" : "transparent" }}
                           >
                             <span className="mono w-16 shrink-0 text-[10px] text-[var(--color-muted)]">{timeOfDay(e.ts)}</span>

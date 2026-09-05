@@ -216,7 +216,7 @@ export function CommandPalette() {
                     type="button"
                     onMouseEnter={() => setActive(i)}
                     onClick={() => choose(item)}
-                    className="pill flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm font-light transition-colors"
+                    className="btn-sky is-quiet pill w-full justify-between gap-3 border-transparent px-4 py-2.5 text-left text-sm font-light"
                     style={{ background: i === active ? "var(--color-panel-2)" : "transparent" }}
                   >
                     <span className="min-w-0 truncate text-[var(--color-fg)]">{item.label}</span>
