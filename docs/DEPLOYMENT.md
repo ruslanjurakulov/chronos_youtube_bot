@@ -111,18 +111,21 @@ browser step **cannot run in GitHub Actions**, so you must generate the token
 - If you ran it **without** it set, the file is `youtube_token.json`.
 
 The workflows write the `YOUTUBE_TOKEN_JSON` secret back to **`youtube_token.json`
-(unsuffixed)**. In CI the workflows also set `YOUTUBE_CHANNEL_ID`, so `config.py`
-will look for `youtube_token_<channelid>.json` and **not find** the unsuffixed
-file. Two safe ways to avoid a silent auth failure in Actions:
+(unsuffixed)**, while also setting `YOUTUBE_CHANNEL_ID` — so `config.py` asks for
+`youtube_token_<channelid>.json`, a name nothing wrote.
 
-- **Recommended:** mint the token **without** `YOUTUBE_CHANNEL_ID` set locally so
-  the credentials themselves are channel-agnostic (the token content is the same
-  either way — it identifies the Google account, not the file name). The token
-  *content* you store as `YOUTUBE_TOKEN_JSON` is what matters; store the JSON body
-  of whichever `youtube_token*.json` file was produced.
-- Then verify locally that a run with `YOUTUBE_CHANNEL_ID` set in `.env` still
-  authenticates using that token content before relying on CI. If it re-prompts
-  for consent, the token file name is being missed — align the names.
+**This is handled.** `modules.channel_credentials.token_path()` falls back to the
+unsuffixed `youtube_token.json` when the suffixed file does not exist, which is
+what every consumer resolves through (uploader, analytics client, comment
+fetcher). So it does not matter which of the two names your local token ended up
+under: store the JSON body of whichever `youtube_token*.json` was produced, and
+CI will find it.
+
+The fallback can only ever *find* a token, never shadow one — it is consulted
+only when the configured, suffixed file is absent. Before the fallback existed,
+this mismatch made every CI run die in
+`require_interactive_consent_possible()` ("no browser on a CI runner"), which
+reads exactly like a missing secret and is not one.
 
 **Store the two files as secrets (raw JSON, not base64):**
 The workflows restore them with a plain `echo '...' > file` (no `base64 -d`), so

@@ -100,14 +100,43 @@ def env_var_name(channel: ChannelContext) -> str:
     return ENV_PREFIX + re.sub(r"[^A-Z0-9]+", "_", key.upper()).strip("_")
 
 
+#: What both workflows actually write the default channel's token to. See
+#: LEGACY_TOKEN_NAME's use in token_path() for why this constant has to exist.
+LEGACY_TOKEN_NAME = "youtube_token.json"
+
+
 def token_path(channel: ChannelContext) -> Path:
     """Where this channel's token file lives on disk.
 
     The legacy default channel (blank ref) keeps the existing path so an
     already-working deployment keeps working with no migration.
+
+    The unsuffixed fallback
+    -----------------------
+    ``config.YOUTUBE_TOKEN_FILE`` is ``youtube_token_<YOUTUBE_CHANNEL_ID>.json``
+    when that env var is set and ``youtube_token.json`` when it is not — but
+    both workflows restore the ``YOUTUBE_TOKEN_JSON`` secret to the *unsuffixed*
+    name while also exporting ``YOUTUBE_CHANNEL_ID``. So on CI the token was
+    written to one name and looked for under another, the file was never found,
+    and the run died in ``require_interactive_consent_possible`` — "no browser
+    on a CI runner" — as if no token had been provided at all.
+
+    Falling back here fixes every consumer at once (uploader, analytics client,
+    comment fetcher all resolve through this function) and fixes the same trap
+    locally, where a token minted before ``YOUTUBE_CHANNEL_ID`` was known is
+    also left under the plain name.
+
+    The fallback can only ever *find* a token, never shadow one: it is consulted
+    only when the suffixed file does not exist, and when neither exists the
+    suffixed path is still returned so a fresh token is written where this
+    deployment expects it.
     """
     if channel.is_default and not channel.credential.ref:
-        return Path(cfg.YOUTUBE_TOKEN_FILE)
+        primary = Path(cfg.YOUTUBE_TOKEN_FILE)
+        if primary.exists():
+            return primary
+        fallback = Path(cfg.BASE_DIR) / LEGACY_TOKEN_NAME
+        return fallback if fallback.exists() else primary
     key = channel.credential.ref or str(channel.channel_id)
     safe = re.sub(r"[^a-zA-Z0-9_-]+", "-", key)
     return cfg.BASE_DIR / f"youtube_token_{safe}.json"
