@@ -227,6 +227,63 @@ class CredentialIsolationTestCase(unittest.TestCase):
                     token_path(finance()), Path(tmp) / LEGACY_TOKEN_NAME
                 )
 
+    def test_the_diagnosis_names_which_of_the_four_causes_it_is(self):
+        """"No usable token" has four causes needing four different fixes.
+
+        Reporting them as one sentence cost a debugging round-trip every time
+        this came up, which is exactly what these assertions are here to stop.
+        """
+        from modules.channel_credentials import token_diagnosis
+
+        scopes = ["scope.a", "scope.b"]
+        complete = {
+            "refresh_token": "r", "client_id": "c", "client_secret": "s",
+            "scopes": list(scopes),
+        }
+        with tempfile.TemporaryDirectory() as tmp:
+            missing = Path(tmp) / "youtube_token.json"
+            self.assertIn("no token file", token_diagnosis(missing, scopes))
+
+            missing.write_text("{ truncated")
+            self.assertIn("not valid JSON", token_diagnosis(missing, scopes))
+
+            no_refresh = dict(complete, refresh_token="")
+            missing.write_text(json.dumps(no_refresh))
+            self.assertIn("refresh_token", token_diagnosis(missing, scopes))
+
+            thin = dict(complete, scopes=["scope.a"])
+            missing.write_text(json.dumps(thin))
+            diagnosis = token_diagnosis(missing, scopes)
+            self.assertIn("missing", diagnosis)
+            self.assertIn("scope.b", diagnosis)
+
+            missing.write_text(json.dumps(complete))
+            self.assertIn("looks complete", token_diagnosis(missing, scopes))
+
+    def test_the_diagnosis_never_echoes_the_token_itself(self):
+        # This string reaches CI logs and an exception message, so it may carry
+        # facts ABOUT the token and never any part of it.
+        from modules.channel_credentials import token_diagnosis
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "youtube_token.json"
+            path.write_text(json.dumps({
+                "token": "ACCESS-SECRET-VALUE",
+                "refresh_token": "REFRESH-SECRET-VALUE",
+                "client_id": "ID-SECRET-VALUE",
+                "client_secret": "CLIENT-SECRET-VALUE",
+                "scopes": ["scope.a"],
+            }))
+            for text in (
+                token_diagnosis(path, ["scope.a"]),
+                token_diagnosis(path, ["scope.a", "scope.b"]),
+            ):
+                for secret in (
+                    "ACCESS-SECRET-VALUE", "REFRESH-SECRET-VALUE",
+                    "ID-SECRET-VALUE", "CLIENT-SECRET-VALUE",
+                ):
+                    self.assertNotIn(secret, text)
+
     def test_missing_token_reports_not_connected_not_error(self):
         from modules.channel_credentials import NOT_CONNECTED, credential_status
 

@@ -44,7 +44,7 @@ import stat
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional
 
 import config as cfg
 from modules.channels import ChannelContext
@@ -230,19 +230,83 @@ def credential_status(channel: ChannelContext, *, now: Optional[datetime] = None
     )
 
 
-def require_interactive_consent_possible(channel_label: str = "") -> None:
+def token_diagnosis(token_file: Optional[Path], required_scopes: Iterable[str] = ()) -> str:
+    """Why this token file cannot be used, in one non-secret sentence.
+
+    "No usable token" has at least four distinct causes, and they need four
+    different fixes: the secret was never set, the secret arrived truncated, the
+    consent screen granted fewer scopes than the code needs, or Google returned
+    no refresh token because the account had already authorised this client.
+    Reporting them as one message costs a debugging round-trip every time, so
+    this names which one it is.
+
+    Only *facts about* the token are described — which scopes are missing, which
+    fields are absent. No token, refresh token, client id or client secret value
+    is ever included, so the result is safe to log and safe to put in an
+    exception that reaches CI output.
+    """
+    if token_file is None:
+        return "no token file was resolved"
+    path = Path(token_file)
+    if not path.exists():
+        return (
+            f"no token file at {path.name} — the YOUTUBE_TOKEN_JSON secret is "
+            "probably unset, so the workflow wrote nothing"
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return (
+            f"{path.name} is not valid JSON ({type(e).__name__}) — the secret was "
+            "likely pasted incomplete"
+        )
+    if not isinstance(data, dict):
+        return f"{path.name} does not contain a token object"
+
+    missing_fields = [f for f in ("refresh_token", "client_id", "client_secret") if not data.get(f)]
+    if missing_fields:
+        return (
+            f"{path.name} is missing {', '.join(missing_fields)}. A token with no "
+            "refresh_token cannot be renewed: revoke Chronos at "
+            "myaccount.google.com/permissions and connect the channel again"
+        )
+
+    granted = set(data.get("scopes") or [])
+    lacking = [scope for scope in required_scopes if scope not in granted]
+    if lacking:
+        return (
+            f"{path.name} was granted {len(granted)} scope(s) but is missing: "
+            f"{', '.join(lacking)}. Re-run tools/connect_channel.py and accept every "
+            "permission on Google's consent screen"
+        )
+    return (
+        f"{path.name} looks complete (all required scopes, refresh token present) — "
+        "if this still fails, the stored secret and this file differ"
+    )
+
+
+def require_interactive_consent_possible(
+    channel_label: str = "",
+    token_file: Optional[Path] = None,
+    required_scopes: Iterable[str] = (),
+) -> None:
     """Raise before starting an OAuth flow that cannot possibly succeed here.
 
     ``InstalledAppFlow.run_local_server()`` opens a browser and waits for a
     human. On a CI runner there is no browser and no human, so the flow either
     hangs until the job's timeout or dies with a confusing socket error. Failing
     fast with the actual remedy is strictly better than either.
+
+    `token_file` and `required_scopes` are optional so existing callers keep
+    working, but passing them turns "no usable token" into the specific reason —
+    see token_diagnosis.
     """
     if not os.getenv("CI"):
         return
     raise RuntimeError(
         f"{channel_label}No usable YouTube token, and interactive consent is "
         "impossible on a CI runner (no browser).\n"
+        f"Reason: {token_diagnosis(token_file, required_scopes)}.\n"
         "Run tools/connect_channel.py on a trusted machine, then store the "
         "resulting token as this channel's GitHub Actions secret — see "
         "docs/MULTI_CHANNEL.md."

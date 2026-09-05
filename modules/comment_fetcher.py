@@ -101,7 +101,9 @@ class CommentFetcher:
                     raise FileNotFoundError(problem)
                 # And on CI there is no browser to consent in, so say that
                 # instead of blocking on run_local_server until the timeout.
-                require_interactive_consent_possible()
+                require_interactive_consent_possible(
+                    token_file=token_file, required_scopes=YOUTUBE_SCOPES
+                )
                 flow = InstalledAppFlow.from_client_secrets_file(
                     YOUTUBE_CLIENT_SECRET, YOUTUBE_SCOPES
                 )
