@@ -20,8 +20,8 @@ export default async function NewChannelPage() {
         >
           ← {t.channels.title}
         </Link>
-        <h1 className="mt-1 text-lg font-semibold">{t.channels.newTitle}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.channels.newSubtitle}</p>
+        <h1 className="t-hero mt-2">{t.channels.newTitle}</h1>
+        <p className="t-lead mt-4">{t.channels.newSubtitle}</p>
       </div>
       <AddChannelWizard />
     </div>

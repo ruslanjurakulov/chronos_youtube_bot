@@ -53,11 +53,11 @@ export default async function ChannelsPage() {
   const stats = channelStats(channels, videos, snapshots);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">{t.channels.title}</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">{t.channels.subtitle}</p>
+          <h1 className="t-hero">{t.channels.title}</h1>
+          <p className="t-lead mt-4">{t.channels.subtitle}</p>
         </div>
         {!notMigrated && (
           <Link

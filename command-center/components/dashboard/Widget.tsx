@@ -57,10 +57,10 @@ export function Widget({
 
   return (
     <section
-      className={`panel flex flex-col overflow-hidden transition-opacity ${span ?? ""} ${!visible ? "opacity-45" : ""}`}
+      className={`section-open transition-opacity ${span ?? ""} ${!visible ? "opacity-45" : ""}`}
     >
-      <header className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2.5">
-        <h2 className="mono text-xs font-bold uppercase tracking-widest text-[var(--color-fg)]">{title}</h2>
+      <header className="section-head">
+        <h2 className="t-panel">{title}</h2>
         <div className="flex items-center gap-2">
           {right}
           {customizing && (
@@ -68,7 +68,7 @@ export function Widget({
               type="button"
               onClick={toggle}
               aria-pressed={visible}
-              className="press grid size-6 place-items-center rounded border border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+              className="press pill grid size-7 place-items-center border border-[var(--color-border)] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
             >
               {visible ? (
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="size-3.5">

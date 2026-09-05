@@ -84,10 +84,10 @@ export default async function IntegrationsPage() {
   ];
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm">
       <div>
-        <h1 className="text-lg font-semibold">{t.integrations.title}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.integrations.subtitle}</p>
+        <h1 className="t-hero">{t.integrations.title}</h1>
+        <p className="t-lead mt-4">{t.integrations.subtitle}</p>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

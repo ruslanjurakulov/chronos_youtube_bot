@@ -52,10 +52,10 @@ export default async function FeedbackPage() {
   const lastRun = signals[0]?.analyzed_date ?? null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm">
       <div>
-        <h1 className="text-lg font-semibold">{t.feedback.title}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.feedback.subtitle}</p>
+        <h1 className="t-hero">{t.feedback.title}</h1>
+        <p className="t-lead mt-4">{t.feedback.subtitle}</p>
       </div>
 
       {/* The loop, drawn from the real stages the backend runs */}

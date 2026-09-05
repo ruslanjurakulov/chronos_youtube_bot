@@ -80,7 +80,7 @@ export default async function VideoDetail({
 
   if (!video) {
     return (
-      <div className="flex flex-col gap-4">
+      <div className="rhythm">
         <Link
           href="/videos"
           className="mono text-[11px] text-[var(--color-primary)] hover:underline"
@@ -109,8 +109,8 @@ export default async function VideoDetail({
           >
             {t.videoDetail.back}
           </Link>
-          <h1 className="mt-1 truncate text-lg font-semibold">{video.title ?? video.video_id}</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">
+          <h1 className="t-hero mt-2 truncate">{video.title ?? video.video_id}</h1>
+          <p className="t-lead mt-4">
             {video.topic ?? t.videoDetail.noTopic} · {fmt(t.videoDetail.published, { t: relativeTime(video.published_at) })}
           </p>
         </div>

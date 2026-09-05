@@ -68,11 +68,11 @@ export default async function CommandCenter() {
   const next = inferNextStage(events);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">{t.dashboard.title}</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">{t.dashboard.subtitle}</p>
+          <h1 className="t-hero">{t.dashboard.title}</h1>
+          <p className="t-lead mt-4">{t.dashboard.subtitle}</p>
         </div>
         <div className="flex items-center gap-3">
           <CustomizeButton />

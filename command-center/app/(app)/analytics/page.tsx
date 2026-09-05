@@ -189,10 +189,10 @@ export default async function AnalyticsPage() {
   const maxRet = byRetention.length ? byRetention[0].retention ?? 1 : 1;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm">
       <div>
-        <h1 className="text-lg font-semibold">{t.analytics.title}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.analytics.subtitle}</p>
+        <h1 className="t-hero">{t.analytics.title}</h1>
+        <p className="t-lead mt-4">{t.analytics.subtitle}</p>
       </div>
 
       {!dbHealthy ? (

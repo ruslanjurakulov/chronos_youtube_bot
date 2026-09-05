@@ -49,10 +49,10 @@ export default async function DecisionsPage() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm">
       <div>
-        <h1 className="text-lg font-semibold">{t.intel.decisionsTitle}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.intel.decisionsSubtitle}</p>
+        <h1 className="t-hero">{t.intel.decisionsTitle}</h1>
+        <p className="t-lead mt-4">{t.intel.decisionsSubtitle}</p>
       </div>
 
       <Panel title={t.intel.decisionsTitle}>

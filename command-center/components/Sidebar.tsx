@@ -40,16 +40,16 @@ export function Sidebar() {
   const isActive = useIsActive();
 
   return (
-    <aside className="hidden md:flex md:w-56 shrink-0 flex-col gap-1 border-r border-[var(--color-border)] bg-[var(--color-panel)] p-3">
-      <div className="mb-5 px-2 pt-1">
-        <div className="font-display text-base font-bold tracking-[0.28em] text-[var(--color-primary)]">
+    <aside className="hidden md:flex md:w-64 shrink-0 flex-col gap-1 self-start sticky top-0 max-h-dvh overflow-y-auto border-r border-[var(--color-border)] bg-[var(--color-bg)] px-5 py-8">
+      <div className="mb-8 px-3">
+        <div className="font-display text-2xl font-semibold tracking-[-0.02em] text-[var(--color-primary)]">
           {t.brand.name}
         </div>
-        <div className="mono text-[10px] tracking-[0.25em] text-[var(--color-muted)]">
+        <div className="mt-1 text-[11px] font-light tracking-[0.14em] text-[var(--color-muted)]">
           {t.brand.tagline}
         </div>
       </div>
-      <nav className="flex flex-col gap-0.5">
+      <nav className="flex flex-col gap-1">
         {NAV.map((item) => {
           const active = isActive(item.href);
           return (
@@ -57,7 +57,7 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               aria-current={active ? "page" : undefined}
-              className="press group relative flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors"
+              className="press pill group relative flex items-center gap-3.5 px-3.5 py-2 text-[15px] font-light transition-colors"
               style={{
                 background: active ? "var(--color-panel-2)" : "transparent",
                 color: active ? "var(--color-fg)" : "var(--color-muted)",
@@ -96,7 +96,7 @@ export function MobileNav() {
             key={item.href}
             href={item.href}
             aria-current={active ? "page" : undefined}
-            className="press whitespace-nowrap rounded-md px-3 py-1.5 text-xs transition-colors"
+            className="press pill whitespace-nowrap px-4 py-2 text-sm font-light transition-colors"
             style={{
               background: active ? "var(--color-panel-2)" : "transparent",
               color: active ? "var(--color-primary)" : "var(--color-muted)",

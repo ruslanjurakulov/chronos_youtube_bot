@@ -165,11 +165,11 @@ export default async function PipelinePage() {
   const passes = deriveSystemPasses(events);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">{t.pipeline.title}</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">
+          <h1 className="t-hero">{t.pipeline.title}</h1>
+          <p className="t-lead mt-4">
             {fmt(t.pipeline.subtitle, { n: STAGES.length })}
           </p>
         </div>

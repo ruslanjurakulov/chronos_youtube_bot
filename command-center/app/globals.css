@@ -232,6 +232,82 @@ h1, h2, h3, .font-display {
   transform: translateY(1px) scale(0.985);
 }
 
+/* ── The reference's rhythm ─────────────────────────────────────────────────
+   byte-sphere.net's own numbers, read out of the page the user sent: h1 70px,
+   h2 45px, lead 22px, sections 100px apart, line-height 1.25, one face in every
+   role. Those numbers belong to a marketing page that scrolls through three
+   sections; this app is nineteen routes of dense operational data. So they are
+   kept at FULL size where they carry the page — the page title and its lead —
+   and clamped down on narrow screens rather than scaled away, and the steps
+   below the title descend properly instead of dropping from 70px straight to
+   11px uppercase mono, which is what made every screen read as a terminal.
+
+   Recolouring alone could never produce this look. The old scale was the look. */
+
+.t-hero {
+  font-size: clamp(2.25rem, 5vw, 70px);
+  font-weight: 600;
+  line-height: 1.05;
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.t-section {
+  font-size: clamp(1.625rem, 3.2vw, 45px);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  text-wrap: balance;
+}
+.t-lead {
+  font-size: clamp(1rem, 1.4vw, 22px);
+  font-weight: 300;
+  line-height: 1.45;
+  color: var(--color-muted);
+  max-width: 62ch;
+}
+/* A section heading inside a page. Not uppercase, not mono — those two choices
+   are most of what made the old screens feel like a log viewer. */
+.t-panel {
+  font-size: 1.0625rem;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--color-fg);
+}
+.t-label {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+.t-figure {
+  font-size: clamp(2rem, 3.2vw, 44px);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Their 100px section gap and page inset, clamped so a phone still works. */
+.rhythm { display: flex; flex-direction: column; gap: clamp(2.5rem, 5vw, 100px); }
+.pad-page { padding: clamp(1.75rem, 3.5vw, 64px) clamp(1.25rem, 4vw, 100px); }
+
+/* An open section: a heading, a hairline, and space. No box, no shadow — the
+   children keep their own px-4, so the head is inset to match. */
+.section-open { display: flex; flex-direction: column; }
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 1rem 0.875rem;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 1.5rem;
+}
+
+/* Controls are pills, as on the reference. */
+.pill { border-radius: 999px; }
+
 /* ── Nightshift interactions ────────────────────────────────────────────────
    Two rules carry the reference's feel. Buttons fill with the accent from the
    bottom rather than just changing colour, so a press has a direction. And the

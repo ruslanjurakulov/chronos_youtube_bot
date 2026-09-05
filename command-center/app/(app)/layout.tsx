@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="flex min-w-0 flex-1 flex-col">
         <Header userEmail={user?.email} channels={channels} selection={selection} />
         <MobileNav />
-        <main className="min-w-0 flex-1 overflow-y-auto p-4 sm:p-5">{children}</main>
+        <main className="pad-page min-w-0 flex-1 overflow-y-auto">{children}</main>
       </div>
       <CommandPalette />
     </div>

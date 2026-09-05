@@ -117,10 +117,10 @@ export default async function MeasurePage() {
               });
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm">
       <div>
-        <h1 className="text-lg font-semibold">{t.measure.title}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.measure.subtitle}</p>
+        <h1 className="t-hero">{t.measure.title}</h1>
+        <p className="t-lead mt-4">{t.measure.subtitle}</p>
       </div>
 
       {!dbHealthy ? (
