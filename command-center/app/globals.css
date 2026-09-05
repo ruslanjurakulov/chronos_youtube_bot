@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* ── Chronos Command Center — design tokens ─────────────────────────────────
+/* ── Nightshift Command Center — design tokens ──────────────────────────────
    A coherent token system with two intentional themes. Components reference
    these as var(--color-*), so theming is entirely token-level: the light and
    dark palettes below are the single source of truth and no component sets a
@@ -12,85 +12,102 @@
    - prefers-color-scheme: dark, no
      explicit choice                    → dark
    - [data-theme="dark"|"light"]        → explicit choice wins either way
+
+   Palette: "sky on black". One accent — #a1d0fc, a soft sky blue, never neon —
+   carried on a true-black ground with BLACK text on top of it. The light theme
+   is the same hue pushed dark enough to hold 4.5:1 on paper, so both themes read
+   as one brand rather than two. Status colour (ok/warn/fail) stays separate from
+   the accent: a single-accent palette cannot say "this failed" on its own.
+
+   The two dark blocks below are deliberately identical and complete. Every
+   token is declared in all three blocks — a token defined only under the media
+   query silently falls back to the light value when a viewer picks dark by hand.
    ------------------------------------------------------------------------- */
 
 @theme {
-  --font-display: "Sora", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  /* One face across display and body, as the reference does. Mono is kept for
+     figures only: Poppins has no dependable tabular numerals, and a dashboard
+     whose columns of numbers jitter is worse than a dashboard with two faces. */
+  --font-display: "Poppins", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Poppins", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 }
 
-/* Light — a calm, cool operations console on paper-white. */
+/* Light — the same sky hue, pushed dark enough to carry text on paper. */
 :root,
 :root[data-theme="light"] {
-  --color-bg: #eceff5;
+  --color-bg: #eef2f7;
   --color-panel: #ffffff;
-  --color-panel-2: #f3f6fb;
-  --color-border: #d6deea;
-  --color-fg: #101a2b;
-  --color-muted: #56687f;
-  --color-primary: #7c3aed;
-  --color-primary-dim: #6d28d9;
-  --color-secondary: #2563eb;
+  --color-panel-2: #f4f7fb;
+  --color-border: #d3dde9;
+  --color-fg: #0b1016;
+  --color-muted: #5a6673;
+  --color-primary: #1668b8;
+  --color-primary-dim: #10528f;
+  --color-secondary: #4a8fd0;
   --color-on-accent: #ffffff;
-  --color-ok: #059669;
-  --color-warn: #b45309;
-  --color-fail: #dc2626;
-  --color-info: #2563eb;
+  --color-ok: #067a52;
+  --color-warn: #a15c07;
+  --color-fail: #c93d20;
+  --color-info: #1668b8;
   --color-idle: #94a3b8;
-  --grid-line: rgba(124, 58, 237, 0.05);
-  --glow-primary: rgba(124, 58, 237, 0.28);
-  --atmos-1: rgba(124, 58, 237, 0.10);
-  --atmos-2: rgba(37, 99, 235, 0.08);
-  --shadow-panel: 0 1px 2px rgba(16, 26, 43, 0.04), 0 4px 16px rgba(16, 26, 43, 0.05);
-  --shadow-elevated: 0 8px 30px rgba(16, 26, 43, 0.10);
+  --grid-line: rgba(22, 104, 184, 0.05);
+  --glow-primary: rgba(22, 104, 184, 0.26);
+  --atmos-1: rgba(22, 104, 184, 0.10);
+  --atmos-2: rgba(74, 143, 208, 0.08);
+  --shadow-panel: 0 1px 2px rgba(11, 16, 22, 0.04), 0 4px 16px rgba(11, 16, 22, 0.05);
+  --shadow-elevated: 0 8px 30px rgba(11, 16, 22, 0.10);
 }
 
-/* Dark — deep slate ground, cyan accent (the original ops-console look, refined). */
+/* Dark — the reference itself: true black, one sky accent, black text on it. */
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --color-bg: #070b13;
-    --color-panel: #0d1521;
-    --color-panel-2: #131e2d;
-    --color-border: #20304a;
-    --color-fg: #e7eef7;
-    --color-muted: #8598b0;
-    --color-primary: #8b5cf6;
-    --color-primary-dim: #7c3aed;
-    --color-secondary: #3b82f6;
-    --color-on-accent: #ffffff;
-    --color-ok: #34d399;
-    --color-warn: #fbbf24;
-    --color-fail: #f87171;
-    --color-info: #60a5fa;
-    --color-idle: #6b7c93;
-    --grid-line: rgba(139, 92, 246, 0.05);
-    --glow-primary: rgba(139, 92, 246, 0.35);
-    --atmos-1: rgba(139, 92, 246, 0.14);
-    --atmos-2: rgba(59, 130, 246, 0.10);
-    --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.30), 0 6px 20px rgba(0, 0, 0, 0.28);
-    --shadow-elevated: 0 12px 40px rgba(0, 0, 0, 0.45);
+    --color-bg: #000000;
+    --color-panel: #0a0c0f;
+    --color-panel-2: #12161c;
+    --color-border: #1b1f25;
+    --color-fg: #ffffff;
+    --color-muted: #7f8a97;
+    --color-primary: #a1d0fc;
+    --color-primary-dim: #7cb6ee;
+    --color-secondary: #6ea8e0;
+    --color-on-accent: #000000;
+    --color-ok: #7fe0b0;
+    --color-warn: #ffcf7a;
+    --color-fail: #ff8a6b;
+    --color-info: #8ec5f5;
+    --color-idle: #69737f;
+    --grid-line: rgba(161, 208, 252, 0.045);
+    --glow-primary: rgba(161, 208, 252, 0.30);
+    --atmos-1: rgba(161, 208, 252, 0.15);
+    --atmos-2: rgba(161, 208, 252, 0.05);
+    --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.60), 0 6px 24px rgba(0, 0, 0, 0.50);
+    --shadow-elevated: 0 24px 80px rgba(0, 0, 0, 0.80);
   }
 }
 
 :root[data-theme="dark"] {
-  --color-bg: #070b13;
-  --color-panel: #0d1521;
-  --color-panel-2: #131e2d;
-  --color-border: #20304a;
-  --color-fg: #e7eef7;
-  --color-muted: #8598b0;
-  --color-primary: #22d3ee;
-  --color-primary-dim: #0e7490;
-  --color-on-accent: #04121a;
-  --color-ok: #34d399;
-  --color-warn: #fbbf24;
-  --color-fail: #f87171;
-  --color-info: #60a5fa;
-  --color-idle: #6b7c93;
-  --grid-line: rgba(34, 211, 238, 0.045);
-  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.30), 0 6px 20px rgba(0, 0, 0, 0.28);
-  --shadow-elevated: 0 12px 40px rgba(0, 0, 0, 0.45);
+  --color-bg: #000000;
+  --color-panel: #0a0c0f;
+  --color-panel-2: #12161c;
+  --color-border: #1b1f25;
+  --color-fg: #ffffff;
+  --color-muted: #7f8a97;
+  --color-primary: #a1d0fc;
+  --color-primary-dim: #7cb6ee;
+  --color-secondary: #6ea8e0;
+  --color-on-accent: #000000;
+  --color-ok: #7fe0b0;
+  --color-warn: #ffcf7a;
+  --color-fail: #ff8a6b;
+  --color-info: #8ec5f5;
+  --color-idle: #69737f;
+  --grid-line: rgba(161, 208, 252, 0.045);
+  --glow-primary: rgba(161, 208, 252, 0.30);
+  --atmos-1: rgba(161, 208, 252, 0.15);
+  --atmos-2: rgba(161, 208, 252, 0.05);
+  --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.60), 0 6px 24px rgba(0, 0, 0, 0.50);
+  --shadow-elevated: 0 24px 80px rgba(0, 0, 0, 0.80);
 }
 
 * {
@@ -214,6 +231,98 @@ h1, h2, h3, .font-display {
 .press:active {
   transform: translateY(1px) scale(0.985);
 }
+
+/* ── Nightshift interactions ────────────────────────────────────────────────
+   Two rules carry the reference's feel. Buttons fill with the accent from the
+   bottom rather than just changing colour, so a press has a direction. And the
+   surfaces that OPEN each arrive on their own curve and from their own edge —
+   a sheet rises, a drawer slides in from the side — so you can tell which one
+   appeared without reading it. Everything here is additive: no existing class
+   changes behaviour, so nothing that already renders can regress. */
+
+/* A button whose accent sweeps up from the bottom edge on hover. Put the label
+   in normal flow; the fill sits on its own layer behind it. */
+.btn-sky {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  color: var(--color-primary);
+  border: 1px solid var(--color-primary);
+  background: transparent;
+  transition: color 0.28s ease, box-shadow 0.28s ease, transform 0.12s ease;
+}
+.btn-sky::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: var(--color-primary);
+  transform: translateY(101%);
+  transition: transform 0.34s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+.btn-sky:hover {
+  color: var(--color-on-accent);
+  box-shadow: 0 0 0 6px var(--atmos-1);
+}
+.btn-sky:hover::before { transform: translateY(0); }
+.btn-sky:active { transform: scale(0.965); }
+/* Solid variant: already filled, so the sweep washes it lighter instead. */
+.btn-sky.is-solid {
+  background: var(--color-primary);
+  color: var(--color-on-accent);
+}
+.btn-sky.is-solid::before { background: var(--color-fg); opacity: 0.14; }
+.btn-sky.is-solid:hover { color: var(--color-on-accent); }
+/* The arrow leans into the direction of travel. */
+.btn-sky .btn-arrow { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.25, 1); }
+.btn-sky:hover .btn-arrow { transform: translateX(4px); }
+
+/* A modal/sheet: rises and settles. Slower and softer than a menu on purpose. */
+@keyframes sheet-in {
+  from { opacity: 0; transform: translateY(30px) scale(0.955); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.sheet-enter { animation: sheet-in 0.44s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* A drawer: comes in from its own edge. Set --from to -100% / 100%. */
+@keyframes drawer-in {
+  from { opacity: 0; transform: translateX(var(--from, -100%)); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.drawer-enter { animation: drawer-in 0.46s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+/* The scrim behind either one. */
+@keyframes scrim-in { from { opacity: 0; } to { opacity: 1; } }
+.scrim-enter { animation: scrim-in 0.32s ease both; }
+
+/* Children of an opened surface arrive after it, in order. Give each child an
+   inline --i; the container's own entrance is the 0.12s head start. */
+.stagger-enter > * {
+  animation: reveal-in 0.4s cubic-bezier(0.2, 0.8, 0.25, 1) both;
+  animation-delay: calc(0.12s + var(--i, 0) * 60ms);
+}
+
+/* A gauge arc that draws itself in. Set --arc to the circle's circumference. */
+@keyframes arc-draw {
+  from { stroke-dashoffset: var(--arc, 340); }
+  to { stroke-dashoffset: 0; }
+}
+.arc-draw { animation: arc-draw 1.5s cubic-bezier(0.3, 0.9, 0.3, 1) both; }
+
+/* A list row that underlines itself and steps aside under the pointer. */
+.row-sweep { position: relative; transition: padding-left 0.3s cubic-bezier(0.2, 0.8, 0.25, 1); }
+.row-sweep::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -1px;
+  height: 1px;
+  width: 0;
+  background: var(--color-primary);
+  transition: width 0.45s cubic-bezier(0.2, 0.8, 0.25, 1);
+}
+.row-sweep:hover { padding-left: 0.875rem; }
+.row-sweep:hover::after { width: 100%; }
 
 /* Live connection dot — a soft breathing ring, calmer than a blink. */
 @keyframes ring-breathe {
