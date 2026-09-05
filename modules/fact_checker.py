@@ -157,19 +157,21 @@ def _build_prompt(batch: list[str]) -> str:
     indexed = [{"index": i, "claim": claim} for i, claim in enumerate(batch)]
     payload = json.dumps({"claims": indexed}, ensure_ascii=False)
     return (
-        "Fact-check the following claims. Respond with the JSON schema "
-        "described in your instructions: one result per claim, echoing each "
-        "claim's own `index` value exactly as given below.\n\n"
+        "Fact-check the following claims. Respond with a top-level JSON "
+        "object whose single key is `results` — not a bare array, and not the "
+        "`claims` key used below — holding one result per claim, each echoing "
+        "that claim's own `index` value exactly as given.\n\n"
         f"{payload}"
     )
 
 
-def _extract_json(text: str) -> dict | None:
+def _extract_json(text: str):
     """Parse Gemini's response text as JSON, tolerating code fences.
 
-    Returns None (never raises) on any parsing failure — callers treat that
-    as "malformed response" and fall into the split-and-retry / safe-default
-    path rather than propagating an exception.
+    Returns the decoded object — which may be a dict *or* a list, because the
+    model returns both — or None (never raises) on any parsing failure.
+    Callers treat None as "malformed response" and fall into the
+    split-and-retry / safe-default path rather than propagating an exception.
     """
     if not text:
         return None
@@ -178,13 +180,60 @@ def _extract_json(text: str) -> dict | None:
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
-        match = re.search(r"\{[\s\S]+\}", cleaned)
+        pass
+    # Buried in prose. Try an object first, then a bare array — the array arm
+    # matters because a top-level list is one of the shapes really returned.
+    for pattern in (r"\{[\s\S]+\}", r"\[[\s\S]+\]"):
+        match = re.search(pattern, cleaned)
         if match:
             try:
                 return json.loads(match.group())
             except json.JSONDecodeError:
-                return None
-        return None
+                continue
+    return None
+
+
+def _locate_results(data) -> tuple[list | None, str]:
+    """The list of per-claim results inside whatever envelope came back, and
+    where it was found.
+
+    Run #8 flagged 29 of 29 claims, and the diagnosis added in the previous
+    change said exactly why — not the indices this time, but the envelope:
+
+        batch of 29: top level is list, expected an object
+        batch of 14: no 'results' key; top-level keys were ['claims']
+
+    Both carried the answers. The first dropped the wrapper entirely; the
+    second echoed back the key the *request* used. Refusing them threw away
+    work the model had already done and blocked every publish.
+
+    Accepted, in order: a bare list; `results`; `claims`; and — only when it is
+    unambiguous — a lone list-valued key under any other name. The list is None
+    when there is no list at all, or when two or more keys hold lists and
+    picking one would be a guess rather than a reading.
+
+    The second element names the envelope, so the diagnosis can report a
+    response that parsed only because of a non-standard wrapper.
+    """
+    if isinstance(data, list):
+        return data, "a bare top-level list"
+    if not isinstance(data, dict):
+        return None, f"top level is {type(data).__name__}"
+    for key in ("results", "claims"):
+        value = data.get(key)
+        if isinstance(value, list):
+            return value, f"{key!r}"
+    lists = [(k, v) for k, v in data.items() if isinstance(v, list)]
+    if len(lists) == 1:
+        return lists[0][1], f"{str(lists[0][0])!r} (the only list-valued key)"
+    if lists:
+        return None, f"{len(lists)} list-valued keys, so no unambiguous choice"
+    return None, "no list-valued key"
+
+
+def _results_list(data) -> list | None:
+    """`_locate_results` without the provenance, for the parser."""
+    return _locate_results(data)[0]
 
 
 def _coerce_index(value) -> int | None:
@@ -218,19 +267,19 @@ def describe_response_shape(text: str, batch_len: int) -> str:
     data = _extract_json(text)
     if data is None:
         return f"not parseable as JSON (received {len(text or '')} chars)"
-    if not isinstance(data, dict):
-        return f"top level is {type(data).__name__}, expected an object"
-    results = data.get("results")
+    results, where = _locate_results(data)
     if results is None:
-        return f"no 'results' key; top-level keys were {sorted(map(str, data))}"
-    if not isinstance(results, list):
-        return f"'results' is {type(results).__name__}, expected a list"
+        if isinstance(data, dict):
+            return (f"no usable list of results ({where}); "
+                    f"top-level keys were {sorted(map(str, data))}")
+        return f"no usable list of results ({where})"
+    envelope = "" if where == "'results'" else f"read from {where}; "
 
     raw = [item.get("index") if isinstance(item, dict) else None for item in results]
     kinds = sorted({type(v).__name__ for v in raw})
     coerced = sorted(i for i in (_coerce_index(v) for v in raw) if i is not None)
     return (
-        f"{len(results)} result(s) for {batch_len} claim(s); "
+        f"{envelope}{len(results)} result(s) for {batch_len} claim(s); "
         f"index types {kinds}; indices {coerced}"
     )
 
@@ -244,6 +293,10 @@ def _parse_batch_response(text: str, batch_len: int) -> dict[int, dict] | None:
     readings are tried in turn, each one still order-independent and still
     refusing to guess:
 
+    0. **The envelope.** The results list is taken from a bare top-level list,
+       from `results`, from `claims`, or from a lone list-valued key — see
+       `_results_list`. Two runs were lost to responses that carried every
+       answer under a wrapper this refused.
     1. **String indices.** `"0"` means the same as `0`.
     2. **1-based indices.** A complete 1..N set is shifted down to 0..N-1.
        Complete-set-only, so a partial answer is never silently renumbered.
@@ -257,11 +310,8 @@ def _parse_batch_response(text: str, batch_len: int) -> dict[int, dict] | None:
     to the safe default. Nothing here can mark a claim accurate that the model
     did not mark accurate.
     """
-    data = _extract_json(text)
-    if not isinstance(data, dict):
-        return None
-    results = data.get("results")
-    if not isinstance(results, list):
+    results = _results_list(_extract_json(text))
+    if results is None:
         return None
 
     items = [item for item in results if isinstance(item, dict)]

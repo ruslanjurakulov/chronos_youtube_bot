@@ -249,9 +249,22 @@ class FactCheckShapeReportTests(unittest.TestCase):
 
     def test_each_failure_names_itself(self):
         self.assertIn("not parseable as JSON", describe_response_shape("nonsense", 2))
-        self.assertIn("top level is list", describe_response_shape("[1, 2]", 2))
-        self.assertIn("no 'results' key", describe_response_shape('{"verdicts": []}', 2))
-        self.assertIn("'results' is dict", describe_response_shape('{"results": {}}', 2))
+        # No list anywhere: 'results' holds an object and nothing else is a list.
+        self.assertIn("no usable list of results",
+                      describe_response_shape('{"results": {}}', 2))
+        # Two candidates, so choosing one would be a guess.
+        self.assertIn("no unambiguous choice",
+                      describe_response_shape('{"a": [1], "b": [2]}', 2))
+
+    def test_a_non_standard_envelope_is_named_in_the_diagnosis(self):
+        # These two now parse, so the line reports the counts — but it says
+        # which wrapper it had to read, because that is the thing worth fixing
+        # in the prompt.
+        self.assertIn("a bare top-level list", describe_response_shape("[1, 2]", 2))
+        self.assertIn("'verdicts'", describe_response_shape('{"verdicts": []}', 2))
+        # The expected envelope is unremarkable and goes unmentioned.
+        plain = describe_response_shape(_results_json([{"index": 0}]), 1)
+        self.assertNotIn("read from", plain)
 
         one_based = _results_json([
             {"index": 1, "verdict": "likely_accurate", "reasoning": "x"},
@@ -270,6 +283,67 @@ class FactCheckShapeReportTests(unittest.TestCase):
         described = describe_response_shape(payload, 1)
         self.assertNotIn("SECRET-VERDICT", described)
         self.assertNotIn("SECRET-REASONING", described)
+
+
+class FactCheckEnvelopeTests(unittest.TestCase):
+    """The wrappers that cost run #8.
+
+    That run flagged 29 of 29 claims. The batch of 29 came back as a bare
+    top-level list; the batch of 14 came back under 'claims', the key the
+    *request* had used. Both carried real verdicts, and both were thrown away.
+    """
+
+    @patch("modules.fact_checker.make_client")
+    @patch("modules.fact_checker.generate_with_retry")
+    def test_a_bare_top_level_list_is_read(self, mock_gen, mock_make_client):
+        mock_gen.return_value = _response(json.dumps([
+            {"index": 0, "verdict": "likely_accurate", "reasoning": "ok"},
+            {"index": 1, "verdict": "likely_inaccurate", "reasoning": "no"},
+        ]))
+        results = fact_check_claims(["a", "b"])
+        self.assertEqual(mock_gen.call_count, 1)  # no split-and-retry
+        self.assertEqual([r.verdict for r in results],
+                         ["likely_accurate", "likely_inaccurate"])
+
+    @patch("modules.fact_checker.make_client")
+    @patch("modules.fact_checker.generate_with_retry")
+    def test_the_request_key_echoed_back_is_read(self, mock_gen, mock_make_client):
+        mock_gen.return_value = _response(json.dumps({"claims": [
+            {"index": 0, "verdict": "likely_accurate", "reasoning": "ok"},
+            {"index": 1, "verdict": "unverifiable", "reasoning": "hmm"},
+        ]}))
+        results = fact_check_claims(["a", "b"])
+        self.assertEqual(mock_gen.call_count, 1)
+        self.assertEqual([r.verdict for r in results],
+                         ["likely_accurate", "unverifiable"])
+
+    @patch("modules.fact_checker.make_client")
+    @patch("modules.fact_checker.generate_with_retry")
+    def test_two_list_valued_keys_are_refused_rather_than_guessed(
+            self, mock_gen, mock_make_client):
+        # Picking one of these would be invention, so the batch splits and
+        # then falls back to the safe default.
+        mock_gen.return_value = _response(json.dumps({
+            "drafts": [{"index": 0, "verdict": "likely_accurate"}],
+            "final": [{"index": 0, "verdict": "likely_inaccurate"}],
+        }))
+        results = fact_check_claims(["a", "b"])
+        self.assertTrue(all(r.verdict == "unverifiable" for r in results))
+        self.assertTrue(all(r.requires_human_review for r in results))
+
+    @patch("modules.fact_checker.make_client")
+    @patch("modules.fact_checker.generate_with_retry")
+    def test_a_bare_list_still_cannot_invent_a_missing_answer(
+            self, mock_gen, mock_make_client):
+        # One result for two claims. The envelope is now readable, which does
+        # not make the answer complete: the batch must still split rather than
+        # map that single verdict onto both claims.
+        mock_gen.return_value = _response(json.dumps([
+            {"index": 0, "verdict": "likely_accurate", "reasoning": "ok"},
+        ]))
+        results = fact_check_claims(["a", "b"])
+        self.assertEqual(len(results), 2)
+        self.assertGreater(mock_gen.call_count, 1)  # refused as a batch of two
 
 
 class FactCheckBatchingMathTests(unittest.TestCase):
