@@ -1,9 +1,13 @@
 """Stage 5: Whisper Subtitles — word-by-word animated captions (MrBeast / Hormozi style)."""
 
+import ctypes
+import gc
 import logging
 from pathlib import Path
 
 import whisper
+
+from modules.resource_monitor import process_rss_mb
 
 from config import (
     OUTPUT_DIR,
@@ -33,6 +37,42 @@ class SubtitleGenerator:
             logger.info("Loading Whisper model '%s'...", WHISPER_MODEL)
             self._model = whisper.load_model(WHISPER_MODEL)
         return self._model
+
+    def release_model(self) -> None:
+        """Drop the Whisper model once transcription is done.
+
+        The generator used to stay alive through the composite: `_model` is
+        cached on the instance, main.py holds that instance, and the render
+        happens two stages later. So Whisper's weights — 'base' is ~74M
+        parameters held as fp32, plus torch's own runtime — sat in the process
+        for the whole of the stage that has twice been killed, for a model no
+        later stage uses.
+
+        Dropping the reference frees the tensors, but glibc keeps the freed
+        arenas mapped, so RSS often does not fall until malloc_trim hands them
+        back. That call is Linux/glibc-only and guarded; where it is missing
+        the collection still happens and only the return to the OS is delayed.
+
+        The before/after RSS is logged, because "this frees memory" is a claim
+        that should be checked against the machine rather than asserted.
+        """
+        if self._model is None:
+            return
+        before = process_rss_mb()
+        self._model = None
+        gc.collect()
+        try:
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
+        except (OSError, AttributeError):
+            pass  # not glibc — the memory is freed, just not yet returned
+        after = process_rss_mb()
+        if before is None or after is None:
+            logger.info("Released the Whisper model")
+        else:
+            logger.info(
+                "Released the Whisper model: process RSS %.0f MB -> %.0f MB",
+                before, after,
+            )
 
     def transcribe(self, audio_path: Path) -> list[dict]:
         """
