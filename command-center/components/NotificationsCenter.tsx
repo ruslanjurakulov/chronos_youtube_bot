@@ -3,10 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { buildNotifications, type Notification, type NotificationKind } from "@/lib/intelligence";
-import { relativeTime } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/context";
 import type { Dictionary } from "@/lib/i18n";
 import type { FeedbackSignalRow, SystemEventRow } from "@/lib/types";
+import { relativeTime, storedMs } from "@/lib/format";
 
 const SEEN_KEY = "chronos_notif_seen";
 const CLEARED_KEY = "chronos_notif_cleared";
@@ -87,10 +87,10 @@ export function NotificationsCenter() {
   }, [open]);
 
   const notifications = useMemo(
-    () => buildNotifications(events, signals, 30).filter((n) => new Date(n.ts).getTime() > cleared),
+    () => buildNotifications(events, signals, 30).filter((n) => (storedMs(n.ts) ?? 0) > cleared),
     [events, signals, cleared],
   );
-  const unread = useMemo(() => notifications.filter((n) => new Date(n.ts).getTime() > seen).length, [notifications, seen]);
+  const unread = useMemo(() => notifications.filter((n) => (storedMs(n.ts) ?? 0) > seen).length, [notifications, seen]);
 
   function toggle() {
     const next = !open;

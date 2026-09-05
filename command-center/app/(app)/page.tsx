@@ -10,13 +10,13 @@ import { DailyMission } from "@/components/DailyMission";
 import { NextAction } from "@/components/NextAction";
 import { Widget } from "@/components/dashboard/Widget";
 import { CustomizeButton } from "@/components/dashboard/CustomizeButton";
-import { isToday, num, relativeTime, statusTone } from "@/lib/format";
 import { inferNextStage, dailyMission } from "@/lib/intelligence";
 import { getDictionary } from "@/lib/i18n/server";
 import { fetchTopicScores, getChannelSelection } from "@/lib/channels-server";
 import { scopeQuery } from "@/lib/channels";
 import { fmt } from "@/lib/i18n";
 import type { FeedbackSignalRow, MetricsSnapshotRow, SystemEventRow, TopicPerformanceRow, VideoRow } from "@/lib/types";
+import { isToday, num, relativeTime, statusTone, storedMs } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -56,7 +56,7 @@ export default async function CommandCenter() {
 
   const publishedToday = videos.filter((v) => isToday(v.published_at)).length;
   const errors24h = events.filter(
-    (e) => statusTone(e.status) === "fail" && Date.now() - new Date(e.ts).getTime() < DAY_MS,
+    (e) => statusTone(e.status) === "fail" && Date.now() - (storedMs(e.ts) ?? 0) < DAY_MS,
   ).length;
   const runningAgents = Array.from(
     new Set(events.filter((e) => statusTone(e.status) === "run").map((e) => e.agent)),

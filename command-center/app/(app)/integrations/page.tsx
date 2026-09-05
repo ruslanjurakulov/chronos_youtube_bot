@@ -2,12 +2,12 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, StatusPill } from "@/components/ui";
-import { relativeTime } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
 import { getChannelSelection } from "@/lib/channels-server";
 import { scopeQuery } from "@/lib/channels";
 import { fmt, type Dictionary } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
+import { relativeTime, storedMs } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -41,7 +41,7 @@ function derive(
 ): Health {
   const lastOk = latest(events, ok);
   const lastFail = latest(events, fail, true);
-  const recent = lastOk && Date.now() - new Date(lastOk).getTime() < RECENT_MS;
+  const recent = lastOk && Date.now() - (storedMs(lastOk) ?? 0) < RECENT_MS;
   if (recent) return { name, detailKey: "recentSuccess", tone: "ok", status: t.status.healthy, lastSuccess: lastOk };
   if (lastFail) return { name, detailKey: "recentFailures", tone: "warn", status: t.status.degraded, lastSuccess: lastOk };
   if (lastOk) return { name, detailKey: "stale", tone: "idle", status: t.status.unknown, lastSuccess: lastOk };

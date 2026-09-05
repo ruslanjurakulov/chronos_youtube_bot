@@ -22,6 +22,7 @@ import type {
   SystemEventRow,
   VideoRow,
 } from "@/lib/types";
+import { storedMs } from "@/lib/format";
 
 export const CHANNEL_COOKIE = "chronos_channel";
 
@@ -132,7 +133,7 @@ export function channelHealth(
   now: number = Date.now(),
 ): ChannelHealth {
   const mine = events.filter((e) => e.channel_id === channel.channel_id);
-  const recent = mine.filter((e) => now - new Date(e.ts).getTime() < 2 * DAY_MS);
+  const recent = mine.filter((e) => now - (storedMs(e.ts) ?? 0) < 2 * DAY_MS);
 
   // -- YouTube: exactly what the credential mirror reported.
   let youtube: SubsystemHealth = { key: "youtube", tone: "idle", detail: "" };
@@ -252,7 +253,7 @@ export function channelStats(
       .sort();
     const span =
       dates.length >= 2
-        ? (new Date(dates[dates.length - 1]).getTime() - new Date(dates[0]).getTime()) / DAY_MS
+        ? (new Date(dates[dates.length - 1]).getTime() - (storedMs(dates[0]) ?? 0)) / DAY_MS
         : null;
 
     return {

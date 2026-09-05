@@ -2,13 +2,13 @@ import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, EmptyState, StatusPill } from "@/components/ui";
-import { relativeTime, statusTone, timeOfDay } from "@/lib/format";
 import { getDictionary } from "@/lib/i18n/server";
 import { getChannelSelection } from "@/lib/channels-server";
 import { scopeQuery } from "@/lib/channels";
 import { fmt, type Dictionary } from "@/lib/i18n";
 import type { SystemEventRow } from "@/lib/types";
 import { StageStrip, StageLegend, type StageState, type StageView } from "@/components/pipeline/StageStrip";
+import { relativeTime, statusTone, storedMs, timeOfDay } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -111,7 +111,7 @@ function deriveSystemPasses(events: SystemEventRow[]): SystemPass[] {
     const existing = byEvent.get(e.event);
     if (existing) {
       existing.count += 1;
-      if (new Date(e.ts).getTime() > new Date(existing.lastTs).getTime()) {
+      if (new Date(e.ts).getTime() > (storedMs(existing.lastTs) ?? 0)) {
         existing.lastTs = e.ts;
         existing.tone = statusTone(e.status);
         existing.agent = e.agent;
@@ -121,7 +121,7 @@ function deriveSystemPasses(events: SystemEventRow[]): SystemPass[] {
     }
   }
   return Array.from(byEvent.values()).sort(
-    (a, b) => new Date(b.lastTs).getTime() - new Date(a.lastTs).getTime(),
+    (a, b) => new Date(b.lastTs).getTime() - (storedMs(a.lastTs) ?? 0),
   );
 }
 
@@ -219,7 +219,7 @@ export default async function PipelinePage() {
                     : p.tone === "run"
                       ? "var(--color-primary)"
                       : "var(--color-idle)";
-              const stale = Date.now() - new Date(p.lastTs).getTime() > HEARTBEAT_MS;
+              const stale = Date.now() - (storedMs(p.lastTs) ?? 0) > HEARTBEAT_MS;
               return (
                 <li key={p.event} className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-[var(--color-panel-2)]">
                   <span className="glow-dot size-1.5 shrink-0 rounded-full" style={{ color, background: color }} />

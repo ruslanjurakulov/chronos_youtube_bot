@@ -19,6 +19,7 @@ import type {
   SystemEventRow,
   TopicPerformanceRow,
 } from "@/lib/types";
+import { storedMs } from "@/lib/format";
 
 export type Confidence = "LOW" | "MEDIUM" | "HIGH";
 
@@ -123,14 +124,14 @@ export function deriveOutcome(
   events: SystemEventRow[],
   now: number = Date.now(),
 ): DecisionOutcome {
-  const start = new Date(decisionTs).getTime();
-  const end = nextDecisionTs ? new Date(nextDecisionTs).getTime() : Number.POSITIVE_INFINITY;
+  const start = (storedMs(decisionTs) ?? 0);
+  const end = nextDecisionTs ? (storedMs(nextDecisionTs) ?? 0) : Number.POSITIVE_INFINITY;
   if (Number.isNaN(start)) return "UNKNOWN";
 
   let sawFailure = false;
   let sawActivity = false;
   for (const e of events) {
-    const t = new Date(e.ts).getTime();
+    const t = (storedMs(e.ts) ?? 0);
     if (Number.isNaN(t) || t < start || t >= end) continue;
     sawActivity = true;
     if (e.event === "video.published" || e.event === "upload.completed") return "PUBLISHED";

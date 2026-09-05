@@ -4,8 +4,8 @@
  * (system_events, videos, metrics_snapshots, feedback_signals). Nothing here
  * invents state — absence is reported as "idle" / empty / N/A by the callers.
  */
-import { statusTone } from "@/lib/format";
 import type { FeedbackSignalRow, MetricsSnapshotRow, SystemEventRow, VideoRow } from "@/lib/types";
+import { statusTone, storedMs } from "@/lib/format";
 
 export type EventCategory = "system" | "ai" | "video" | "analytics" | "error";
 
@@ -54,7 +54,7 @@ export function deriveCoreState(events: SystemEventRow[], connected: boolean): C
   if (!e) return "idle";
   if (statusTone(e.status) === "fail" || (e.event ?? "").endsWith(".failed")) return "error";
 
-  const fresh = Date.now() - new Date(e.ts).getTime() < ACTIVE_MS;
+  const fresh = Date.now() - (storedMs(e.ts) ?? 0) < ACTIVE_MS;
   if (!fresh) return "idle";
 
   const ev = (e.event ?? "").toLowerCase();
@@ -88,7 +88,7 @@ function latest(events: SystemEventRow[], match: (e: SystemEventRow) => boolean)
 }
 
 function healthFrom(okTs: string | null, failTs: string | null): Subsystem["state"] & string {
-  if (okTs && Date.now() - new Date(okTs).getTime() < RECENT_MS) return "operational";
+  if (okTs && Date.now() - (storedMs(okTs) ?? 0) < RECENT_MS) return "operational";
   if (failTs) return "degraded";
   if (okTs) return "unknown";
   return "unknown";
@@ -113,7 +113,7 @@ export function subsystemHealth(events: SystemEventRow[], dbOk: boolean, connect
   const ytState = healthFrom(okYt, failYt);
   const aiState = healthFrom(okAi, failAi);
   const schedState: Subsystem["state"] =
-    okHeartbeat && Date.now() - new Date(okHeartbeat).getTime() < SCHED_MS ? "operational" : okHeartbeat ? "unknown" : "unknown";
+    okHeartbeat && Date.now() - (storedMs(okHeartbeat) ?? 0) < SCHED_MS ? "operational" : okHeartbeat ? "unknown" : "unknown";
 
   const subs: Subsystem[] = [
     { key: "supabase", state: dbOk ? "operational" : "offline", tone: dbOk ? "ok" : "fail", lastSuccess: dbOk ? new Date().toISOString() : null },
@@ -239,6 +239,6 @@ export function buildNotifications(events: SystemEventRow[], signals: FeedbackSi
     }
   }
   return out
-    .sort((a, b) => new Date(b.ts).getTime() - new Date(a.ts).getTime())
+    .sort((a, b) => new Date(b.ts).getTime() - (storedMs(a.ts) ?? 0))
     .slice(0, limit);
 }
