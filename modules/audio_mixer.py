@@ -58,6 +58,10 @@ class AudioMixer:
         self.main_edge_voice = agent.edge_tts_voice if agent else EDGE_TTS_VOICE
         self.work_dir = OUTPUT_DIR / topic_slug / "audio"
         self.work_dir.mkdir(parents=True, exist_ok=True)
+        # Characters actually sent to the TTS vendor this run. Cache hits are
+        # deliberately excluded: a re-used segment was already paid for, and
+        # counting it again would overstate the run's cost.
+        self.characters_synthesized = 0
 
     # ------------------------------------------------------------------ TTS
 
@@ -94,6 +98,7 @@ class AudioMixer:
         out = self.work_dir / f"seg_{digest}_{voice_role}.mp3"
         if out.exists():
             return out
+        self.characters_synthesized += len(text)
         if self.tts_provider == "elevenlabs":
             vid = self.main_elevenlabs_voice if voice_role == "main" else "D38z5RcWu1voky8WS1ja"
             self._tts_elevenlabs(text, vid, out)

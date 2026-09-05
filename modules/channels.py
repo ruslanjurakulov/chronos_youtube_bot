@@ -145,6 +145,11 @@ class AgentConfig:
     competitor_channel_ids: tuple = field(
         default_factory=lambda: tuple(_env_competitor_ids())
     )
+    # Which pre-publish checks are live for this channel. Empty means every
+    # check is on — see modules/publish_gate.GateConfig, where only an explicit
+    # `false` turns one off, so a config typo cannot silently disable a safety
+    # check.
+    publish_gate: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -157,6 +162,7 @@ class AgentConfig:
             "niche_rules": self.niche_rules,
             "visual_style_prompt": self.visual_style_prompt,
             "competitor_channel_ids": list(self.competitor_channel_ids),
+            "publish_gate": dict(self.publish_gate),
         }
 
     @staticmethod
@@ -179,6 +185,7 @@ class AgentConfig:
             niche_rules=d.get("niche_rules") or "",
             visual_style_prompt=d.get("visual_style_prompt") or "",
             competitor_channel_ids=_clean_ids(d.get("competitor_channel_ids")),
+            publish_gate=dict(d.get("publish_gate") or {}),
         )
 
 

@@ -67,6 +67,10 @@ UPLOAD_STARTED = "upload.started"
 UPLOAD_COMPLETED = "upload.completed"
 UPLOAD_FAILED = "upload.failed"
 VIDEO_PUBLISHED = "video.published"
+# The pre-publish gate (Phase 6). `publish.blocked` is the only event in this
+# vocabulary that records something the pipeline REFUSED to do.
+PUBLISH_BLOCKED = "publish.blocked"
+PUBLISH_ALLOWED = "publish.allowed"
 # Channels (Phase 5). Lifecycle only — the per-stage events above already
 # carry a channel_id, so there is no channel.job.* duplicate of job.*.
 CHANNEL_CREATED = "channel.created"

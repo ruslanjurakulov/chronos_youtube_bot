@@ -50,6 +50,30 @@ def _isoformat(value) -> str:
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
+def _optional_int(value):
+    """int(value), or None when it is absent or unparseable.
+
+    None matters: a metric YouTube did not return is *unknown*, and coercing it
+    to 0 would record "no impressions" for a video nobody measured.
+    """
+    if value is None:
+        return None
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return None
+
+
+def _optional_float(value):
+    """float(value), or None. Same reasoning as _optional_int."""
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class IntelligencePoller:
     """Runs the analytics/competitor/trend intelligence modules and persists
     their results via StateStore. The single entry point future scheduled
@@ -146,6 +170,10 @@ class IntelligencePoller:
                 continue
             try:
                 metrics = self.analytics_client.video_performance(video_id, start_date, end_date)
+                # Click-through, asked for separately so an unsupported metric
+                # name degrades to "not measured" instead of losing the whole
+                # snapshot. {} here means unknown CTR, never zero CTR.
+                ctr = self.analytics_client.video_ctr(video_id, start_date, end_date)
                 self.state_store.record_metrics_snapshot(
                     video_id=video_id,
                     snapshot_date=snapshot_date,
@@ -154,7 +182,10 @@ class IntelligencePoller:
                     comment_count=int(metrics.get("comments", 0) or 0),
                     watch_time_minutes=float(metrics.get("estimatedMinutesWatched", 0.0) or 0.0),
                     average_view_duration_seconds=float(metrics.get("averageViewDuration", 0.0) or 0.0),
+                    impressions=_optional_int(ctr.get("impressions")),
+                    impression_ctr=_optional_float(ctr.get("impressionClickThroughRate")),
                 )
+                self._record_retention(video_id, start_date, end_date)
                 written += 1
             except Exception:
                 logger.warning(
@@ -257,6 +288,37 @@ class IntelligencePoller:
             return []
         self._last_trending_snapshots_written = self._persist_trending_snapshots(results, region_code, category_id)
         return results
+
+    def _record_retention(self, video_id: str, start_date: str, end_date: str) -> int:
+        """Store this video's retention curve. Returns points written.
+
+        Wrapped separately from the metrics snapshot above: retention is the
+        newest and least-guaranteed report of the three, and a channel that
+        cannot produce it must still get its views recorded.
+        """
+        try:
+            curve = self.analytics_client.video_retention(video_id, start_date, end_date)
+        except Exception:
+            logger.warning("Retention poll failed for %s; no curve recorded", video_id, exc_info=True)
+            return 0
+        written = 0
+        for row in curve:
+            elapsed = _optional_float(row.get("elapsedVideoTimeRatio"))
+            if elapsed is None:
+                continue
+            try:
+                self.state_store.record_retention_point(
+                    video_id=video_id,
+                    elapsed_ratio=elapsed,
+                    watch_ratio=_optional_float(row.get("audienceWatchRatio")),
+                    measured_date=end_date,
+                )
+                written += 1
+            except Exception:
+                logger.warning("Failed to persist retention point for %s", video_id, exc_info=True)
+        if written:
+            logger.info("Retention: %d point(s) recorded for %s", written, video_id)
+        return written
 
     # -- orchestration --------------------------------------------------
 

@@ -15,6 +15,13 @@ export interface VideoRow {
   privacy: string | null;
   category_id: string | null;
   local_path: string | null;
+  /**
+   * Which A/B arm this video shipped on ("A" | "B"), or null for anything
+   * published before migration 0002. Null is "not part of the experiment",
+   * which is why the experiment excludes it rather than assuming A.
+   */
+  thumbnail_variant: string | null;
+  title_variant: string | null;
 }
 
 export interface MetricsSnapshotRow {
@@ -25,6 +32,13 @@ export interface MetricsSnapshotRow {
   comment_count: number | null;
   watch_time_minutes: number | null;
   average_view_duration_seconds: number | null;
+  /**
+   * Click-through as YouTube reports it. Null means UNKNOWN — the video has
+   * not been polled, or the Analytics API did not return the metric. It never
+   * means "nobody clicked", so no aggregate here may read it as zero.
+   */
+  impressions: number | null;
+  impression_ctr: number | null;
 }
 
 export interface TopicPerformanceRow {
@@ -204,4 +218,38 @@ export interface ChannelTopicPerformanceRow {
   avg_views_per_day: number | null;
   reason: string | null;
   updated_at: string;
+}
+
+/**
+ * Measurement (Phase 6). See supabase/migrations/0002_measurement.sql.
+ */
+
+/**
+ * One measured quantity consumed by one video.
+ *
+ * `quantity` is always a fact the pipeline observed. `estimated_usd` is only
+ * present when the operator configured a rate for that unit (CHRONOS_PRICE_*);
+ * null means "we know how much was used, we do not claim to know the price".
+ * See modules/cost_ledger.py.
+ */
+export interface VideoCostRow {
+  id: number;
+  video_id: string | null;
+  channel_id: string;
+  slug: string | null;
+  unit: string;
+  quantity: number;
+  stage: string | null;
+  estimated_usd: number | null;
+  recorded_at: string;
+}
+
+/** One point of a video's audience-retention curve. */
+export interface RetentionPointRow {
+  video_id: string;
+  /** 0.0-1.0 through the video. */
+  elapsed_ratio: number;
+  /** Share of viewers still watching there, or null when not measured. */
+  watch_ratio: number | null;
+  measured_date: string;
 }
