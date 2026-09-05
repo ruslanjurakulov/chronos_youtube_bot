@@ -62,6 +62,8 @@ function video(over: Partial<VideoRow> & { video_id: string; channel_id: string 
     local_path: null,
     thumbnail_variant: over.thumbnail_variant ?? null,
     title_variant: over.title_variant ?? null,
+    video_format: over.video_format ?? "long",
+    parent_video_id: over.parent_video_id ?? null,
   };
 }
 

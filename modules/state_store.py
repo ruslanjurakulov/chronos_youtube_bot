@@ -206,6 +206,11 @@ _COLUMN_MIGRATIONS = (
     # video has *unknown* click-through, which is not the same as none.
     ("metrics_snapshots", "impressions", "INTEGER"),
     ("metrics_snapshots", "impression_ctr", "REAL"),
+    # Shorts: which format a row is, and which long video a Short was cut from.
+    # Defaulted to 'long' because every existing row is one — that is a fact
+    # about the history, not an assumption.
+    ("videos", "video_format", "TEXT NOT NULL DEFAULT 'long'"),
+    ("videos", "parent_video_id", "TEXT"),
 )
 
 # Kept as a literal rather than imported from modules.channels so the storage
@@ -285,6 +290,8 @@ class StateStore:
         channel_id: str = DEFAULT_CHANNEL_ID,
         thumbnail_variant: str = "",
         title_variant: str = "",
+        video_format: str = "long",
+        parent_video_id: str = "",
     ):
         """Insert a video row, or overwrite it if video_id already exists.
 
@@ -296,8 +303,9 @@ class StateStore:
                 """
                 INSERT INTO videos
                     (video_id, topic, title, slug, published_at, privacy, category_id,
-                     local_path, channel_id, thumbnail_variant, title_variant)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     local_path, channel_id, thumbnail_variant, title_variant,
+                     video_format, parent_video_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(video_id) DO UPDATE SET
                     topic=excluded.topic,
                     title=excluded.title,
@@ -308,10 +316,13 @@ class StateStore:
                     local_path=excluded.local_path,
                     channel_id=excluded.channel_id,
                     thumbnail_variant=excluded.thumbnail_variant,
-                    title_variant=excluded.title_variant
+                    title_variant=excluded.title_variant,
+                    video_format=excluded.video_format,
+                    parent_video_id=excluded.parent_video_id
                 """,
                 (video_id, topic, title, slug, published_at, privacy, category_id,
-                 local_path, channel_id, thumbnail_variant, title_variant),
+                 local_path, channel_id, thumbnail_variant, title_variant,
+                 video_format or "long", parent_video_id),
             )
         logger.info("Recorded video: %s (%s)", video_id, title or topic)
 

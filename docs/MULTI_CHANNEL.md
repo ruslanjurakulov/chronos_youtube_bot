@@ -22,7 +22,7 @@ channel. Multi-channel is opt-in.
 | `channel_id` | A validated slug (`^[a-z0-9][a-z0-9-]{1,38}$`). Permanent — it keys every row. |
 | `name`, `niche` | Identity. `niche` is the default topic area for its runs. |
 | `status` | `ACTIVE` or `PAUSED`. Anything unrecognised reads as `PAUSED`. |
-| `agent` (`AgentConfig`) | Language, target duration, TTS provider, narrator voice, content strategy, niche rules, visual style. |
+| `agent` (`AgentConfig`) | Language, target duration, TTS provider, narrator voice, content strategy, niche rules, visual style, which competitors it watches, which pre-publish checks are live (`publish_gate`), and whether it publishes Shorts (`shorts`). The last two are Phase 6 — see `docs/MEASUREMENT.md`. |
 | `schedule` (`ScheduleConfig`) | `publish_hour_utc`, `enabled`. |
 | `credential` (`CredentialRef`) | Provider, the *reference* to a secret, and the public YouTube channel id. **Never a token.** |
 

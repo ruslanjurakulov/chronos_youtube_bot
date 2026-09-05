@@ -4,6 +4,10 @@
 *.json
 !package.json
 !samples/*.json
+# The example channel config. It holds no credential by construction —
+# credential_ref names a secret, it never carries one — and the docs point
+# at it, so the blanket rule above was hiding a file that should ship.
+!channels.example.json
 # Command Center (Next.js app) config — no credentials, and Vercel needs the
 # lockfile for reproducible `npm ci` builds.
 !command-center/tsconfig.json

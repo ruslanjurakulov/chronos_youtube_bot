@@ -150,6 +150,11 @@ class AgentConfig:
     # `false` turns one off, so a config typo cannot silently disable a safety
     # check.
     publish_gate: dict = field(default_factory=dict)
+    # Whether this channel also publishes a vertical Short cut from each video,
+    # and how long it runs. Empty (the default) means no Shorts: a short is a
+    # second videos.insert, ~1600 more quota units out of 10,000 a day, so it
+    # is opted into rather than out of. See modules/shorts.ShortsConfig.
+    shorts: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -163,6 +168,7 @@ class AgentConfig:
             "visual_style_prompt": self.visual_style_prompt,
             "competitor_channel_ids": list(self.competitor_channel_ids),
             "publish_gate": dict(self.publish_gate),
+            "shorts": dict(self.shorts),
         }
 
     @staticmethod
@@ -186,6 +192,7 @@ class AgentConfig:
             visual_style_prompt=d.get("visual_style_prompt") or "",
             competitor_channel_ids=_clean_ids(d.get("competitor_channel_ids")),
             publish_gate=dict(d.get("publish_gate") or {}),
+            shorts=dict(d.get("shorts") or {}),
         )
 
 

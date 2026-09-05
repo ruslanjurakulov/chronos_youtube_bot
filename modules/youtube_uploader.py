@@ -174,21 +174,25 @@ class YouTubeUploader:
         thumbnail_path: Path | None = None,
         privacy: str | None = None,
         title_override: str | None = None,
+        description_override: str | None = None,
     ) -> dict:
         """Upload one video.
 
         `title_override` ships the script's alternative title (the B arm of the
         A/B test). None keeps `script.title`, which is what every caller did
-        before the experiment existed.
+        before the experiment existed. `description_override` exists for the
+        same reason on the description — a Short points at the long video it
+        was cut from, which the script's own description cannot know about.
         """
         privacy = privacy or YOUTUBE_PRIVACY
         tags = self._trim_tags(script.tags)
         title = (title_override or script.title or "").strip() or script.title
+        description = description_override if description_override is not None else script.description
 
         body = {
             "snippet": {
                 "title": title,
-                "description": script.description,
+                "description": description,
                 "tags": tags,
                 "categoryId": YOUTUBE_CATEGORY_ID,
                 "defaultLanguage": "en",

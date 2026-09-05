@@ -71,6 +71,11 @@ VIDEO_PUBLISHED = "video.published"
 # vocabulary that records something the pipeline REFUSED to do.
 PUBLISH_BLOCKED = "publish.blocked"
 PUBLISH_ALLOWED = "publish.allowed"
+# Shorts. A short only ever exists downstream of a long video that published,
+# so `short.failed` never means the run failed — the video is already out.
+SHORT_STARTED = "short.started"
+SHORT_COMPLETED = "short.completed"
+SHORT_FAILED = "short.failed"
 # Channels (Phase 5). Lifecycle only — the per-stage events above already
 # carry a channel_id, so there is no channel.job.* duplicate of job.*.
 CHANNEL_CREATED = "channel.created"
