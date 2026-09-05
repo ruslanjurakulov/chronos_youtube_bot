@@ -75,7 +75,7 @@ export function DecisionList({
                 <button
                   type="button"
                   onClick={() => setOpen(isOpen ? null : d.id)}
-                  className="press mono rounded border border-[var(--color-border)] px-2 py-0.5 text-[9px] uppercase tracking-widest text-[var(--color-muted)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary-dim)]"
+                  className="press pill border border-[var(--color-border)] px-3 py-1 text-[11px] font-light text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
                 >
                   {t.ops.explainWhy}
                 </button>

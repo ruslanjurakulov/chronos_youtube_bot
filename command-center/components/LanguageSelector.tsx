@@ -43,7 +43,7 @@ export function LanguageSelector() {
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t.common.language}
-        className="press flex h-8 items-center gap-1.5 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-2.5 text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:border-[var(--color-primary-dim)]"
+        className="press pill flex h-9 items-center gap-2 border border-[var(--color-border)] px-3.5 text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-fg)]"
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
           <circle cx="12" cy="12" r="10" />
@@ -55,7 +55,7 @@ export function LanguageSelector() {
       {open && (
         <ul
           role="listbox"
-          className="reveal absolute right-0 z-50 mt-1.5 w-36 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-1 shadow-[var(--shadow-elevated)]"
+          className="drawer-enter absolute right-0 z-50 mt-3 overflow-hidden w-40 rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] p-2 shadow-[var(--shadow-elevated)]"
         >
           {LOCALES.map((l) => {
             const active = l.code === locale;
@@ -66,7 +66,7 @@ export function LanguageSelector() {
                   role="option"
                   aria-selected={active}
                   onClick={() => choose(l.code)}
-                  className="press flex w-full items-center justify-between rounded-md px-2.5 py-1.5 text-left text-sm hover:bg-[var(--color-panel-2)]"
+                  className="press pill flex w-full items-center justify-between px-4 py-2.5 text-left text-[14px] font-light hover:bg-[var(--color-panel-2)]"
                   style={{ color: active ? "var(--color-primary)" : "var(--color-fg)" }}
                 >
                   <span>{l.label}</span>

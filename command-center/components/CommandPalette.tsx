@@ -190,9 +190,9 @@ export function CommandPalette() {
   return (
     <>
       {open && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 p-4 pt-[12vh] backdrop-blur-sm" onClick={() => setOpen(false)}>
+        <div className="scrim-enter fixed inset-0 z-[100] flex items-start justify-center bg-black/72 p-4 pt-[12vh] backdrop-blur-sm" onClick={() => setOpen(false)}>
           <div
-            className="reveal panel w-full max-w-xl overflow-hidden shadow-[var(--shadow-elevated)]"
+            className="sheet-enter w-full max-w-xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-elevated)]"
             onClick={(e) => e.stopPropagation()}
           >
             <input
@@ -216,7 +216,7 @@ export function CommandPalette() {
                     type="button"
                     onMouseEnter={() => setActive(i)}
                     onClick={() => choose(item)}
-                    className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm"
+                    className="pill flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left text-sm font-light transition-colors"
                     style={{ background: i === active ? "var(--color-panel-2)" : "transparent" }}
                   >
                     <span className="min-w-0 truncate text-[var(--color-fg)]">{item.label}</span>
@@ -235,8 +235,8 @@ export function CommandPalette() {
       )}
 
       {help && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => setHelp(false)}>
-          <div className="reveal panel w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="scrim-enter fixed inset-0 z-[100] flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm" onClick={() => setHelp(false)}>
+          <div className="sheet-enter w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] p-6" onClick={(e) => e.stopPropagation()}>
             <h2 className="font-display text-sm font-semibold">{t.ops.shortcutsTitle}</h2>
             <dl className="mt-3 flex flex-col gap-2">
               {[

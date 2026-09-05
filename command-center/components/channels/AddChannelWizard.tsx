@@ -136,7 +136,7 @@ export function AddChannelWizard() {
         <button
           type="button"
           onClick={() => router.push("/channels")}
-          className="press rounded-md border border-[var(--color-primary-dim)] px-3 py-1.5 mono text-[10px] uppercase tracking-widest text-[var(--color-primary)]"
+          className="btn-sky pill px-5 py-2.5 text-[13px]"
         >
           {t.channels.title} →
         </button>
@@ -344,7 +344,7 @@ export function AddChannelWizard() {
           type="button"
           onClick={() => setStep((s) => Math.max(0, s - 1))}
           disabled={step === 0 || busy}
-          className="press rounded-md border border-[var(--color-border)] px-3 py-1.5 mono text-[10px] uppercase tracking-widest text-[var(--color-muted)] disabled:opacity-40"
+          className="btn-sky ghost pill px-5 py-2.5 text-[13px] disabled:opacity-40"
         >
           {t.channels.back}
         </button>
@@ -353,7 +353,7 @@ export function AddChannelWizard() {
             type="button"
             onClick={() => setStep((s) => s + 1)}
             disabled={!canAdvance}
-            className="press rounded-md border border-[var(--color-primary-dim)] px-3 py-1.5 mono text-[10px] uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-40"
+            className="btn-sky pill px-5 py-2.5 text-[13px] disabled:opacity-40"
           >
             {t.channels.next}
           </button>
@@ -362,7 +362,7 @@ export function AddChannelWizard() {
             type="button"
             onClick={create}
             disabled={busy || !idValid || !name.trim()}
-            className="press rounded-md border border-[var(--color-primary-dim)] bg-[var(--color-panel-2)] px-3 py-1.5 mono text-[10px] uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-40"
+            className="btn-sky is-solid pill px-5 py-2.5 text-[13px] disabled:opacity-40"
           >
             {busy ? t.channels.creating : t.channels.create}
           </button>

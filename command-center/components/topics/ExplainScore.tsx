@@ -46,13 +46,13 @@ export function ExplainScore({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="press mono rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[9px] uppercase tracking-widest text-[var(--color-muted)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary-dim)]"
+        className="press pill border border-[var(--color-border)] px-3 py-1 text-[11px] font-light text-[var(--color-muted)] transition-colors hover:border-[var(--color-primary)] hover:text-[var(--color-primary)]"
       >
         {t.ops.explainWhy}
       </button>
 
       {open && (
-        <div className="reveal absolute right-0 z-40 mt-1.5 w-72 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-3 text-left shadow-[var(--shadow-elevated)]">
+        <div className="drawer-enter absolute right-0 z-40 mt-3 w-72 rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] p-4 text-left shadow-[var(--shadow-elevated)]">
           <div className="mb-2 flex items-center justify-between">
             <span className="mono text-[10px] font-bold uppercase tracking-widest text-[var(--color-fg)]">{t.ops.explainTitle}</span>
             <span className="mono text-sm font-bold tabular-nums" style={{ color: score >= 50 ? "var(--color-ok)" : "var(--color-warn)" }}>

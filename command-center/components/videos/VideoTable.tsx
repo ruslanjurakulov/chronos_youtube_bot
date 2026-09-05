@@ -57,7 +57,7 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
               key={p}
               type="button"
               onClick={() => setPrivacy(p)}
-              className="press mono rounded-md px-2.5 py-1.5 text-[10px] uppercase tracking-widest"
+              className="press pill px-2.5 py-1.5 text-[10px] uppercase tracking-widest"
               style={{
                 background: privacy === p ? "var(--color-panel-2)" : "transparent",
                 color: privacy === p ? "var(--color-primary)" : "var(--color-muted)",

@@ -83,7 +83,7 @@ export function ChannelCard({
             type="button"
             onClick={toggleStatus}
             disabled={busy || pending}
-            className="press rounded-md border border-[var(--color-border)] px-2.5 py-1 mono text-[10px] uppercase tracking-widest text-[var(--color-muted)] hover:border-[var(--color-primary-dim)] hover:text-[var(--color-fg)] disabled:opacity-50"
+            className="btn-sky ghost pill px-4 py-2 text-[12px] disabled:opacity-50"
           >
             {busy ? t.channels.saving : active ? t.channels.pause : t.channels.activate}
           </button>

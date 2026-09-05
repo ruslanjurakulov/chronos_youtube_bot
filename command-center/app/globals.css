@@ -148,7 +148,7 @@ h1, h2, h3, .font-display {
 .panel {
   background: var(--color-panel);
   border: 1px solid var(--color-border);
-  border-radius: 0.7rem;
+  border-radius: 18px;
   box-shadow: var(--shadow-panel);
   transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.4s ease;
 }
@@ -334,13 +334,20 @@ h1, h2, h3, .font-display {
    in normal flow; the fill sits on its own layer behind it. */
 .btn-sky {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   isolation: isolate;
   overflow: hidden;
   color: var(--color-primary);
   border: 1px solid var(--color-primary);
   background: transparent;
+  cursor: pointer;
   transition: color 0.28s ease, box-shadow 0.28s ease, transform 0.12s ease;
 }
+.btn-sky:disabled { cursor: not-allowed; }
+.btn-sky:disabled::before { transform: translateY(101%); }
 .btn-sky::before {
   content: "";
   position: absolute;
@@ -363,6 +370,13 @@ h1, h2, h3, .font-display {
 }
 .btn-sky.is-solid::before { background: var(--color-fg); opacity: 0.14; }
 .btn-sky.is-solid:hover { color: var(--color-on-accent); }
+/* Quiet variant: a neutral edge until you point at it, then the accent. */
+.btn-sky.ghost {
+  border-color: var(--color-border);
+  color: var(--color-fg);
+}
+.btn-sky.ghost::before { background: var(--color-panel-2); }
+.btn-sky.ghost:hover { color: var(--color-primary); box-shadow: none; }
 /* The arrow leans into the direction of travel. */
 .btn-sky .btn-arrow { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.25, 1); }
 .btn-sky:hover .btn-arrow { transform: translateX(4px); }
