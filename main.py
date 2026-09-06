@@ -29,7 +29,7 @@ from config import OUTPUT_DIR, VIDEO_HEIGHT, VIDEO_WIDTH, YOUTUBE_CATEGORY_ID, Y
 from modules import event_log as events
 from modules import publish_gate
 from modules.ab_testing import choose_variant, variant_performance
-from modules.audio_mixer import AudioMixer
+from modules.audio_mixer import AudioMixer, VoiceUnavailable, verify_voice
 from modules.channels import ChannelContext, resolve_channel
 from modules.cost_ledger import (
     CostLedger, PEXELS_REQUESTS, RENDER_SECONDS, TTS_CHARACTERS, UPLOAD_BYTES,
@@ -219,6 +219,19 @@ def run(
     written = ensure_assets(verbose=False)
     if written:
         logger.info("Generated %d missing audio assets", written)
+
+    # ── Stage 0b: Can this channel's narrator actually speak?
+    # Checked here, before a single Gemini call, because the alternative is
+    # finding out at the audio stage — after topic, research, script and
+    # fact-check have been paid for. There is no fallback voice: see
+    # audio_mixer.verify_voice for why a wrong-voice video is worse than none.
+    try:
+        verify_voice(ctx)
+    except VoiceUnavailable as e:
+        logger.error("Narration is not configured for channel %s: %s", channel_id, e)
+        events.emit(events.AGENT_FAILED, agent="audio_mixer", status=events.STATUS_FAILED,
+                    channel_id=channel_id, metadata={"error": str(e), "stage": "preflight"})
+        raise
 
     # ── Stages 1-2: Topic and Script
     # A saved script skips both Gemini calls, so a crash in a later stage — or a
