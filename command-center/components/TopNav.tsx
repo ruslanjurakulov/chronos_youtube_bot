@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useI18n } from "@/lib/i18n/context";
+import { useChannelPath } from "@/lib/channels-client";
 import type { Dictionary } from "@/lib/i18n";
 
 type NavKey = Exclude<keyof Dictionary["nav"], "more">;
@@ -43,15 +44,22 @@ const SECONDARY: { href: string; key: NavKey }[] = [
 
 export const ALL_NAV = [...PRIMARY, ...SECONDARY];
 
-/** True when `href` is the active route — itself, or one of its children. */
+/**
+ * True when `href` is the active section.
+ *
+ * Compared after the channel segment, so switching channel keeps you on the
+ * same highlighted section rather than clearing the bar.
+ */
 function useIsActive() {
   const pathname = usePathname();
-  return (href: string) => pathname === href || pathname.startsWith(href + "/");
+  const section = "/" + pathname.split("/").slice(2).join("/");
+  return (href: string) => section === href || section.startsWith(href + "/");
 }
 
 export function TopNav() {
   const { t } = useI18n();
   const isActive = useIsActive();
+  const path = useChannelPath();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const moreActive = SECONDARY.some((i) => isActive(i.href));
@@ -79,7 +87,7 @@ export function TopNav() {
         return (
           <Link
             key={item.href}
-            href={item.href}
+            href={path(item.href)}
             aria-current={active ? "page" : undefined}
             className="nav-link"
             data-active={active ? "true" : undefined}
@@ -115,7 +123,7 @@ export function TopNav() {
               return (
                 <Link
                   key={item.href}
-                  href={item.href}
+                  href={path(item.href)}
                   role="menuitem"
                   onClick={() => setOpen(false)}
                   className="btn-sky is-quiet pill w-full justify-start border-transparent px-4 py-2.5 text-[14px] font-light"
@@ -136,6 +144,7 @@ export function TopNav() {
 export function NarrowNav() {
   const { t } = useI18n();
   const isActive = useIsActive();
+  const path = useChannelPath();
   return (
     <nav className="bar-measure flex gap-1 overflow-x-auto border-b border-[var(--color-border)] px-[clamp(0.75rem,3vw,56px)] py-3 min-[1366px]:hidden">
       {ALL_NAV.map((item) => {
@@ -143,7 +152,7 @@ export function NarrowNav() {
         return (
           <Link
             key={item.href}
-            href={item.href}
+            href={path(item.href)}
             aria-current={active ? "page" : undefined}
             className="btn-sky is-quiet pill whitespace-nowrap border-transparent px-4 py-2 text-sm font-light"
             style={{

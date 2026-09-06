@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getChannelPath } from "@/lib/channels-path-server";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { EmptyState, StatusPill } from "@/components/ui";
@@ -59,6 +60,7 @@ function stageTones(events: SystemEventRow[]): Record<PipelineStageKey, StageTon
 export default async function CommandCenter() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  const path = await getChannelPath();
   // Scope every channel-owned query to the selected channel (view control;
   // RLS still decides what may be read at all).
   const selection = await getChannelSelection();
@@ -156,13 +158,13 @@ export default async function CommandCenter() {
           </div>
 
           <div className="flex flex-wrap items-center gap-4">
-            <Link href="/pipeline" className="btn-sky is-solid pill px-[30px] py-3.5 text-[14px]">
+            <Link href={path("/pipeline")} className="btn-sky is-solid pill px-[30px] py-3.5 text-[14px]">
               {t.dashboard.openPipeline}
               <span className="btn-arrow" aria-hidden>
                 →
               </span>
             </Link>
-            <Link href="/videos" className="btn-sky pill px-[30px] py-3.5 text-[14px]">
+            <Link href={path("/videos")} className="btn-sky pill px-[30px] py-3.5 text-[14px]">
               {t.dashboard.openVideos}
             </Link>
             <CustomizeButton />

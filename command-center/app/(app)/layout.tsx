@@ -1,17 +1,30 @@
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import { NarrowNav } from "@/components/TopNav";
 import { NightSky } from "@/components/NightSky";
 import { Header } from "@/components/Header";
 import { CommandPalette } from "@/components/CommandPalette";
 import { getChannelContext } from "@/lib/channels-server";
 import { isSupabaseConfigured } from "@/lib/config";
-import { ALL_CHANNELS } from "@/lib/channels";
+import { ALL_CHANNELS, ALL_CHANNELS_SLUG, PATH_HEADER } from "@/lib/channels";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // Channels for the switcher. Empty before the Phase 5 migration is applied,
   // in which case the switcher renders nothing and the app looks as it did.
-  const { channels, selection } = isSupabaseConfigured
+  const { channels, selection, slug: honest } = isSupabaseConfigured
     ? await getChannelContext()
-    : { channels: [], selection: ALL_CHANNELS };
+    : { channels: [], selection: ALL_CHANNELS, slug: ALL_CHANNELS_SLUG };
+
+  // Keep the address bar honest, in both directions. A URL naming a channel
+  // that does not exist (deleted, mistyped, or not visible to this user)
+  // resolves to every channel, and says so. A URL naming the channel by its
+  // internal id — /default/pipeline — resolves fine, and is rewritten to the
+  // name the operator actually knows it by: /chronos/pipeline.
+  const path = (await headers()).get(PATH_HEADER);
+  if (path) {
+    const [, slug, ...rest] = path.split("/");
+    if (slug && slug !== honest) redirect(["", honest, ...rest].join("/"));
+  }
 
   return (
     <div className="atmos relative flex min-h-dvh flex-col">

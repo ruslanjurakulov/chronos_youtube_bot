@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/config";
+import { getChannelPath } from "@/lib/channels-path-server";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, EmptyState } from "@/components/ui";
 import { ChannelCard } from "@/components/channels/ChannelCard";
 import { ChannelComparison } from "@/components/channels/ChannelComparison";
 import { getChannelContext } from "@/lib/channels-server";
-import { channelHealth, channelStats } from "@/lib/channels";
+import { channelHealth, channelSlug, channelStats } from "@/lib/channels";
 import { getDictionary } from "@/lib/i18n/server";
 import type {
   ContentQueueRow,
@@ -28,6 +29,7 @@ export const revalidate = 0;
 export default async function ChannelsPage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
+  const path = await getChannelPath();
 
   const { channels, credentials, notMigrated } = await getChannelContext();
   const supabase = await createClient();
@@ -61,7 +63,7 @@ export default async function ChannelsPage() {
         </div>
         {!notMigrated && (
           <Link
-            href="/channels/new"
+            href={path("/channels/new")}
             className="btn-sky pill px-5 py-2.5 text-[13px]"
           >
             + {t.channels.add}
@@ -92,6 +94,7 @@ export default async function ChannelsPage() {
               <ChannelCard
                 key={channel.channel_id}
                 channel={channel}
+                slug={channelSlug(channel, channels)}
                 credential={credentials.find(
                   (c) => c.channel_id === channel.channel_id && c.provider === "youtube",
                 )}

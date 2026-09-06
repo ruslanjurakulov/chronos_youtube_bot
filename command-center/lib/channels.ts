@@ -24,10 +24,70 @@ import type {
 } from "@/lib/types";
 import { storedMs } from "@/lib/format";
 
+/** Remembers the last channel viewed, so "/" knows where to send you. It is a
+ *  memory, not the selection — the URL is the selection. */
 export const CHANNEL_COOKIE = "chronos_channel";
+
+/** Request header the middleware fills from the URL's channel segment. */
+export const CHANNEL_HEADER = "x-nightshift-channel";
+
+/** Request header carrying the full pathname, which a layout cannot otherwise see. */
+export const PATH_HEADER = "x-nightshift-path";
 
 /** The sentinel for "don't filter". Not a channel id — no channel may be named this. */
 export const ALL_CHANNELS = "__all__";
+
+/** How ALL_CHANNELS is spelled in a URL. Reserved: no channel may take it. */
+export const ALL_CHANNELS_SLUG = "all-channels";
+
+/**
+ * Every section path, without a channel prefix.
+ *
+ * The middleware needs this to tell an old-style link (`/videos`) from a
+ * channel segment (`/chronos`), since both are one path segment. Keep it in
+ * step with the routes under `app/(app)/[channel]/`.
+ */
+export const SECTIONS = [
+  "command-center",
+  "videos",
+  "pipeline",
+  "analytics",
+  "channels",
+  "intelligence-map",
+  "agents",
+  "jobs",
+  "topics",
+  "measurement",
+  "decisions",
+  "learning",
+  "memory",
+  "autonomy",
+  "feedback-loop",
+  "time-machine",
+  "errors",
+  "logs",
+  "integrations",
+] as const;
+
+/** True when `segment` names a section rather than a channel. */
+export function isSection(segment: string): boolean {
+  return (SECTIONS as readonly string[]).includes(segment);
+}
+
+/** URL segment → selection. */
+export function slugToSelection(slug: string): ChannelSelection {
+  return slug === ALL_CHANNELS_SLUG ? ALL_CHANNELS : slug;
+}
+
+/** Selection → URL segment. */
+export function selectionToSlug(selection: ChannelSelection): string {
+  return selection === ALL_CHANNELS ? ALL_CHANNELS_SLUG : selection;
+}
+
+/** `/chronos/videos` from ("chronos", "/videos"). */
+export function channelPath(slug: string, section: string): string {
+  return `/${slug}${section}`;
+}
 
 export const DEFAULT_CHANNEL_ID = "default";
 
@@ -44,8 +104,50 @@ export function resolveSelection(
   raw: string | undefined,
   channels: ChannelRow[],
 ): ChannelSelection {
-  if (!raw || raw === ALL_CHANNELS) return ALL_CHANNELS;
-  return channels.some((c) => c.channel_id === raw) ? raw : ALL_CHANNELS;
+  if (!raw || raw === ALL_CHANNELS || raw === ALL_CHANNELS_SLUG) return ALL_CHANNELS;
+  if (channels.some((c) => c.channel_id === raw)) return raw;
+  // Also accept the channel's readable slug, so /chronos/… resolves even though
+  // the row's id is "default". The id keeps working: it is what every old link
+  // and every foreign key says.
+  const byName = channels.find((c) => channelSlug(c, channels) === raw);
+  return byName ? byName.channel_id : ALL_CHANNELS;
+}
+
+/**
+ * The URL segment for a channel — its name, not its internal key.
+ *
+ * `channel_id` is a database key: it is what `videos.channel_id` and every
+ * other row points at, and renaming it would mean rewriting all of them. But it
+ * is also the first thing the operator reads in the address bar, and the
+ * production channel's id is "default", which tells them nothing. So the URL
+ * shows the channel's NAME — /chronos/pipeline — while the id stays where it
+ * belongs, in the database.
+ *
+ * The id is used instead whenever the name cannot stand in for it without
+ * ambiguity: when it slugifies to nothing usable, to a reserved word, to
+ * something two channels share, or to another channel's id. In every one of
+ * those cases the id is the only unambiguous answer, so it wins — a URL is
+ * allowed to be ugly, never ambiguous.
+ */
+export function channelSlug(channel: ChannelRow, channels: ChannelRow[]): string {
+  const candidate = slugifyChannelId(channel.name ?? "");
+  if (!candidate || !isValidChannelId(candidate)) return channel.channel_id;
+  const claimedByAnother = channels.some(
+    (c) =>
+      c.channel_id !== channel.channel_id &&
+      (c.channel_id === candidate || slugifyChannelId(c.name ?? "") === candidate),
+  );
+  return claimedByAnother ? channel.channel_id : candidate;
+}
+
+/** The URL segment for a selection: a channel's name-slug, or "all-channels". */
+export function selectionSlug(
+  selection: ChannelSelection,
+  channels: ChannelRow[],
+): string {
+  if (!isScoped(selection)) return ALL_CHANNELS_SLUG;
+  const channel = channels.find((c) => c.channel_id === selection);
+  return channel ? channelSlug(channel, channels) : selection;
 }
 
 /** True when the view is scoped to exactly one channel. */
@@ -271,6 +373,10 @@ export function channelStats(
 
 /** A channel id the user typed, validated against the same rule the bot uses. */
 export function isValidChannelId(value: string): boolean {
+  // A channel id is also a URL segment, so it may not collide with the words
+  // that segment already means — otherwise /videos would be ambiguous between
+  // "the Videos section" and "a channel called videos".
+  if (value === ALL_CHANNELS_SLUG || isSection(value)) return false;
   return /^[a-z0-9][a-z0-9-]{1,38}$/.test(value);
 }
 

@@ -1,13 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_CHANNELS,
+  ALL_CHANNELS_SLUG,
+  SECTIONS,
   channelHealth,
+  channelPath,
+  channelSlug,
   channelStats,
   inSelection,
   isScoped,
+  isSection,
   isValidChannelId,
   resolveSelection,
   scopeQuery,
+  selectionSlug,
+  selectionToSlug,
+  slugToSelection,
   slugifyChannelId,
 } from "@/lib/channels";
 import type {
@@ -297,5 +305,129 @@ describe("channel ids", () => {
   it("slugifies a display name into a candidate id", () => {
     expect(slugifyChannelId("Extinct World")).toBe("extinct-world");
     expect(slugifyChannelId("  Chronos: Finance!  ")).toBe("chronos-finance");
+  });
+});
+
+// ── The URL is the selection ────────────────────────────────────────────────
+//
+// Every screen lives at /{channel}/{section}. These are the pure pieces that
+// make that hold: telling a section segment from a channel segment, and moving
+// between the URL's spelling and the internal sentinel.
+
+describe("isSection", () => {
+  it("recognises every section the nav offers", () => {
+    for (const s of SECTIONS) expect(isSection(s), s).toBe(true);
+  });
+
+  it("does not mistake a channel id for a section", () => {
+    expect(isSection("chronos")).toBe(false);
+    expect(isSection("extinct-world")).toBe(false);
+    expect(isSection(ALL_CHANNELS_SLUG)).toBe(false);
+    expect(isSection("")).toBe(false);
+  });
+});
+
+describe("slug ↔ selection", () => {
+  it("round-trips every channel", () => {
+    for (const id of ["chronos", "extinct-world", "default"]) {
+      expect(slugToSelection(selectionToSlug(id))).toBe(id);
+    }
+  });
+
+  it("spells ALL_CHANNELS as a readable segment, not the sentinel", () => {
+    expect(selectionToSlug(ALL_CHANNELS)).toBe("all-channels");
+    expect(selectionToSlug(ALL_CHANNELS)).not.toContain("_");
+    expect(slugToSelection("all-channels")).toBe(ALL_CHANNELS);
+  });
+});
+
+describe("channelPath", () => {
+  it("puts the channel first and the section after", () => {
+    expect(channelPath("chronos", "/videos")).toBe("/chronos/videos");
+    expect(channelPath("all-channels", "/command-center")).toBe("/all-channels/command-center");
+    expect(channelPath("chronos", "/videos/abc123")).toBe("/chronos/videos/abc123");
+  });
+});
+
+describe("isValidChannelId reserves the URL's own words", () => {
+  it("refuses a name that would make a path ambiguous", () => {
+    // A channel called "videos" would make /videos mean two things.
+    for (const s of SECTIONS) expect(isValidChannelId(s), s).toBe(false);
+    expect(isValidChannelId(ALL_CHANNELS_SLUG)).toBe(false);
+  });
+
+  it("still accepts ordinary ids", () => {
+    expect(isValidChannelId("chronos")).toBe(true);
+    expect(isValidChannelId("extinct-world")).toBe(true);
+  });
+});
+
+// ── The URL shows the channel's name, never its internal key ────────────────
+//
+// The production channel's row id is "default", which tells an operator
+// nothing. Its name is "Chronos", which tells them everything. The id stays in
+// the database where the foreign keys point at it; the URL shows the name.
+
+describe("channelSlug", () => {
+  const chronos = channel({ channel_id: "default", name: "Chronos" });
+  const extinct = channel({ channel_id: "extinct-world", name: "Extinct World" });
+  const all = [chronos, extinct];
+
+  it("uses the name, not the id", () => {
+    expect(channelSlug(chronos, all)).toBe("chronos");
+    expect(channelSlug(chronos, all)).not.toBe("default");
+  });
+
+  it("falls back to the id when two channels share a name", () => {
+    const a = channel({ channel_id: "one", name: "Chronos" });
+    const b = channel({ channel_id: "two", name: "Chronos" });
+    expect(channelSlug(a, [a, b])).toBe("one");
+    expect(channelSlug(b, [a, b])).toBe("two");
+  });
+
+  it("falls back to the id when the name would claim another channel's id", () => {
+    const owner = channel({ channel_id: "finance", name: "Money" });
+    const thief = channel({ channel_id: "x1", name: "Finance" });
+    expect(channelSlug(thief, [owner, thief])).toBe("x1");
+    expect(channelSlug(owner, [owner, thief])).toBe("money");
+  });
+
+  it("falls back to the id when the name is a reserved word or unusable", () => {
+    const videos = channel({ channel_id: "v1", name: "Videos" });
+    const blank = channel({ channel_id: "b1", name: "!!!" });
+    const short = channel({ channel_id: "s1", name: "A" });
+    expect(channelSlug(videos, [videos])).toBe("v1");
+    expect(channelSlug(blank, [blank])).toBe("b1");
+    expect(channelSlug(short, [short])).toBe("s1");
+  });
+});
+
+describe("resolveSelection accepts both spellings", () => {
+  const chronos = channel({ channel_id: "default", name: "Chronos" });
+  const all = [chronos];
+
+  it("resolves the readable slug", () => {
+    expect(resolveSelection("chronos", all)).toBe("default");
+  });
+
+  it("still resolves the raw id, so old links keep working", () => {
+    expect(resolveSelection("default", all)).toBe("default");
+  });
+
+  it("resolves the all-channels segment as well as the sentinel", () => {
+    expect(resolveSelection(ALL_CHANNELS_SLUG, all)).toBe(ALL_CHANNELS);
+    expect(resolveSelection(ALL_CHANNELS, all)).toBe(ALL_CHANNELS);
+  });
+
+  it("refuses a slug that names nothing", () => {
+    expect(resolveSelection("nonsense", all)).toBe(ALL_CHANNELS);
+  });
+});
+
+describe("selectionSlug", () => {
+  const chronos = channel({ channel_id: "default", name: "Chronos" });
+  it("is the canonical segment the layout redirects toward", () => {
+    expect(selectionSlug("default", [chronos])).toBe("chronos");
+    expect(selectionSlug(ALL_CHANNELS, [chronos])).toBe("all-channels");
   });
 });

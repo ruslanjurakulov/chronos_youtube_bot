@@ -302,7 +302,59 @@ back to another channel's token.
 
 ---
 
-## 6. Command Center
+## 6. The URL is the selection
+
+Every screen lives at `/{channel}/{section}`:
+
+```
+/all-channels/command-center     every channel, the dashboard
+/chronos/videos                  one channel's videos
+/extinct-world/analytics         another channel's analytics
+/chronos/videos/dQw4w9WgXcQ      one video, in its channel's context
+```
+
+The channel used to be a cookie. That made a URL incomplete: it named a screen
+but not which channel's screen, so pasting one to someone else opened *their*
+last-viewed channel, two tabs could not show two channels, and the back button
+did not undo a channel switch. State that the view depends on belongs in the
+URL, so that is where it now lives.
+
+How it holds together:
+
+* **The middleware resolves the channel segment** and passes it inward as a
+  request header (`x-nightshift-channel`), because a Server Component reached
+  through a shared helper cannot see route params. `getChannelContext()` reads
+  that header. One place decides; every page follows.
+* **A channelless URL is redirected, never guessed at.** `/` and any old
+  `/videos`-style link are sent to `/{remembered}/…`. The cookie survives only
+  as that memory — which channel you last looked at — and never decides what a
+  URL that already names a channel is showing.
+* **The switcher navigates.** Choosing a channel swaps the first path segment
+  and keeps you on the same section, so `/chronos/analytics` becomes
+  `/extinct-world/analytics`.
+* **An unknown channel corrects itself.** A slug that resolves to nothing (
+  deleted, mistyped, or not visible to this user) falls back to every channel,
+  and the layout rewrites the URL to `/all-channels/…` so the address bar never
+  claims a channel the screen is not showing.
+* **Section names are reserved channel ids.** `isValidChannelId` refuses
+  `videos`, `analytics`, `all-channels` and the rest, because a channel with
+  one of those names would make its own path ambiguous.
+* **The segment is the channel's NAME, not its id.** `channel_id` is a database
+  key — it is what `videos.channel_id` and every other row points at, and
+  renaming it would mean rewriting all of them. But it is also the first thing
+  an operator reads in the address bar, and the production channel's id is
+  `default`, which says nothing. So `channelSlug()` puts the name there:
+  `/chronos/pipeline`, not `/default/pipeline`. The id keeps resolving, so every
+  old link still works, and the layout rewrites it to the name.
+
+  The id is used instead whenever the name cannot stand in for it without
+  ambiguity — it slugifies to nothing usable, to a reserved word, to something
+  two channels share, or to another channel's id. A URL is allowed to be ugly;
+  it is never allowed to be ambiguous.
+
+---
+
+## 7. Command Center
 
 - **Channel switcher** in the header writes a cookie and refreshes, so Server
   Components re-query scoped to that channel. It renders nothing when there is
@@ -335,7 +387,7 @@ schema. The anon key alone still reads nothing.
 
 ---
 
-## 7. Applying the migration
+## 8. Applying the migration
 
 ```sql
 -- Existing project: Supabase SQL editor -> paste -> Run
@@ -356,7 +408,7 @@ behaves exactly as it did before.
 
 ---
 
-## 8. Deliberately not implemented
+## 9. Deliberately not implemented
 
 - **Autonomous publishing.** Unchanged from Phase 4: the publish gate is not
   wired, and this phase did not wire it.
