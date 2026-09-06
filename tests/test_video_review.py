@@ -57,10 +57,12 @@ class SafeDirection(unittest.TestCase):
         self.assertTrue(self.r.fetch_auto_publish("c"))
 
     @patch("modules.video_review.requests.post")
-    def test_an_oversized_render_is_refused_rather_than_uploaded(self, post):
+    def test_an_oversized_review_copy_is_refused_rather_than_uploaded(self, post):
+        """The bucket's own ceiling is 50 MB. Refuse before the wire, not on it."""
         big = MagicMock()
         big.stat.return_value = MagicMock(st_size=MAX_BYTES + 1)
-        self.assertIsNone(self.r.upload_preview(big, "c", "v"))
+        self.r.review_copy = MagicMock(return_value=(big, False))
+        self.assertIsNone(self.r.upload_preview(Path("/x.mp4"), "c", "v"))
         post.assert_not_called()
 
     @patch("modules.video_review.requests.post", side_effect=OSError("boom"))
@@ -68,7 +70,51 @@ class SafeDirection(unittest.TestCase):
         f = MagicMock()
         f.stat.return_value = MagicMock(st_size=1024)
         f.open = MagicMock()
-        self.assertIsNone(self.r.upload_preview(f, "c", "v"))
+        self.r.review_copy = MagicMock(return_value=(f, False))
+        self.assertIsNone(self.r.upload_preview(Path("/x.mp4"), "c", "v"))
+
+
+class TheReviewCopy(unittest.TestCase):
+    """What gets uploaded is a small cut, and a failure to make one is survivable."""
+
+    def setUp(self):
+        self.r = VideoReview(url="https://x.supabase.co", service_key="k")
+
+    @patch("modules.video_review._ffmpeg_exe", return_value=None)
+    def test_without_ffmpeg_it_falls_back_to_the_master(self, _):
+        source = Path("/x.mp4")
+        path, temporary = self.r.review_copy(source)
+        self.assertEqual(path, source)
+        self.assertFalse(temporary, "the master is not ours to delete")
+
+    @patch("modules.video_review._ffmpeg_exe", return_value="/usr/bin/ffmpeg")
+    @patch("modules.video_review.subprocess.run")
+    def test_a_failed_transcode_leaves_no_temp_file_behind(self, run, _):
+        run.return_value = MagicMock(returncode=1)
+        with patch("modules.video_review.Path.unlink") as unlink:
+            path, temporary = self.r.review_copy(Path("/x.mp4"))
+        self.assertEqual(path, Path("/x.mp4"))
+        self.assertFalse(temporary)
+        unlink.assert_called_once()
+
+    @patch("modules.video_review._ffmpeg_exe", return_value="/usr/bin/ffmpeg")
+    @patch("modules.video_review.subprocess.run")
+    def test_it_downscales_to_480p(self, run, _):
+        run.return_value = MagicMock(returncode=1)  # keep it off the filesystem
+        self.r.review_copy(Path("/x.mp4"))
+        command = run.call_args[0][0]
+        self.assertIn("scale=-2:480", command)
+        self.assertIn("-movflags", command)
+
+    @patch("modules.video_review.requests.post")
+    def test_the_temp_copy_is_deleted_after_the_upload(self, post):
+        post.return_value = MagicMock(status_code=200)
+        tmp = MagicMock()
+        tmp.stat.return_value = MagicMock(st_size=1024)
+        tmp.open = MagicMock()
+        self.r.review_copy = MagicMock(return_value=(tmp, True))
+        self.assertEqual(self.r.upload_preview(Path("/x.mp4"), "c", "v"), "c/v.mp4")
+        tmp.unlink.assert_called_once()
 
 
 class ReviewStateFollowsTheChannel(unittest.TestCase):

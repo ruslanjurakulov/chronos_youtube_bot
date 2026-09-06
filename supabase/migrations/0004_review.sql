@@ -76,8 +76,12 @@ create policy review_intents_insert on public.review_intents
   for insert to authenticated with check (true);
 
 -- ── The bucket the previews live in ─────────────────────────────────────────
+-- 50 MB is the free tier's own per-object ceiling for the whole project, so
+-- this is the largest value the bucket will accept there. What goes in is a
+-- 480p review copy (see modules/video_review.py), not the master render, which
+-- is routinely bigger than this on its own.
 insert into storage.buckets (id, name, public, file_size_limit)
-values ('previews', 'previews', false, 524288000)
+values ('previews', 'previews', false, 52428800)
 on conflict (id) do nothing;
 
 -- Private bucket: signed-in operators can read (which is what lets the

@@ -6,9 +6,9 @@ Until now the only durable handle on a finished video was its YouTube id, and
 every upload is private (``config.YOUTUBE_PRIVACY`` defaults to ``private``,
 and so do both the schedule and the manual dispatch). A private video cannot be
 embedded, and ``videos.local_path`` points at a runner that no longer exists —
-so there was nothing for the Command Center to show. This module puts the mp4
-in a private Supabase Storage bucket and records the script beside it, which is
-what a reviewer actually needs in order to say yes.
+so there was nothing for the Command Center to show. This module puts a small
+480p cut of the render in a private Supabase Storage bucket and records the
+script beside it, which is what a reviewer actually needs in order to say yes.
 
 What it deliberately does NOT do
 --------------------------------
@@ -26,6 +26,9 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
+import subprocess
+import tempfile
 from pathlib import Path
 
 import requests
@@ -35,15 +38,36 @@ logger = logging.getLogger(__name__)
 BUCKET = "previews"
 _TIMEOUT = 180  # seconds — a whole video goes over the wire, not a JSON row.
 
-# Supabase's own ceiling for this bucket is 500 MB (see migration 0004). We
-# refuse well before it: a video that large means the render produced something
-# unexpected, and pushing it would spend the storage quota on the wrong thing.
-MAX_BYTES = 400 * 1024 * 1024
+# What goes into the bucket is a *review copy*, not the master. Supabase's free
+# tier caps a single object at 50 MB across the whole project, and a five-minute
+# 1080p render is 50-150 MB, so uploading the master would fail for most videos
+# and eat the quota for the rest. A 480p cut is plenty to check that the pacing,
+# the b-roll and the subtitles are right, which is what the reviewer is judging.
+REVIEW_HEIGHT = 480
+REVIEW_CRF = "30"
+REVIEW_MAXRATE = "700k"
+REVIEW_AUDIO_BITRATE = "64k"
+_TRANSCODE_TIMEOUT = 900  # seconds — a downscale is cheap, but the runner is not fast.
 
-# Free-tier storage is 1 GB, and a five-minute 1080p cut is 50-150 MB. Keeping
-# the last few per channel is the difference between a working review queue and
-# a quota that fills up silently in a fortnight.
+# Below the 50 MB object ceiling, with room to spare. A review copy that still
+# lands over this means the transcode did not happen or produced something
+# unexpected, and pushing it would fail at the bucket anyway.
+MAX_BYTES = 45 * 1024 * 1024
+
+# Free-tier storage is 1 GB. At ~15 MB a review copy, keeping the last few per
+# channel is the difference between a working review queue and a quota that
+# fills up silently.
 KEEP_PER_CHANNEL = 5
+
+
+def _ffmpeg_exe() -> str | None:
+    """The ffmpeg the render already depends on, or whatever is on PATH."""
+    try:
+        import imageio_ffmpeg  # moviepy's own dependency — already installed.
+
+        return imageio_ffmpeg.get_ffmpeg_exe()
+    except Exception:
+        return shutil.which("ffmpeg")
 
 
 class VideoReview:
@@ -69,46 +93,96 @@ class VideoReview:
         return headers
 
     # ── storage ────────────────────────────────────────────────────────────
+    def review_copy(self, source: Path) -> tuple[Path, bool]:
+        """A small 480p cut of the render, and whether it is ours to delete.
+
+        Falls back to the master when ffmpeg is missing or the transcode fails.
+        That fallback almost always ends up refused by the size check below,
+        which is the right outcome: no preview beats a failed upload or a
+        silently exhausted quota, and the run is unaffected either way.
+        """
+        exe = _ffmpeg_exe()
+        if exe is None:
+            logger.warning("No ffmpeg found — falling back to the full render for the preview")
+            return source, False
+
+        handle, name = tempfile.mkstemp(prefix="review-", suffix=".mp4")
+        os.close(handle)
+        target = Path(name)
+        command = [
+            exe, "-y", "-loglevel", "error", "-i", str(source),
+            # -2 keeps the width even, which libx264 requires.
+            "-vf", f"scale=-2:{REVIEW_HEIGHT}",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", REVIEW_CRF,
+            "-maxrate", REVIEW_MAXRATE, "-bufsize", "1400k",
+            "-c:a", "aac", "-b:a", REVIEW_AUDIO_BITRATE,
+            # The dashboard plays this over a signed URL; faststart lets it
+            # start before the whole file has arrived.
+            "-movflags", "+faststart",
+            str(target),
+        ]
+        try:
+            done = subprocess.run(command, capture_output=True, timeout=_TRANSCODE_TIMEOUT)
+            if done.returncode == 0 and target.exists() and target.stat().st_size > 0:
+                return target, True
+            logger.warning(
+                "Review transcode failed (exit %s) — falling back to the full render",
+                done.returncode,
+            )
+        except Exception as e:
+            logger.warning(
+                "Review transcode failed (%s: %s) — falling back to the full render",
+                type(e).__name__, e,
+            )
+        target.unlink(missing_ok=True)
+        return source, False
+
     def upload_preview(self, video_path: Path, channel_id: str, video_id: str) -> str | None:
-        """Put the mp4 in the bucket. Returns its object path, or None."""
+        """Put a review copy of the mp4 in the bucket. Returns its object path, or None."""
         if not self.enabled:
             return None
-        try:
-            size = video_path.stat().st_size
-        except OSError:
-            logger.warning("No preview uploaded: cannot stat %s", video_path)
-            return None
-        if size > MAX_BYTES:
-            logger.warning(
-                "No preview uploaded: %s is %.0f MB, over the %.0f MB ceiling",
-                video_path.name, size / 1048576, MAX_BYTES / 1048576,
-            )
-            return None
 
-        # Keyed on the YouTube id so the object and the row can never drift
-        # apart, and re-running the same video overwrites rather than piles up.
-        object_path = f"{channel_id}/{video_id}.mp4"
+        upload_path, temporary = self.review_copy(video_path)
         try:
-            with video_path.open("rb") as fh:
-                resp = requests.post(
-                    f"{self.url}/storage/v1/object/{BUCKET}/{object_path}",
-                    data=fh,
-                    headers=self._headers({
-                        "Content-Type": "video/mp4",
-                        # Overwrite an existing object instead of failing on it.
-                        "x-upsert": "true",
-                    }),
-                    timeout=_TIMEOUT,
-                )
-            if resp.status_code >= 300:
-                logger.warning("Preview upload failed (%s) — the run is unaffected", resp.status_code)
+            try:
+                size = upload_path.stat().st_size
+            except OSError:
+                logger.warning("No preview uploaded: cannot stat %s", upload_path)
                 return None
-        except Exception as e:
-            logger.warning("Preview upload failed (%s: %s) — the run is unaffected", type(e).__name__, e)
-            return None
+            if size > MAX_BYTES:
+                logger.warning(
+                    "No preview uploaded: %s is %.0f MB, over the %.0f MB ceiling",
+                    upload_path.name, size / 1048576, MAX_BYTES / 1048576,
+                )
+                return None
 
-        logger.info("Preview stored: %s (%.0f MB)", object_path, size / 1048576)
-        return object_path
+            # Keyed on the YouTube id so the object and the row can never drift
+            # apart, and re-running the same video overwrites rather than piles up.
+            object_path = f"{channel_id}/{video_id}.mp4"
+            try:
+                with upload_path.open("rb") as fh:
+                    resp = requests.post(
+                        f"{self.url}/storage/v1/object/{BUCKET}/{object_path}",
+                        data=fh,
+                        headers=self._headers({
+                            "Content-Type": "video/mp4",
+                            # Overwrite an existing object instead of failing on it.
+                            "x-upsert": "true",
+                        }),
+                        timeout=_TIMEOUT,
+                    )
+                if resp.status_code >= 300:
+                    logger.warning("Preview upload failed (%s) — the run is unaffected", resp.status_code)
+                    return None
+            except Exception as e:
+                logger.warning("Preview upload failed (%s: %s) — the run is unaffected", type(e).__name__, e)
+                return None
+
+            logger.info("Preview stored: %s (%.0f MB)", object_path, size / 1048576)
+            return object_path
+        finally:
+            if temporary:
+                upload_path.unlink(missing_ok=True)
 
     def prune(self, channel_id: str) -> int:
         """Delete all but the newest KEEP_PER_CHANNEL previews for one channel."""
