@@ -31,6 +31,28 @@ export interface VideoRow {
   video_format: string;
   /** For a Short, the long video it was cut from. Null for a long video. */
   parent_video_id: string | null;
+  /**
+   * Object path in the private "previews" bucket, or null when the render was
+   * not kept (too large, storage unavailable, or pruned to make room). Never a
+   * URL — the page mints a short-lived signed one when it needs to play.
+   */
+  preview_path: string | null;
+  /** The narration this video was built from. What a reviewer approves. */
+  script_text: string | null;
+  /** pending | approved | rejected. "pending" means nobody has looked yet. */
+  review_state: string;
+}
+
+/** A reviewer's request, waiting for the next run to pick it up. */
+export interface ReviewIntentRow {
+  id: number;
+  channel_id: string;
+  video_id: string | null;
+  action: "approve" | "regenerate" | "regenerate_script";
+  note: string | null;
+  created_at: string;
+  consumed_at: string | null;
+  outcome: string | null;
 }
 
 export interface MetricsSnapshotRow {
@@ -209,6 +231,12 @@ export interface ChannelRow {
   agent_config: ChannelAgentConfig | null;
   schedule_config: ChannelScheduleConfig | null;
   credential_ref: ChannelCredentialRef | null;
+  /**
+   * False (the default) means a rendered video stays private until someone
+   * approves it here. True lets the pipeline take it public by itself — still
+   * only after the publish gate passes. The gate is in front of both paths.
+   */
+  auto_publish: boolean;
   created_at: string | null;
   updated_at: string | null;
 }

@@ -35,6 +35,7 @@ function channel(over: Partial<ChannelRow> & { channel_id: string }): ChannelRow
     agent_config: over.agent_config ?? null,
     schedule_config: over.schedule_config ?? null,
     credential_ref: over.credential_ref ?? null,
+    auto_publish: over.auto_publish ?? false,
     created_at: null,
     updated_at: null,
   };
@@ -72,6 +73,9 @@ function video(over: Partial<VideoRow> & { video_id: string; channel_id: string 
     title_variant: over.title_variant ?? null,
     video_format: over.video_format ?? "long",
     parent_video_id: over.parent_video_id ?? null,
+    preview_path: null,
+    script_text: null,
+    review_state: "pending",
   };
 }
 

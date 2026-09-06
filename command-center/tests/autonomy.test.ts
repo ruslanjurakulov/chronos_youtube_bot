@@ -44,6 +44,9 @@ function video(over: Partial<VideoRow> & { video_id: string }): VideoRow {
     title_variant: over.title_variant ?? null,
     video_format: over.video_format ?? "long",
     parent_video_id: over.parent_video_id ?? null,
+    preview_path: null,
+    script_text: null,
+    review_state: "pending",
   };
 }
 

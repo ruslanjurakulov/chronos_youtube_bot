@@ -44,10 +44,39 @@ export function ChannelCard({
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [autoBusy, setAutoBusy] = useState(false);
+  const [auto, setAuto] = useState(Boolean(channel.auto_publish));
 
   const agent = channel.agent_config ?? {};
   const schedule = channel.schedule_config ?? {};
   const active = channel.status === "ACTIVE";
+
+  /**
+   * Auto publish, per channel.
+   *
+   * Off (the default) means a rendered video stays private until someone
+   * approves it on the video page. On means the pipeline may take it public by
+   * itself — and the publish gate still runs in front of that, exactly as it
+   * does today. This switch removes the human step; it never removes a check.
+   */
+  async function toggleAuto() {
+    const supabase = createClient();
+    if (!supabase) return;
+    setAutoBusy(true);
+    setError(null);
+    const next = !auto;
+    const { error: err } = await supabase
+      .from("channels")
+      .update({ auto_publish: next, updated_at: new Date().toISOString() })
+      .eq("channel_id", channel.channel_id);
+    setAutoBusy(false);
+    if (err) {
+      setError(err.message);
+      return;
+    }
+    setAuto(next);
+    startTransition(() => router.refresh());
+  }
 
   async function toggleStatus() {
     const supabase = createClient();
@@ -107,6 +136,33 @@ export function ChannelCard({
           </button>
         </div>
       </header>
+
+      {/* Auto publish. Off is the default and the safe direction; the switch
+          says which way it is currently pointing, in words, not just colour. */}
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-[14px] border border-[var(--color-border)] bg-[var(--color-panel-2)] px-4 py-3">
+        <div className="min-w-0">
+          <div className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
+            {t.channels.autoLabel}
+          </div>
+          <p className="m-0 mt-1 max-w-[52ch] text-[12px] leading-relaxed text-[var(--color-muted)]">
+            {auto ? t.channels.autoOnHint : t.channels.autoOffHint}
+          </p>
+        </div>
+        <button
+          type="button"
+          role="switch"
+          aria-checked={auto}
+          onClick={toggleAuto}
+          disabled={autoBusy || pending}
+          className="btn-sky pill shrink-0 px-4 py-2 text-[12px] disabled:opacity-50"
+          style={{
+            borderColor: auto ? "var(--color-warn)" : "var(--color-border)",
+            color: auto ? "var(--color-warn)" : "var(--color-muted)",
+          }}
+        >
+          {autoBusy ? t.channels.saving : auto ? t.channels.autoOn : t.channels.autoOff}
+        </button>
+      </div>
 
       {error && (
         <p className="mono text-[11px] text-[var(--color-fail)]">

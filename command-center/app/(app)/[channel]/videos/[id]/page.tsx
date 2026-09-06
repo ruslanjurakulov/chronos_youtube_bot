@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getChannelPath } from "@/lib/channels-path-server";
+import { ReviewPanel } from "@/components/review/ReviewPanel";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, StatCard, EmptyState, StatusPill } from "@/components/ui";
@@ -13,7 +14,7 @@ import { num, decimal, relativeTime, timeOfDay, statusTone } from "@/lib/format"
 import { getDictionary } from "@/lib/i18n/server";
 import { fetchChannelTopicScores } from "@/lib/channels-server";
 import { fmt } from "@/lib/i18n";
-import type { FeedbackSignalRow, MetricsSnapshotRow, SystemEventRow, TopicPerformanceRow, VideoRow } from "@/lib/types";
+import type { ChannelRow, FeedbackSignalRow, MetricsSnapshotRow, ReviewIntentRow, SystemEventRow, TopicPerformanceRow, VideoRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -52,6 +53,8 @@ export default async function VideoDetail({
   let events: SystemEventRow[] = [];
   let learningSignals: FeedbackSignalRow[] = [];
   let topicPerf: TopicPerformanceRow[] = [];
+  let autoPublish = false;
+  let pendingIntent: ReviewIntentRow | null = null;
 
   if (supabase) {
     const [vid, snap, ev, fs] = await Promise.all([
@@ -77,6 +80,21 @@ export default async function VideoDetail({
     // video is the one its channel learned.
     if (video) {
       topicPerf = await fetchChannelTopicScores(supabase, video.channel_id);
+      // The review panel needs two more facts: whether this channel publishes
+      // on its own, and whether a request is already waiting on this video.
+      const [ch, intent] = await Promise.all([
+        supabase.from("channels").select("auto_publish").eq("channel_id", video.channel_id).maybeSingle(),
+        supabase
+          .from("review_intents")
+          .select("*")
+          .eq("video_id", id)
+          .is("consumed_at", null)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+      ]);
+      autoPublish = Boolean((ch.data as Pick<ChannelRow, "auto_publish"> | null)?.auto_publish);
+      pendingIntent = (intent.data as ReviewIntentRow | null) ?? null;
     }
   }
 
@@ -101,8 +119,33 @@ export default async function VideoDetail({
 
   const latest = snapshots.length > 0 ? snapshots[snapshots.length - 1] : null;
 
+  // The gate's own words, read back from the event it emitted. A video with no
+  // gate event has an unknown verdict — which the panel says, rather than
+  // implying a pass.
+  const gateEvent = [...events]
+    .reverse()
+    .find((e) => e.event === "publish.blocked" || e.event === "publish.allowed");
+  const gateMeta = (gateEvent?.metadata ?? null) as
+    | { allowed?: boolean; blocks?: string[]; warnings?: string[] }
+    | null;
+  const factEvent = [...events].reverse().find((e) => e.event.startsWith("fact_check"));
+  const flaggedRaw = (factEvent?.metadata as { flagged?: unknown } | null)?.flagged;
+  const gate = gateMeta
+    ? {
+        allowed: Boolean(gateMeta.allowed),
+        reasons: [...(gateMeta.blocks ?? []), ...(gateMeta.warnings ?? [])],
+        flagged: typeof flaggedRaw === "number" ? flaggedRaw : null,
+      }
+    : null;
+
   return (
     <div className="flex flex-col gap-4">
+      <ReviewPanel
+        video={video}
+        autoPublish={autoPublish}
+        gate={gate}
+        pendingIntent={pendingIntent}
+      />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <Link

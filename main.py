@@ -38,6 +38,7 @@ from modules import shorts
 from modules.claim_extractor import extract_claims
 from modules.compositor import Compositor
 from modules.resource_monitor import MemorySampler, log_usage
+from modules.video_review import VideoReview
 from modules.fact_checker import fact_check_claims
 from modules.media_fetcher import MediaFetcher
 from modules.pipeline_stages import PipelineStage, PipelineStateMachine
@@ -464,6 +465,28 @@ def run(
                 events.emit(events.VIDEO_PUBLISHED, video_id=video_id, agent="youtube_uploader",
                             status=events.STATUS_COMPLETED, channel_id=channel_id,
                             metadata={"title": script.title, "url": video_url, "privacy": privacy}, store=store)
+
+            # ── Review: put the finished video where a human can watch it ──
+            # Every upload is private (config.YOUTUBE_PRIVACY defaults to it,
+            # and so do the schedule and the dispatch), so nothing has gone
+            # public here. This only mirrors the mp4 and the script it was
+            # built from into Supabase, so the Command Center can show what is
+            # waiting. It publishes nothing and changes no video's privacy.
+            #
+            # Wrapped because a preview is a convenience: a storage outage must
+            # never turn a run that produced a video into a failed run.
+            try:
+                review = VideoReview()
+                review.record(
+                    video_id=video_id,
+                    channel_id=channel_id,
+                    video_path=video_path,
+                    script_text=script.full_narration(),
+                    auto_publish=review.fetch_auto_publish(channel_id),
+                )
+            except Exception as e:
+                logger.warning("Could not record the review preview (%s: %s)",
+                               type(e).__name__, e)
         except Exception as e:
             # Channel-tagged so one channel's credential failure is visibly
             # that channel's, and does not read as a Chronos-wide outage.
