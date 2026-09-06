@@ -12,9 +12,15 @@
 # lockfile for reproducible `npm ci` builds.
 !command-center/tsconfig.json
 !command-center/package-lock.json
-output/
-logs/
-history/
+# The bot's runtime directories, anchored to the repository root.
+#
+# Unanchored ("logs/") these match at ANY depth, and that silently swallowed
+# command-center/app/(app)/logs/ and command-center/components/logs/ — the
+# Logs screen was never committed and never deployed. A leading slash keeps
+# the rule pointed at the bot's own output and off the app's source.
+/output/
+/logs/
+/history/
 __pycache__/
 *.pyc
 *.pyo
