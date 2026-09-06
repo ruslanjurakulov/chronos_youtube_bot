@@ -36,6 +36,7 @@ from config import (  # noqa: E402
     VIDEO_HEIGHT,
     VIDEO_WIDTH,
 )
+from modules.resource_monitor import mark_stage  # noqa: E402
 from modules.script_engine import Script  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -283,6 +284,11 @@ class Compositor:
     ) -> Path:
         logger.info("Starting render for: %s", self.slug)
 
+        # The render is one call to the pipeline and half a dozen phases in
+        # here. Naming each one costs a log line and lets the memory sampler
+        # say which phase a spike belongs to; nothing below behaves
+        # differently for having been named. See modules/resource_monitor.py.
+        mark_stage("open audio")
         audio = AudioFileClip(str(audio_path))
         total_duration = audio.duration
 
@@ -290,6 +296,7 @@ class Compositor:
             # Sections are laid end to end, in the same order and with the same
             # durations as the audio timeline they were measured from.
             all_clips = []
+            sections = len(script.sections)
             for i, section in enumerate(script.sections):
                 if i >= len(section_timeline):
                     break
@@ -301,10 +308,15 @@ class Compositor:
                 # Stills only get Ken Burns room during slower story sections;
                 # the hook's 2s cuts stay on motion footage.
                 images = image_paths if section.section_type == "story" else []
+                mark_stage(f"build clip pool, section {i + 1}/{sections}")
                 seg_clips = self._build_clip_pool(
                     video_paths, images, section.cut_interval, sec_dur
                 )
                 if seg_clips:
+                    mark_stage(
+                        f"concatenate section {i + 1}/{sections} "
+                        f"({len(seg_clips)} clips)"
+                    )
                     all_clips.append(concatenate_videoclips(seg_clips, method="compose"))
 
             if not all_clips:
@@ -312,9 +324,11 @@ class Compositor:
                 all_clips = [ColorClip((VIDEO_WIDTH, VIDEO_HEIGHT), color=(0, 0, 0),
                                        duration=total_duration)]
 
+            mark_stage(f"concatenate {len(all_clips)} section(s)")
             bg = concatenate_videoclips(all_clips, method="compose")
             bg = bg.set_duration(total_duration)
 
+            mark_stage("render subtitles")
             subtitle_clips = self._build_subtitle_clips(word_timestamps)
             # Both numbers, because the gap between them is the whole point:
             # the clips are what the viewer sees, the renders are what the
@@ -324,11 +338,16 @@ class Compositor:
                 len(subtitle_clips), len(self._text_clips),
             )
 
+            mark_stage(f"composite {len(subtitle_clips) + 1} layer(s)")
             final = CompositeVideoClip([bg] + subtitle_clips,
                                        size=(VIDEO_WIDTH, VIDEO_HEIGHT))
             final = final.set_audio(audio).set_duration(total_duration)
 
             out_path = self.out_dir / "final_video.mp4"
+            # Where the frames are actually pulled: every reader, every Ken
+            # Burns resize and both x264 threads are live at the same time from
+            # here until the file is written.
+            mark_stage("encode")
             final.write_videofile(
                 str(out_path),
                 fps=VIDEO_FPS,
@@ -343,6 +362,7 @@ class Compositor:
                 logger=None,
             )
         finally:
+            mark_stage("close readers")
             # Windows keeps the media files locked until these are released.
             for reader in self._readers.values():
                 try:
