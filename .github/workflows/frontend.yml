@@ -1,0 +1,71 @@
+name: Frontend
+
+# The Command Center had no CI at all: `tsc`, `next lint` and `vitest` only ever
+# ran on someone's laptop, so a type error or a failing derivation reached main
+# whenever they forgot. This runs the same three checks the Python suite's
+# counterpart runs for the bot.
+#
+# Scoped by path in both directions: Tests ignores `command-center/**` and this
+# one runs on nothing else, so a frontend change never pays for the Python suite
+# and a Python change never pays for npm install.
+
+on:
+  push:
+    # main only — see tests.yml. On a PR branch, `push` and `pull_request` would
+    # otherwise both fire on the same SHA and run the identical suite twice.
+    branches: [main]
+    paths:
+      - "command-center/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "command-center/**"
+      - ".github/workflows/frontend.yml"
+  workflow_dispatch:
+
+# A second push supersedes the first: only the newest commit on a branch is
+# worth minutes, and cancelling the older run is what keeps the queue short.
+concurrency:
+  group: frontend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: command-center
+    env:
+      # Nothing here should phone home from CI, and the notice is noise in the log.
+      NEXT_TELEMETRY_DISABLED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: command-center/package-lock.json
+
+      # `ci` rather than `install`: it installs exactly the lockfile and fails if
+      # package.json has drifted from it, which is a thing CI should catch.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # Each check runs even when an earlier one failed, so one round reports
+      # every problem instead of hiding the tests behind a lint nit.
+      - name: Lint
+        if: ${{ !cancelled() }}
+        run: npx next lint
+
+      - name: Unit tests
+        if: ${{ !cancelled() }}
+        run: npx vitest run
