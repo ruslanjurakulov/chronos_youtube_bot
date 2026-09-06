@@ -123,17 +123,56 @@ This opens Google's consent screen locally and writes the token to that
 channel's file. It prints the file path and the secret name — **never the
 token**. Copy the file's contents into the GitHub secret named above.
 
-### Why there is no "Connect YouTube" button
+### How keys reach GitHub (forward, never store)
 
-An OAuth code exchange needs the client secret, and the resulting refresh token
-must be stored where the *publisher* can read it. The publisher is a GitHub
-Actions job reading repository secrets; the Command Center is a read-only
-dashboard holding a Supabase anon key. A button there could not complete the
-exchange without either shipping a client secret to the browser or giving the
-web app permission to write repository secrets — both strictly worse than one
-local command. The Add Channel flow therefore hands over instructions, and the
-status it shows afterwards is what the bot reports, since the bot is the only
-party that can see the credential.
+The Add Channel wizard has an **API keys** step. What is typed there is not
+saved by the Command Center. It goes to a server route
+(`app/api/setup/secrets`), which seals each value to the repository's Actions
+public key with libsodium and `PUT`s it to
+`/repos/{owner}/{repo}/actions/secrets/{NAME}`. The value exists for the length
+of that function call: it is never written to Supabase, never put in an event's
+metadata, never logged, never returned to the browser, and the input is cleared
+the moment GitHub accepts it. GitHub itself will not read a secret back, so the
+dashboard cannot show one afterwards — not even its length.
+
+Three properties make this safe rather than merely convenient:
+
+* **The write token is server-only.** `GITHUB_SECRETS_TOKEN` is a plain Vercel
+  environment variable, read exclusively by `lib/server/github-secrets.ts`,
+  which is marked `server-only` so importing it from a client component fails
+  the build instead of shipping the token. It must never be prefixed
+  `NEXT_PUBLIC_`. Scope it as a fine-grained PAT on this one repository with
+  *Secrets: Read and write* and nothing else.
+* **An allowlist, not a filter.** Only the pipeline's own keys and
+  `CHRONOS_YT_TOKEN_<REF>` may be written. `SUPABASE_SERVICE_KEY` and every
+  other name is refused, so an authenticated operator cannot aim the endpoint at
+  a secret the workflow trusts for something else. `tests/github-secrets.test.ts`
+  pins that boundary.
+* **The route is behind the session.** Both handlers call `getUser()` and answer
+  401 without one.
+
+Leave `GITHUB_SECRETS_TOKEN` unset and nothing breaks: the step says forwarding
+is off and the channel is still created — the secrets are then added on GitHub
+by hand, exactly as before.
+
+`tools/connect_channel.py` is still how a refresh token is *produced*: an OAuth
+code exchange needs the client secret and a browser consent it must own. What
+changed is only where the resulting JSON is pasted — into the wizard, which
+forwards it, instead of into GitHub's own form.
+
+### Confirming the channel
+
+The same step asks for a **YouTube Data API key**, and the Connect step uses it
+for one call to `channels.list` before anything is created. That single read
+proves both halves at once: the key works, and the channel id (or `@handle`)
+names a real channel. What comes back — avatar, title, handle, subscriber,
+video and view counts — is public, and it is the operator's proof that the right
+channel was opened. A count YouTube hides reads *hidden*, never `0`.
+
+The avatar and title are kept in `credential_ref` and shown on the channel card,
+because they are public facts. They are **not** a credential status: whether the
+channel can actually publish is still only ever reported by the bot, which is
+the only party that can see the token.
 
 ---
 

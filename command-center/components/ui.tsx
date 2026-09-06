@@ -43,15 +43,13 @@ export function StatCard({
 }) {
   const color = tone ? (TONE[tone]?.fg ?? "var(--color-fg)") : "var(--color-fg)";
   return (
-    <div className="panel p-4 transition-transform duration-200 hover:-translate-y-0.5 hover:border-[var(--color-primary-dim)]">
-      <div className="mono text-[10px] font-semibold uppercase tracking-widest text-[var(--color-muted)]">
-        {label}
-      </div>
-      <div className="mt-1.5 mono text-2xl font-bold tabular-nums" style={{ color }}>
+    <div className="border-t border-[var(--color-border)] pt-4 transition-colors hover:border-[var(--color-primary-dim)]">
+      <div className="t-label">{label}</div>
+      <div className="t-figure mt-3" style={{ color }}>
         {value}
       </div>
       {sub !== undefined && (
-        <div className="mt-0.5 mono text-[11px] text-[var(--color-muted)]">{sub}</div>
+        <div className="mt-2 text-[13px] font-light text-[var(--color-muted)]">{sub}</div>
       )}
     </div>
   );
@@ -59,9 +57,9 @@ export function StatCard({
 
 export function Panel({ title, children, right }: { title: string; children: ReactNode; right?: ReactNode }) {
   return (
-    <section className="panel flex flex-col overflow-hidden transition-colors hover:border-[color-mix(in_srgb,var(--color-border)_60%,var(--color-primary-dim))]">
-      <header className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-2.5">
-        <h2 className="mono text-xs font-bold uppercase tracking-widest text-[var(--color-fg)]">{title}</h2>
+    <section className="section-open">
+      <header className="section-head">
+        <h2 className="t-panel">{title}</h2>
         {right}
       </header>
       <div className="min-h-0 flex-1">{children}</div>
@@ -71,7 +69,7 @@ export function Panel({ title, children, right }: { title: string; children: Rea
 
 export function EmptyState({ children }: { children: ReactNode }) {
   return (
-    <div className="flex items-center justify-center p-8 text-center mono text-xs text-[var(--color-muted)]">
+    <div className="flex items-center justify-center px-4 py-14 text-center text-[15px] font-light text-[var(--color-muted)]">
       {children}
     </div>
   );

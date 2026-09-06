@@ -52,11 +52,11 @@ export default async function ErrorCenter() {
   const lastError = errors[0]?.ts ?? null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm stagger-enter">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">{t.errors.title}</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">{t.errors.subtitle}</p>
+          <h1 className="t-hero">{t.errors.title}</h1>
+          <p className="t-lead mt-4">{t.errors.subtitle}</p>
         </div>
       </div>
 

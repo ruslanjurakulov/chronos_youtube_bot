@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n/context";
@@ -10,17 +10,23 @@ import { isValidChannelId, slugifyChannelId } from "@/lib/channels";
 /**
  * Guided channel creation.
  *
- * Two things are deliberate:
+ * Three things are deliberate:
  *
  * 1. **The channel is created PAUSED**, always, with no option here to create
  *    it active. Creating a channel must never start publishing; activating is a
  *    separate, explicit act on the Channels page once YouTube is connected.
- * 2. **The Connect YouTube step hands over instructions, not a token field.**
- *    A refresh token must never pass through the browser, so there is nowhere
- *    to paste one: the step names the command to run on a trusted machine and
- *    the GitHub secret the resulting token belongs in. The connection status
- *    that appears afterwards is reported by the bot, which is the only party
- *    that can actually see the credential.
+ * 2. **Keys are forwarded, not stored.** The API keys step writes straight into
+ *    the bot repository's GitHub Actions secrets through a server route: the
+ *    value is sealed to the repo's public key, PUT to GitHub, and dropped. It
+ *    is never part of the Supabase insert, never in an event, never logged, and
+ *    the field is cleared the moment GitHub accepts it. Nothing about a key is
+ *    readable from this dashboard afterwards — not even its length.
+ * 3. **The channel is confirmed against YouTube before it is created.** The
+ *    Data API key the operator just typed is used for one read of
+ *    channels.list, which proves both halves at once: the key works, and the id
+ *    or handle names a real channel. The avatar and counts that come back are
+ *    public facts, and they are what tells the operator they opened the right
+ *    channel.
  *
  * The write goes to `channels` only, via the authenticated insert policy added
  * by migration 0001. No data table is writable from here.
@@ -33,11 +39,25 @@ const STEPS = [
   "voice",
   "visual",
   "schedule",
+  "keys",
   "connect",
   "activate",
 ] as const;
 
 type Step = (typeof STEPS)[number];
+
+type ChannelInfo = {
+  channelId: string;
+  title: string;
+  customUrl: string;
+  description: string;
+  country: string;
+  publishedAt: string;
+  thumbnail: string;
+  subscribers: string | null;
+  videos: string | null;
+  views: string | null;
+};
 
 export function AddChannelWizard() {
   const { t } = useI18n();
@@ -61,9 +81,28 @@ export function AddChannelWizard() {
   const [scheduleEnabled, setScheduleEnabled] = useState(true);
   const [credentialRef, setCredentialRef] = useState("");
   const [youtubeChannelId, setYoutubeChannelId] = useState("");
+  const [handle, setHandle] = useState("");
+
+  // Secret values. These live in component state for as long as it takes to
+  // hand them to GitHub, and are cleared the moment GitHub accepts them.
+  const [geminiKey, setGeminiKey] = useState("");
+  const [pexelsKey, setPexelsKey] = useState("");
+  const [elevenKey, setElevenKey] = useState("");
+  const [ytDataKey, setYtDataKey] = useState("");
+  const [clientSecretJson, setClientSecretJson] = useState("");
+  const [tokenJson, setTokenJson] = useState("");
+
+  const [ghRepo, setGhRepo] = useState<string | null>(null);
+  const [ghConfigured, setGhConfigured] = useState<boolean | null>(null);
+
+  const [verifyBusy, setVerifyBusy] = useState(false);
+  const [verifyError, setVerifyError] = useState<string | null>(null);
+  const [info, setInfo] = useState<ChannelInfo | null>(null);
 
   const [busy, setBusy] = useState(false);
+  const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pushed, setPushed] = useState<{ name: string; result: string }[] | null>(null);
   const [created, setCreated] = useState(false);
 
   const effectiveId = idTouched ? channelId : slugifyChannelId(name);
@@ -73,14 +112,125 @@ export function AddChannelWizard() {
     return "CHRONOS_YT_TOKEN_" + key.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "");
   }, [credentialRef, effectiveId]);
 
+  // Ask the server whether forwarding is wired up at all, so the keys step can
+  // say what is missing instead of failing at the last click.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/setup/secrets")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!alive || !d) return;
+        setGhConfigured(Boolean(d.configured));
+        setGhRepo(d.repo || null);
+      })
+      .catch(() => {
+        if (alive) setGhConfigured(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const current: Step = STEPS[step];
   const canAdvance = current === "identity" ? Boolean(name.trim()) && idValid : true;
+
+  /** The secrets the operator actually filled in, keyed by their GitHub name. */
+  function pendingSecrets(): Record<string, string> {
+    const out: Record<string, string> = {};
+    if (geminiKey.trim()) out.GEMINI_API_KEY = geminiKey.trim();
+    if (pexelsKey.trim()) out.PEXELS_API_KEY = pexelsKey.trim();
+    if (elevenKey.trim()) out.ELEVENLABS_API_KEY = elevenKey.trim();
+    if (ytDataKey.trim()) out.YOUTUBE_DATA_API_KEY = ytDataKey.trim();
+    if (clientSecretJson.trim()) out.YOUTUBE_CLIENT_SECRET_JSON = clientSecretJson.trim();
+    if (tokenJson.trim()) out[secret] = tokenJson.trim();
+    const yt = info?.channelId || youtubeChannelId.trim();
+    if (yt) out.YOUTUBE_CHANNEL_ID = yt;
+    return out;
+  }
+
+  async function verify() {
+    setVerifyBusy(true);
+    setVerifyError(null);
+    setInfo(null);
+    try {
+      const res = await fetch("/api/setup/youtube", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          apiKey: ytDataKey.trim(),
+          channelId: youtubeChannelId.trim(),
+          handle: handle.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setVerifyError(
+          data.error === "key_rejected"
+            ? t.channels.verifyKeyRejected
+            : data.error === "channel_not_found"
+              ? t.channels.verifyNotFound
+              : data.error === "missing_key"
+                ? t.channels.verifyNeedsKey
+                : t.channels.verifyFailed,
+        );
+        return;
+      }
+      setInfo(data as ChannelInfo);
+      // The confirmed id is authoritative — a handle lookup fills the field in.
+      if (data.channelId) setYoutubeChannelId(data.channelId);
+    } catch {
+      setVerifyError(t.channels.verifyFailed);
+    } finally {
+      setVerifyBusy(false);
+    }
+  }
 
   async function create() {
     const supabase = createClient();
     if (!supabase) return;
     setBusy(true);
     setError(null);
+
+    // 1. Hand the keys to GitHub first. If this fails the channel is not
+    //    created, so a retry does not leave a duplicate row behind.
+    const secrets = pendingSecrets();
+    if (Object.keys(secrets).length > 0 && ghConfigured) {
+      setStage(t.channels.pushingSecrets);
+      try {
+        const res = await fetch("/api/setup/secrets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ secrets }),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          setBusy(false);
+          setStage(null);
+          setError(
+            data.error === "github_unauthorized"
+              ? t.channels.secretsUnauthorized
+              : t.channels.secretsFailed,
+          );
+          return;
+        }
+        setPushed(data.written ?? []);
+        // Accepted by GitHub — drop every value from the browser.
+        setGeminiKey("");
+        setPexelsKey("");
+        setElevenKey("");
+        setYtDataKey("");
+        setClientSecretJson("");
+        setTokenJson("");
+      } catch {
+        setBusy(false);
+        setStage(null);
+        setError(t.channels.secretsFailed);
+        return;
+      }
+    }
+
+    // 2. Create the channel row — configuration only, no credential material.
+    setStage(t.channels.creating);
     const now = new Date().toISOString();
     const { error: err } = await supabase.from("channels").insert({
       channel_id: effectiveId,
@@ -108,16 +258,27 @@ export function AddChannelWizard() {
         publish_hour_utc: hour === "" ? null : Number(hour),
         enabled: scheduleEnabled,
       },
-      // A reference only — the token itself never reaches this app.
+      // A reference only — the token itself never reaches this app. The public
+      // channel facts confirmed above are safe to keep: they are the proof the
+      // right channel was opened.
       credential_ref: {
         provider: "youtube",
         ref: credentialRef.trim() || effectiveId,
-        youtube_channel_id: youtubeChannelId.trim(),
+        youtube_channel_id: info?.channelId || youtubeChannelId.trim(),
+        ...(info
+          ? {
+              youtube_title: info.title,
+              youtube_thumbnail: info.thumbnail,
+              youtube_custom_url: info.customUrl,
+              verified_at: now,
+            }
+          : {}),
       },
       created_at: now,
       updated_at: now,
     });
     setBusy(false);
+    setStage(null);
     if (err) {
       setError(err.message);
       return;
@@ -128,15 +289,30 @@ export function AddChannelWizard() {
 
   if (created) {
     return (
-      <div className="panel flex flex-col items-start gap-3 p-6">
+      <div className="section-card page-rise flex flex-col items-start gap-4">
         <p className="text-sm text-[var(--color-ok)]">{t.channels.created}</p>
-        <p className="text-[12px] leading-relaxed text-[var(--color-muted)]">
+        {info && <ChannelProof info={info} t={t} />}
+        {pushed && pushed.length > 0 && (
+          <div className="flex flex-col gap-1">
+            <p className="text-[12px] text-[var(--color-ok)]">
+              {fmt(t.channels.secretsPushed, { n: pushed.length, repo: ghRepo ?? "GitHub" })}
+            </p>
+            <ul className="mono flex flex-col gap-0.5 text-[11px] text-[var(--color-muted)]">
+              {pushed.map((s) => (
+                <li key={s.name}>
+                  {s.name} — {s.result === "created" ? t.channels.secretWritten : t.channels.secretUpdated}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <p className="max-w-[70ch] text-[12px] leading-relaxed text-[var(--color-muted)]">
           {fmt(t.channels.connectHint, { id: effectiveId, secret })}
         </p>
         <button
           type="button"
           onClick={() => router.push("/channels")}
-          className="press rounded-md border border-[var(--color-primary-dim)] px-3 py-1.5 mono text-[10px] uppercase tracking-widest text-[var(--color-primary)]"
+          className="btn-sky pill px-5 py-2.5 text-[13px]"
         >
           {t.channels.title} →
         </button>
@@ -151,7 +327,7 @@ export function AddChannelWizard() {
           <li
             key={s}
             aria-current={i === step ? "step" : undefined}
-            className="mono rounded px-2 py-0.5 text-[9px] uppercase tracking-widest"
+            className="rounded px-2 py-0.5 text-[9px] uppercase tracking-[0.22em]"
             style={{
               background: i === step ? "var(--color-panel-2)" : "transparent",
               color:
@@ -308,35 +484,122 @@ export function AddChannelWizard() {
           </>
         )}
 
+        {current === "keys" && (
+          <>
+            <p className="max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-muted)]">
+              {t.channels.keysHint}
+            </p>
+            {ghConfigured === false ? (
+              <p className="max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-warn)]">
+                {t.channels.keysNotConfigured}
+              </p>
+            ) : (
+              ghRepo && (
+                <p className="mono text-[11px] text-[var(--color-muted)]">
+                  {fmt(t.channels.keysTarget, { repo: ghRepo })}
+                </p>
+              )
+            )}
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Secret label={t.channels.keyGemini} value={geminiKey} onChange={setGeminiKey} name="GEMINI_API_KEY" />
+              <Secret label={t.channels.keyPexels} value={pexelsKey} onChange={setPexelsKey} name="PEXELS_API_KEY" />
+              <Secret label={t.channels.keyEleven} value={elevenKey} onChange={setElevenKey} name="ELEVENLABS_API_KEY" />
+              <Secret
+                label={t.channels.keyYoutubeData}
+                value={ytDataKey}
+                onChange={setYtDataKey}
+                name="YOUTUBE_DATA_API_KEY"
+                hint={t.channels.keyYoutubeDataHint}
+              />
+            </div>
+            <Field label={t.channels.keyClientSecret} hint="YOUTUBE_CLIENT_SECRET_JSON">
+              <textarea
+                value={clientSecretJson}
+                onChange={(e) => setClientSecretJson(e.target.value)}
+                rows={2}
+                spellCheck={false}
+                autoComplete="off"
+                placeholder='{"installed":{…}}'
+                className={inputClass}
+              />
+            </Field>
+            <Field label={t.channels.keyToken} hint={fmt(t.channels.keyTokenHint, { secret })}>
+              <textarea
+                value={tokenJson}
+                onChange={(e) => setTokenJson(e.target.value)}
+                rows={2}
+                spellCheck={false}
+                autoComplete="off"
+                placeholder='{"refresh_token":"…"}'
+                className={inputClass}
+              />
+            </Field>
+          </>
+        )}
+
         {current === "connect" && (
           <>
-            <Field label="credential ref">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="credential ref">
+                <input
+                  value={credentialRef}
+                  onChange={(e) => setCredentialRef(e.target.value)}
+                  placeholder={effectiveId}
+                  className={inputClass}
+                />
+              </Field>
+              <Field label={`${t.channels.youtube} channel id`} hint={t.channels.handleHint}>
+                <input
+                  value={youtubeChannelId}
+                  onChange={(e) => setYoutubeChannelId(e.target.value)}
+                  placeholder="UC…"
+                  className={inputClass}
+                />
+              </Field>
+            </div>
+            <Field label={t.channels.handle}>
               <input
-                value={credentialRef}
-                onChange={(e) => setCredentialRef(e.target.value)}
-                placeholder={effectiveId}
+                value={handle}
+                onChange={(e) => setHandle(e.target.value)}
+                placeholder="@extinctworld"
                 className={inputClass}
               />
             </Field>
-            <Field label={`${t.channels.youtube} channel id`}>
-              <input
-                value={youtubeChannelId}
-                onChange={(e) => setYoutubeChannelId(e.target.value)}
-                placeholder="UC…"
-                className={inputClass}
-              />
-            </Field>
-            <p className="text-[12px] leading-relaxed text-[var(--color-muted)]">
+
+            <div className="flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={verify}
+                disabled={verifyBusy || !ytDataKey.trim() || (!youtubeChannelId.trim() && !handle.trim())}
+                className="btn-sky pill px-5 py-2.5 text-[13px] disabled:opacity-40"
+              >
+                {verifyBusy ? t.channels.verifying : t.channels.verify}
+              </button>
+              {!ytDataKey.trim() && (
+                <span className="text-[11px] text-[var(--color-muted)]">{t.channels.verifyNeedsKey}</span>
+              )}
+            </div>
+
+            {verifyError && <p className="text-[12px] text-[var(--color-fail)]">{verifyError}</p>}
+            {info && <ChannelProof info={info} t={t} />}
+
+            <p className="max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-muted)]">
               {fmt(t.channels.connectHint, { id: effectiveId || "…", secret })}
             </p>
           </>
         )}
 
         {current === "activate" && (
-          <p className="text-[12px] leading-relaxed text-[var(--color-muted)]">{t.channels.activateHint}</p>
+          <>
+            {info && <ChannelProof info={info} t={t} />}
+            <p className="max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-muted)]">
+              {t.channels.activateHint}
+            </p>
+          </>
         )}
       </div>
 
+      {stage && <p className="text-[12px] text-[var(--color-muted)]">{stage}</p>}
       {error && <p className="mono text-[11px] text-[var(--color-fail)]">{t.channels.createFailed}: {error}</p>}
 
       <div className="flex items-center justify-between gap-3 border-t border-[var(--color-border)] pt-3">
@@ -344,7 +607,7 @@ export function AddChannelWizard() {
           type="button"
           onClick={() => setStep((s) => Math.max(0, s - 1))}
           disabled={step === 0 || busy}
-          className="press rounded-md border border-[var(--color-border)] px-3 py-1.5 mono text-[10px] uppercase tracking-widest text-[var(--color-muted)] disabled:opacity-40"
+          className="btn-sky ghost pill px-5 py-2.5 text-[13px] disabled:opacity-40"
         >
           {t.channels.back}
         </button>
@@ -353,7 +616,7 @@ export function AddChannelWizard() {
             type="button"
             onClick={() => setStep((s) => s + 1)}
             disabled={!canAdvance}
-            className="press rounded-md border border-[var(--color-primary-dim)] px-3 py-1.5 mono text-[10px] uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-40"
+            className="btn-sky pill px-5 py-2.5 text-[13px] disabled:opacity-40"
           >
             {t.channels.next}
           </button>
@@ -362,12 +625,60 @@ export function AddChannelWizard() {
             type="button"
             onClick={create}
             disabled={busy || !idValid || !name.trim()}
-            className="press rounded-md border border-[var(--color-primary-dim)] bg-[var(--color-panel-2)] px-3 py-1.5 mono text-[10px] uppercase tracking-widest text-[var(--color-primary)] disabled:opacity-40"
+            className="btn-sky is-solid pill px-5 py-2.5 text-[13px] disabled:opacity-40"
           >
             {busy ? t.channels.creating : t.channels.create}
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The channel as YouTube itself reports it: avatar, name, handle and counts.
+ *
+ * Every figure here came back from channels.list moments ago. A count YouTube
+ * hides (subscriber counts can be private) reads "hidden" rather than 0 — an
+ * unknown is never rendered as a number.
+ */
+function ChannelProof({ info, t }: { info: ChannelInfo; t: Dict }) {
+  const stat = (v: string | null) => (v === null ? t.channels.hidden : Number(v).toLocaleString());
+  return (
+    <div className="flex flex-wrap items-center gap-5 rounded-[18px] border border-[var(--color-border)] bg-[var(--color-panel-2)] p-4">
+      {info.thumbnail && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={info.thumbnail}
+          alt=""
+          width={64}
+          height={64}
+          className="h-16 w-16 shrink-0 rounded-full border border-[var(--color-border)] object-cover"
+        />
+      )}
+      <div className="min-w-0">
+        <div className="text-[10px] uppercase tracking-[0.24em] text-[var(--color-ok)]">
+          {t.channels.verified}
+        </div>
+        <div className="mt-1.5 truncate text-[17px] font-semibold">{info.title}</div>
+        <div className="mono truncate text-[11px] text-[var(--color-muted)]">
+          {info.customUrl || info.channelId}
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-x-8 gap-y-2 sm:ml-auto">
+        <Stat label={t.channels.subscribers} value={stat(info.subscribers)} />
+        <Stat label={t.channels.videoCount} value={stat(info.videos)} />
+        <Stat label={t.channels.viewCount} value={stat(info.views)} />
+      </div>
+    </div>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-[9px] uppercase tracking-[0.24em] text-[var(--color-muted)]">{label}</div>
+      <div className="mono mt-1 text-[15px] font-semibold tabular-nums">{value}</div>
     </div>
   );
 }
@@ -378,10 +689,42 @@ const inputClass =
 function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
   return (
     <label className="flex flex-col gap-1">
-      <span className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{label}</span>
+      <span className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{label}</span>
       {children}
       {hint && <span className="text-[10px] text-[var(--color-muted)]">{hint}</span>}
     </label>
+  );
+}
+
+/**
+ * A key field. Masked, never autofilled, never autocompleted — a password
+ * manager must not learn these, and a screen recording must not capture them.
+ */
+function Secret({
+  label,
+  name,
+  value,
+  onChange,
+  hint,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (v: string) => void;
+  hint?: string;
+}) {
+  return (
+    <Field label={label} hint={hint ?? name}>
+      <input
+        type="password"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="off"
+        spellCheck={false}
+        placeholder="••••••••"
+        className={inputClass}
+      />
+    </Field>
   );
 }
 
@@ -401,6 +744,8 @@ function stepLabel(step: Step, t: Dict): string {
       return t.channels.stepVisual;
     case "schedule":
       return t.channels.stepSchedule;
+    case "keys":
+      return t.channels.stepKeys;
     case "connect":
       return t.channels.stepConnect;
     default:

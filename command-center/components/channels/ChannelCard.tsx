@@ -67,12 +67,27 @@ export function ChannelCard({
   return (
     <section className="panel flex flex-col gap-3 p-4">
       <header className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">{channel.name}</h2>
-          <p className="mono truncate text-[10px] text-[var(--color-muted)]">
-            {channel.channel_id}
-            {channel.niche ? ` · ${channel.niche}` : ""}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          {/* The channel's own avatar, pulled from YouTube when the channel was
+              confirmed. Public, and the fastest way to see at a glance that the
+              right channel is wired up. */}
+          {channel.credential_ref?.youtube_thumbnail && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={channel.credential_ref.youtube_thumbnail}
+              alt=""
+              width={36}
+              height={36}
+              className="h-9 w-9 shrink-0 rounded-full border border-[var(--color-border)] object-cover"
+            />
+          )}
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold">{channel.name}</h2>
+            <p className="mono truncate text-[10px] text-[var(--color-muted)]">
+              {channel.credential_ref?.youtube_custom_url || channel.channel_id}
+              {channel.niche ? ` · ${channel.niche}` : ""}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <StatusPill
@@ -83,7 +98,7 @@ export function ChannelCard({
             type="button"
             onClick={toggleStatus}
             disabled={busy || pending}
-            className="press rounded-md border border-[var(--color-border)] px-2.5 py-1 mono text-[10px] uppercase tracking-widest text-[var(--color-muted)] hover:border-[var(--color-primary-dim)] hover:text-[var(--color-fg)] disabled:opacity-50"
+            className="btn-sky ghost pill px-4 py-2 text-[12px] disabled:opacity-50"
           >
             {busy ? t.channels.saving : active ? t.channels.pause : t.channels.activate}
           </button>
@@ -99,7 +114,7 @@ export function ChannelCard({
       {/* -- health ------------------------------------------------------ */}
       <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+          <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
             {t.channels.health}
           </span>
           <StatusPill
@@ -131,7 +146,7 @@ export function ChannelCard({
       {/* -- youtube ----------------------------------------------------- */}
       <div className="rounded-md border border-[var(--color-border)] p-3">
         <div className="flex items-center justify-between gap-2">
-          <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+          <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
             {t.channels.youtube}
           </span>
           {credential ? (
@@ -212,14 +227,14 @@ export function ChannelCard({
 
       {agent.visual_style_prompt && (
         <p className="text-[11px] leading-relaxed text-[var(--color-muted)]">
-          <span className="mono text-[9px] uppercase tracking-widest">{t.channels.visualStyle}: </span>
+          <span className="text-[9px] uppercase tracking-[0.22em]">{t.channels.visualStyle}: </span>
           {agent.visual_style_prompt}
         </p>
       )}
 
       <Link
         href={`/videos?channel=${encodeURIComponent(channel.channel_id)}`}
-        className="mono text-[10px] uppercase tracking-widest text-[var(--color-primary)] hover:underline"
+        className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-primary)] hover:underline"
       >
         {t.channels.videos} →
       </Link>
@@ -230,7 +245,7 @@ export function ChannelCard({
 function Field({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
-      <dt className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{label}</dt>
+      <dt className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{label}</dt>
       <dd className="truncate text-[12px] text-[var(--color-fg)]">{value || "—"}</dd>
     </div>
   );

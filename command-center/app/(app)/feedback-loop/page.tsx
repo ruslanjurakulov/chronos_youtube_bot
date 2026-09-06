@@ -52,10 +52,10 @@ export default async function FeedbackPage() {
   const lastRun = signals[0]?.analyzed_date ?? null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm stagger-enter">
       <div>
-        <h1 className="text-lg font-semibold">{t.feedback.title}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.feedback.subtitle}</p>
+        <h1 className="t-hero">{t.feedback.title}</h1>
+        <p className="t-lead mt-4">{t.feedback.subtitle}</p>
       </div>
 
       {/* The loop, drawn from the real stages the backend runs */}
@@ -91,7 +91,7 @@ export default async function FeedbackPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.feedback.thTopic}</th>
                   <th className="px-4 py-2 font-semibold">{t.feedback.thScore}</th>
                   <th className="px-4 py-2 font-semibold">{t.feedback.thVideos}</th>
@@ -125,7 +125,7 @@ export default async function FeedbackPage() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.feedback.sgSignal}</th>
                   <th className="px-4 py-2 font-semibold">{t.feedback.sgTopic}</th>
                   <th className="px-4 py-2 font-semibold">{t.feedback.sgVideo}</th>

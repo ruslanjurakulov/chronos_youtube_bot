@@ -16,12 +16,12 @@ export default async function NewChannelPage() {
       <div>
         <Link
           href="/channels"
-          className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)] hover:text-[var(--color-fg)]"
+          className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)] hover:text-[var(--color-fg)]"
         >
           ← {t.channels.title}
         </Link>
-        <h1 className="mt-1 text-lg font-semibold">{t.channels.newTitle}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.channels.newSubtitle}</p>
+        <h1 className="t-hero mt-2">{t.channels.newTitle}</h1>
+        <p className="t-lead mt-4">{t.channels.newSubtitle}</p>
       </div>
       <AddChannelWizard />
     </div>

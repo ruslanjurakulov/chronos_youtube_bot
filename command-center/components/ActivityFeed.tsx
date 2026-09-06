@@ -52,7 +52,7 @@ export function ActivityFeed({
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between gap-2 border-b border-[var(--color-border)] px-4 py-2">
-        <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+        <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
           {fmt(t.feed.events, { n: shown.length })}
         </span>
         <StatusPill tone={live ? "run" : "idle"} label={live ? t.status.live : t.status.polled} live={live} />
@@ -66,7 +66,7 @@ export function ActivityFeed({
               key={f.key}
               type="button"
               onClick={() => setFilter(f.key)}
-              className="press mono rounded px-2 py-1 text-[9px] font-semibold uppercase tracking-widest transition-colors"
+              className="btn-sky is-quiet pill border-transparent px-2 py-1 text-[9px] font-semibold uppercase tracking-[0.22em]"
               style={{
                 background: on ? "var(--color-panel-2)" : "transparent",
                 color: on ? "var(--color-primary)" : "var(--color-muted)",

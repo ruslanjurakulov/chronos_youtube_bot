@@ -5,8 +5,8 @@ import { I18nProvider } from "@/lib/i18n/context";
 import { NO_FLASH_SCRIPT } from "@/lib/theme";
 
 export const metadata: Metadata = {
-  title: "Chronos Command Center",
-  description: "Real-time monitoring & control plane for the Chronos content-automation bot.",
+  title: "Nightshift Command Center",
+  description: "Real-time monitoring & control plane for the Nightshift content-automation bot.",
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -22,7 +22,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         {/* eslint-disable-next-line @next/next/no-page-custom-font */}
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
         />
         {/* Apply the saved theme before first paint — prevents a flash of the
             wrong theme. Must run synchronously, ahead of the body. */}

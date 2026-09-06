@@ -83,7 +83,7 @@ export function AutonomyView({
                       {p.evidenceTs ? fmt(t.auto.postureEvidence, { t: relativeTime(p.evidenceTs) }) : t.auto.postureNoEvidence}
                     </div>
                   </div>
-                  <span className="mono shrink-0 text-[9px] font-semibold uppercase tracking-widest" style={{ color }}>
+                  <span className="shrink-0 text-[9px] font-semibold uppercase tracking-[0.22em]" style={{ color }}>
                     {String(t.auto[CAP_KEY[p.state]])}
                   </span>
                 </li>
@@ -104,14 +104,14 @@ export function AutonomyView({
                 { label: t.auto.hRunning, value: health.running, color: "var(--color-primary)" },
               ].map((s) => (
                 <div key={s.label} className="rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-2">
-                  <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">{s.label}</div>
+                  <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{s.label}</div>
                   <div className="mono text-xl font-bold tabular-nums" style={{ color: s.color }}>
                     <AnimatedNumber value={s.value} />
                   </div>
                 </div>
               ))}
               <div className="rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-3 py-2">
-                <div className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">{t.auto.hHuman}</div>
+                <div className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{t.auto.hHuman}</div>
                 <div className="mono text-xl font-bold tabular-nums text-[var(--color-idle)]">
                   {health.humanInterventions ?? t.common.na}
                 </div>
@@ -170,7 +170,7 @@ export function AutonomyView({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.auto.fEvent}</th>
                   <th className="px-4 py-2 font-semibold">{t.auto.fAgent}</th>
                   <th className="px-4 py-2 text-right font-semibold">{t.auto.fCount}</th>
@@ -201,7 +201,7 @@ export function AutonomyView({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.auto.aWhen}</th>
                   <th className="px-4 py-2 font-semibold">{t.auto.aAgent}</th>
                   <th className="px-4 py-2 font-semibold">{t.auto.aAction}</th>
@@ -219,7 +219,7 @@ export function AutonomyView({
                     <td className="px-4 py-2 mono text-[11px] text-[var(--color-primary)]">{a.agent}</td>
                     <td className="px-4 py-2 mono text-[11px] text-[var(--color-fg)]">{a.event}</td>
                     <td className="px-4 py-2 mono text-[10px] text-[var(--color-muted)]">{a.videoId ?? t.common.dash}</td>
-                    <td className="px-4 py-2 mono text-[10px] font-semibold uppercase tracking-wider" style={{ color: OUTCOME_COLOR[a.outcome] }}>
+                    <td className="px-4 py-2 text-[10px] font-semibold uppercase tracking-[0.22em]" style={{ color: OUTCOME_COLOR[a.outcome] }}>
                       {String(t.auto[OUTCOME_KEY[a.outcome]])}
                     </td>
                   </tr>

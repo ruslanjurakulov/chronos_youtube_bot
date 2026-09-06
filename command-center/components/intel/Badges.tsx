@@ -23,7 +23,7 @@ export function ConfidenceBadge({ confidence }: { confidence: Confidence | null 
   const color = confidence ? CONF_COLOR[confidence] : "var(--color-idle)";
   return (
     <span
-      className="mono rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-widest"
+      className="rounded border px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.22em]"
       style={{ color, borderColor: color, background: "color-mix(in srgb, currentColor 8%, transparent)" }}
     >
       {label}
@@ -44,7 +44,7 @@ export function TopicStateBadge({ state }: { state: TopicState }) {
   const color = STATE_COLOR[state];
   const label = String(t.intel[`state${state}` as keyof Dictionary["intel"]]);
   return (
-    <span className="mono text-[9px] font-semibold uppercase tracking-widest" style={{ color }}>
+    <span className="text-[9px] font-semibold uppercase tracking-[0.22em]" style={{ color }}>
       {label}
     </span>
   );

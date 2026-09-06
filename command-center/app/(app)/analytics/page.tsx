@@ -189,10 +189,10 @@ export default async function AnalyticsPage() {
   const maxRet = byRetention.length ? byRetention[0].retention ?? 1 : 1;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm stagger-enter">
       <div>
-        <h1 className="text-lg font-semibold">{t.analytics.title}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.analytics.subtitle}</p>
+        <h1 className="t-hero">{t.analytics.title}</h1>
+        <p className="t-lead mt-4">{t.analytics.subtitle}</p>
       </div>
 
       {!dbHealthy ? (
@@ -279,7 +279,7 @@ export default async function AnalyticsPage() {
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                  <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                     <th className="px-4 py-2 font-semibold">{t.analytics.thTitle}</th>
                     <th className="px-4 py-2 font-semibold">{t.analytics.thTopic}</th>
                     <th className="px-4 py-2 text-right font-semibold">{t.analytics.thViews}</th>

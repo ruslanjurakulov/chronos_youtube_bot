@@ -60,11 +60,11 @@ export default async function TopicManager() {
   const topScore = topics.length > 0 ? topics[0].score : null;
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm stagger-enter">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">{t.topics.title}</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">{t.topics.subtitle}</p>
+          <h1 className="t-hero">{t.topics.title}</h1>
+          <p className="t-lead mt-4">{t.topics.subtitle}</p>
         </div>
       </div>
 
@@ -97,7 +97,7 @@ export default async function TopicManager() {
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[var(--color-border)] text-left mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">
+                <tr className="border-b border-[var(--color-border)] text-left text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                   <th className="px-4 py-2 font-semibold">{t.topics.thTopic}</th>
                   <th className="px-4 py-2 text-right font-semibold">{t.topics.thScore}</th>
                   <th className="px-4 py-2 text-right font-semibold">{t.topics.thVideos}</th>
@@ -149,7 +149,7 @@ export default async function TopicManager() {
             {demand.map((d) => (
               <li
                 key={d.id}
-                className="flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--color-panel-2)]"
+                className="row-sweep flex items-center justify-between gap-3 px-4 py-2.5 transition-colors hover:bg-[var(--color-panel-2)]"
               >
                 <div className="min-w-0">
                   <div className="truncate text-sm text-[var(--color-fg)]">{d.topic_phrase}</div>
@@ -161,7 +161,7 @@ export default async function TopicManager() {
                   <div className="mono text-lg font-bold tabular-nums text-[var(--color-primary)]">
                     {num(d.mention_count)}
                   </div>
-                  <div className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">
+                  <div className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                     {t.topics.mentions}
                   </div>
                 </div>

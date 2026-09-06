@@ -20,7 +20,7 @@ export function CustomizeButton() {
     <button
       type="button"
       onClick={toggle}
-      className="press mono h-7 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-2.5 text-[10px] uppercase tracking-widest text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:border-[var(--color-primary-dim)]"
+      className="btn-sky pill h-9 px-4 text-[13px] font-normal"
     >
       {on ? t.ops.customizeDone : t.ops.customize}
     </button>

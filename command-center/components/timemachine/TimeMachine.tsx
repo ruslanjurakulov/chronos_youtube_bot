@@ -99,7 +99,7 @@ export function TimeMachine({ initial }: { initial: SystemEventRow[] }) {
               key={r.key}
               type="button"
               onClick={() => setRange(r.key)}
-              className="press mono rounded-md px-3 py-1.5 text-[11px] uppercase tracking-widest transition-colors"
+              className="btn-sky is-quiet pill border-transparent px-3 py-1.5 text-[11px] uppercase tracking-[0.22em]"
               style={{
                 background: on ? "var(--color-panel-2)" : "transparent",
                 color: on ? "var(--color-primary)" : "var(--color-muted)",
@@ -112,9 +112,9 @@ export function TimeMachine({ initial }: { initial: SystemEventRow[] }) {
         })}
         {range === "custom" && (
           <div className="flex items-center gap-2">
-            <label className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">{t.ops.tmFrom}</label>
+            <label className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{t.ops.tmFrom}</label>
             <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-2 py-1 mono text-[11px] outline-none focus:border-[var(--color-primary)]" />
-            <label className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">{t.ops.tmTo}</label>
+            <label className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{t.ops.tmTo}</label>
             <input type="date" value={to} onChange={(e) => setTo(e.target.value)} className="rounded-md border border-[var(--color-border)] bg-[var(--color-panel-2)] px-2 py-1 mono text-[11px] outline-none focus:border-[var(--color-primary)]" />
           </div>
         )}
@@ -129,7 +129,7 @@ export function TimeMachine({ initial }: { initial: SystemEventRow[] }) {
             <div className="max-h-[62vh] overflow-y-auto p-4">
               {groups.map(([day, rows]) => (
                 <div key={day} className="mb-4 last:mb-0">
-                  <div className="mono mb-2 text-[10px] uppercase tracking-widest text-[var(--color-muted)]">{day}</div>
+                  <div className="mb-2 text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{day}</div>
                   <ol className="relative ml-2 border-l border-[var(--color-border)]">
                     {rows.map((e) => {
                       const tone = statusTone(e.status);
@@ -143,7 +143,7 @@ export function TimeMachine({ initial }: { initial: SystemEventRow[] }) {
                           <button
                             type="button"
                             onClick={() => setSelected(e)}
-                            className="press my-0.5 flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-sm transition-colors"
+                            className="btn-sky is-quiet pill my-0.5 w-full justify-start gap-3 border-transparent px-3 py-2 text-left text-sm"
                             style={{ background: on ? "var(--color-panel-2)" : "transparent" }}
                           >
                             <span className="mono w-16 shrink-0 text-[10px] text-[var(--color-muted)]">{timeOfDay(e.ts)}</span>
@@ -161,14 +161,14 @@ export function TimeMachine({ initial }: { initial: SystemEventRow[] }) {
         </div>
 
         <div className="panel p-4">
-          <div className="mono mb-3 text-xs font-bold uppercase tracking-widest text-[var(--color-fg)]">{t.ops.tmDetails}</div>
+          <div className="mb-3 text-xs font-bold uppercase tracking-[0.22em] text-[var(--color-fg)]">{t.ops.tmDetails}</div>
           {!selected ? (
             <p className="mono text-[11px] text-[var(--color-muted)]">{t.ops.tmSelectHint}</p>
           ) : (
             <dl className="flex flex-col gap-2">
               {detailRows.map(([k, v]) => (
                 <div key={k} className="flex flex-col gap-0.5 border-b border-[var(--color-border)]/60 pb-2 last:border-0">
-                  <dt className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{k}</dt>
+                  <dt className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{k}</dt>
                   <dd className="mono break-words text-[11px] text-[var(--color-fg)]">{v}</dd>
                 </div>
               ))}

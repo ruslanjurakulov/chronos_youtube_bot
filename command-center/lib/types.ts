@@ -192,6 +192,13 @@ export interface ChannelCredentialRef {
   provider?: string;
   ref?: string;
   youtube_channel_id?: string;
+  /** Public channel facts, read back from YouTube when the channel was
+   *  confirmed at creation. Proof the right channel was opened — never a
+   *  credential, and never a substitute for the live credential status. */
+  youtube_title?: string;
+  youtube_thumbnail?: string;
+  youtube_custom_url?: string;
+  verified_at?: string;
 }
 
 export interface ChannelRow {

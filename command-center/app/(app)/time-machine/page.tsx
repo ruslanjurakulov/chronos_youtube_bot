@@ -1,8 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
-import { IntelligenceMap } from "@/components/intelligence/IntelligenceMap";
-import { ChronosCore } from "@/components/ChronosCore";
+import { TimeMachine } from "@/components/timemachine/TimeMachine";
 import { getDictionary } from "@/lib/i18n/server";
 import { getChannelSelection } from "@/lib/channels-server";
 import { scopeQuery } from "@/lib/channels";
@@ -11,7 +10,9 @@ import type { SystemEventRow } from "@/lib/types";
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 
-export default async function IntelligencePage() {
+const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+export default async function TimeMachinePage() {
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { t } = await getDictionary();
   // Scope channel-owned queries to the selected channel (view control;
@@ -21,30 +22,24 @@ export default async function IntelligencePage() {
   const supabase = await createClient();
   let events: SystemEventRow[] = [];
   if (supabase) {
+    const since = new Date(Date.now() - WINDOW_MS).toISOString();
     const { data } = await scopeQuery(
         supabase.from("system_events").select("*"),
         selection, { nullIsGlobal: true },
       )
+      .gte("ts", since)
       .order("ts", { ascending: false })
-      .limit(500);
+      .limit(1000);
     events = (data as SystemEventRow[]) ?? [];
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm stagger-enter">
       <div>
-        <h1 className="text-lg font-semibold">{t.ops.intelTitle}</h1>
-        <p className="mono text-[11px] text-[var(--color-muted)]">{t.ops.intelSubtitle}</p>
+        <h1 className="t-hero">{t.ops.timeMachineTitle}</h1>
+        <p className="t-lead mt-4">{t.ops.timeMachineSubtitle}</p>
       </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <div className="panel flex items-center justify-center p-5">
-          <ChronosCore initial={events} size={200} selection={selection} />
-        </div>
-        <div className="lg:col-span-2">
-          <IntelligenceMap initial={events} selection={selection} />
-        </div>
-      </div>
+      <TimeMachine initial={events} />
     </div>
   );
 }

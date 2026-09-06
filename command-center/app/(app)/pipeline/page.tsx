@@ -165,11 +165,11 @@ export default async function PipelinePage() {
   const passes = deriveSystemPasses(events);
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="rhythm stagger-enter">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="text-lg font-semibold">{t.pipeline.title}</h1>
-          <p className="mono text-[11px] text-[var(--color-muted)]">
+          <h1 className="t-hero">{t.pipeline.title}</h1>
+          <p className="t-lead mt-4">
             {fmt(t.pipeline.subtitle, { n: STAGES.length })}
           </p>
         </div>
@@ -221,7 +221,7 @@ export default async function PipelinePage() {
                       : "var(--color-idle)";
               const stale = Date.now() - (storedMs(p.lastTs) ?? 0) > HEARTBEAT_MS;
               return (
-                <li key={p.event} className="flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-[var(--color-panel-2)]">
+                <li key={p.event} className="row-sweep flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover:bg-[var(--color-panel-2)]">
                   <span className="glow-dot size-1.5 shrink-0 rounded-full" style={{ color, background: color }} />
                   <span className="mono w-28 shrink-0 text-[11px] text-[var(--color-primary)]">
                     {p.agent ?? t.common.system}

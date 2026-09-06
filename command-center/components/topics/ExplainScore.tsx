@@ -46,15 +46,15 @@ export function ExplainScore({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="press mono rounded border border-[var(--color-border)] px-1.5 py-0.5 text-[9px] uppercase tracking-widest text-[var(--color-muted)] hover:text-[var(--color-primary)] hover:border-[var(--color-primary-dim)]"
+        className="btn-sky is-quiet pill px-3 py-1 text-[11px] font-light"
       >
         {t.ops.explainWhy}
       </button>
 
       {open && (
-        <div className="reveal absolute right-0 z-40 mt-1.5 w-72 rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-3 text-left shadow-[var(--shadow-elevated)]">
+        <div className="drawer-enter absolute right-0 z-40 mt-3 w-72 rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] p-4 text-left shadow-[var(--shadow-elevated)]">
           <div className="mb-2 flex items-center justify-between">
-            <span className="mono text-[10px] font-bold uppercase tracking-widest text-[var(--color-fg)]">{t.ops.explainTitle}</span>
+            <span className="text-[10px] font-bold uppercase tracking-[0.22em] text-[var(--color-fg)]">{t.ops.explainTitle}</span>
             <span className="mono text-sm font-bold tabular-nums" style={{ color: score >= 50 ? "var(--color-ok)" : "var(--color-warn)" }}>
               {score.toFixed(0)}
             </span>
@@ -66,13 +66,13 @@ export function ExplainScore({
             <div className="flex flex-col gap-2">
               {reason && (
                 <div>
-                  <div className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{t.ops.explainReason}</div>
+                  <div className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{t.ops.explainReason}</div>
                   <div className="text-[11px] text-[var(--color-fg)]">{reason}</div>
                 </div>
               )}
               {signals.length > 0 && (
                 <div>
-                  <div className="mono text-[9px] uppercase tracking-widest text-[var(--color-muted)]">{t.ops.explainBasis}</div>
+                  <div className="text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{t.ops.explainBasis}</div>
                   <ul className="mt-1 flex flex-col gap-1">
                     {signals.slice(0, 6).map((s, i) => {
                       const up = s.signal?.startsWith("HIGH_");

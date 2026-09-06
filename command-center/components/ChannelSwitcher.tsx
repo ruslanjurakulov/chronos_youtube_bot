@@ -66,11 +66,11 @@ export function ChannelSwitcher({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={t.channels.switcherLabel}
-        className="press flex h-8 max-w-[190px] items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-2.5 text-[var(--color-fg)] hover:border-[var(--color-primary-dim)]"
+        className="btn-sky is-quiet pill h-9 max-w-[104px] gap-2 px-3 sm:h-10 sm:max-w-[220px] sm:gap-3 sm:px-4"
       >
         <span
           aria-hidden
-          className="size-1.5 shrink-0 rounded-full"
+          className="size-2 shrink-0 rounded-full"
           style={{
             background: current
               ? current.status === "ACTIVE"
@@ -79,10 +79,7 @@ export function ChannelSwitcher({
               : "var(--color-primary)",
           }}
         />
-        <span className="mono hidden text-[9px] uppercase tracking-[0.2em] text-[var(--color-muted)] lg:inline">
-          {t.channels.channel}
-        </span>
-        <span className="truncate text-[12px]">{label}</span>
+        <span className="truncate text-[14px] font-light">{label}</span>
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-3.5 shrink-0 text-[var(--color-muted)]">
           <path d="m6 9 6 6 6-6" />
         </svg>
@@ -91,7 +88,7 @@ export function ChannelSwitcher({
       {open && (
         <ul
           role="listbox"
-          className="reveal absolute right-0 z-50 mt-1.5 w-60 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-panel)] p-1 shadow-[var(--shadow-elevated)]"
+          className="drawer-enter absolute right-0 z-50 mt-3 w-64 overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] p-2 shadow-[var(--shadow-elevated)]"
         >
           <li>
             <Option
@@ -138,19 +135,19 @@ function Option({
       role="option"
       aria-selected={active}
       onClick={onSelect}
-      className="press flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left hover:bg-[var(--color-panel-2)]"
+      className="btn-sky is-quiet pill w-full justify-start gap-2.5 border-transparent px-4 py-2.5 text-left"
       style={{ background: active ? "var(--color-panel-2)" : "transparent" }}
     >
       {tone && (
         <span
           aria-hidden
-          className="size-1.5 shrink-0 rounded-full"
+          className="size-2 shrink-0 rounded-full"
           style={{ background: tone === "ok" ? "var(--color-ok)" : "var(--color-idle)" }}
         />
       )}
       <span className="min-w-0 flex-1">
         <span
-          className="block truncate text-[13px]"
+          className="block truncate text-[14px] font-light"
           style={{ color: active ? "var(--color-primary)" : "var(--color-fg)" }}
         >
           {label}

@@ -9,7 +9,7 @@ import { relativeTime } from "@/lib/format";
 
 type NavKey = keyof Dictionary["nav"];
 const NAV: { href: string; key: NavKey; hotkey?: string }[] = [
-  { href: "/", key: "command", hotkey: "d" },
+  { href: "/command-center", key: "command", hotkey: "d" },
   { href: "/channels", key: "channels", hotkey: "h" },
   { href: "/videos", key: "videos", hotkey: "v" },
   { href: "/pipeline", key: "pipeline", hotkey: "p" },
@@ -17,14 +17,14 @@ const NAV: { href: string; key: NavKey; hotkey?: string }[] = [
   { href: "/jobs", key: "jobs" },
   { href: "/topics", key: "topics" },
   { href: "/analytics", key: "analytics", hotkey: "a" },
-  { href: "/measure", key: "measure" },
-  { href: "/feedback", key: "feedback" },
-  { href: "/intelligence", key: "intelligence", hotkey: "i" },
+  { href: "/measurement", key: "measure" },
+  { href: "/feedback-loop", key: "feedback" },
+  { href: "/intelligence-map", key: "intelligence", hotkey: "i" },
   { href: "/decisions", key: "decisions", hotkey: "c" },
   { href: "/learning", key: "learning", hotkey: "n" },
   { href: "/memory", key: "memory", hotkey: "m" },
   { href: "/autonomy", key: "autonomy", hotkey: "u" },
-  { href: "/timemachine", key: "timeMachine", hotkey: "t" },
+  { href: "/time-machine", key: "timeMachine", hotkey: "t" },
   { href: "/errors", key: "errors" },
   { href: "/logs", key: "logs", hotkey: "l" },
   { href: "/integrations", key: "integrations" },
@@ -190,22 +190,32 @@ export function CommandPalette() {
   return (
     <>
       {open && (
-        <div className="fixed inset-0 z-[100] flex items-start justify-center bg-black/50 p-4 pt-[12vh] backdrop-blur-sm" onClick={() => setOpen(false)}>
+        <div className="scrim-enter fixed inset-0 z-[100] flex items-start justify-center bg-black/72 p-4 pt-[12vh] backdrop-blur-sm" onClick={() => setOpen(false)}>
           <div
-            className="reveal panel w-full max-w-xl overflow-hidden shadow-[var(--shadow-elevated)]"
+            className="sheet-enter w-full max-w-xl overflow-hidden rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] shadow-[var(--shadow-elevated)]"
             onClick={(e) => e.stopPropagation()}
           >
-            <input
-              ref={inputRef}
-              value={query}
-              onChange={(e) => {
-                setQuery(e.target.value);
-                setActive(0);
-              }}
-              onKeyDown={onListKey}
-              placeholder={t.ops.palettePlaceholder}
-              className="w-full border-b border-[var(--color-border)] bg-transparent px-4 py-3 text-sm outline-none placeholder:text-[var(--color-muted)]"
-            />
+            <div className="flex items-center gap-2 border-b border-[var(--color-border)] pr-3">
+              <input
+                ref={inputRef}
+                value={query}
+                onChange={(e) => {
+                  setQuery(e.target.value);
+                  setActive(0);
+                }}
+                onKeyDown={onListKey}
+                placeholder={t.ops.palettePlaceholder}
+                className="w-full bg-transparent px-4 py-3 text-sm outline-none placeholder:text-[var(--color-muted)]"
+              />
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                aria-label={t.ops.shortcutsClose}
+                className="sheet-close shrink-0"
+              >
+                ✕
+              </button>
+            </div>
             <ul className="max-h-[50vh] overflow-y-auto p-1">
               {results.length === 0 && (
                 <li className="p-4 text-center mono text-xs text-[var(--color-muted)]">{t.ops.paletteNoResults}</li>
@@ -216,11 +226,11 @@ export function CommandPalette() {
                     type="button"
                     onMouseEnter={() => setActive(i)}
                     onClick={() => choose(item)}
-                    className="flex w-full items-center justify-between gap-3 rounded-md px-3 py-2 text-left text-sm"
+                    className="btn-sky is-quiet pill w-full justify-between gap-3 border-transparent px-4 py-2.5 text-left text-sm font-light"
                     style={{ background: i === active ? "var(--color-panel-2)" : "transparent" }}
                   >
                     <span className="min-w-0 truncate text-[var(--color-fg)]">{item.label}</span>
-                    <span className="mono shrink-0 text-[9px] uppercase tracking-widest text-[var(--color-muted)]">
+                    <span className="shrink-0 text-[9px] uppercase tracking-[0.22em] text-[var(--color-muted)]">
                       {item.sub ?? sectionLabel[item.section]}
                     </span>
                   </button>
@@ -235,9 +245,19 @@ export function CommandPalette() {
       )}
 
       {help && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={() => setHelp(false)}>
-          <div className="reveal panel w-full max-w-sm p-5" onClick={(e) => e.stopPropagation()}>
-            <h2 className="font-display text-sm font-semibold">{t.ops.shortcutsTitle}</h2>
+        <div className="scrim-enter fixed inset-0 z-[100] flex items-center justify-center bg-black/72 p-4 backdrop-blur-sm" onClick={() => setHelp(false)}>
+          <div className="sheet-enter w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-[var(--color-panel)] p-6" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <h2 className="font-display text-base font-semibold">{t.ops.shortcutsTitle}</h2>
+              <button
+                type="button"
+                onClick={() => setHelp(false)}
+                aria-label={t.ops.shortcutsClose}
+                className="sheet-close -mr-1 -mt-1 shrink-0"
+              >
+                ✕
+              </button>
+            </div>
             <dl className="mt-3 flex flex-col gap-2">
               {[
                 { k: "⌘/Ctrl + K", v: t.ops.shortcutsPalette },

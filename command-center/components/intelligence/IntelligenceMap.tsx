@@ -112,9 +112,9 @@ export function IntelligenceMap({
   return (
     <div className="panel p-4">
       <div className="mb-2 flex items-center justify-between">
-        <span className="mono text-[10px] uppercase tracking-widest text-[var(--color-muted)]">{t.ops.intelRecent}</span>
+        <span className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-muted)]">{t.ops.intelRecent}</span>
         <span
-          className="mono text-[10px] font-semibold uppercase tracking-widest"
+          className="text-[10px] font-semibold uppercase tracking-[0.22em]"
           style={{ color: anyActive ? "var(--color-primary)" : "var(--color-idle)" }}
         >
           {anyActive ? t.ops.intelActive : t.ops.intelQuiet}

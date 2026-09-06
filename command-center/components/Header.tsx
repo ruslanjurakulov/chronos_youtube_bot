@@ -1,27 +1,28 @@
 "use client";
 
+import Link from "next/link";
+
 import { useI18n } from "@/lib/i18n/context";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { SignOutButton } from "@/components/SignOutButton";
 import { NotificationsCenter } from "@/components/NotificationsCenter";
 import { UtcClock } from "@/components/UtcClock";
+import { TopNav } from "@/components/TopNav";
 import { ChannelSwitcher } from "@/components/ChannelSwitcher";
 import { ALL_CHANNELS, type ChannelSelection } from "@/lib/channels";
 import type { ChannelRow } from "@/lib/types";
 
 /**
- * App header: brand wordmark, a UTC clock, the channel switcher, a
- * command-palette search trigger, notifications, then the operator controls —
- * language, theme, sign out. Primary navigation lives in the sidebar (and the
- * mobile strip below).
+ * One bar, as the approved direction has it: the wordmark and the navigation on
+ * the left, the account pill and the operator controls on the right. There is
+ * no sidebar any more — nineteen routes in a rail was what made every screen
+ * read as an admin console rather than the product.
  */
 export function Header({
-  userEmail,
   channels = [],
   selection = ALL_CHANNELS,
 }: {
-  userEmail?: string | null;
   channels?: ChannelRow[];
   selection?: ChannelSelection;
 }) {
@@ -32,38 +33,38 @@ export function Header({
   }
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-panel)_82%,transparent)] px-4 py-2.5 backdrop-blur-md">
-      <div className="flex items-center gap-3">
-        <span className="font-display text-sm font-bold tracking-[0.22em] text-[var(--color-primary)] md:hidden">
+    <header className="sticky top-0 z-30 border-b border-[var(--color-border)] bg-[color-mix(in_srgb,var(--color-bg)_78%,transparent)] px-[clamp(0.75rem,3vw,56px)] py-4 backdrop-blur-md sm:py-5">
+      <div className="bar-measure flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <div className="flex min-w-0 items-center gap-6 xl:gap-10">
+        <Link
+          href="/command-center"
+          className="font-display shrink-0 text-lg font-semibold tracking-[-0.02em] text-[var(--color-primary)] sm:text-xl"
+        >
           {t.brand.name}
-        </span>
-        <span className="mono hidden text-[11px] tracking-[0.28em] text-[var(--color-muted)] md:inline">
-          {t.brand.name} · {t.brand.operations}
-        </span>
-        <UtcClock />
+        </Link>
+        <TopNav />
       </div>
 
-      <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap sm:gap-3">
         <ChannelSwitcher channels={channels} selection={selection} />
         <button
           type="button"
           onClick={openPalette}
           aria-label={t.ops.palettePlaceholder}
-          className="press hidden h-8 items-center gap-2 rounded-md border border-[var(--color-border)] bg-[var(--color-panel)] px-2.5 text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:border-[var(--color-primary-dim)] sm:flex"
+          className="btn-sky is-quiet pill hidden h-9 gap-2 px-3.5 sm:inline-flex"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="size-4">
             <circle cx="11" cy="11" r="7" />
             <path d="m21 21-4.3-4.3" />
           </svg>
-          <span className="mono rounded border border-[var(--color-border)] px-1 text-[9px] tracking-wider">⌘K</span>
+          <span className="mono pill border border-[var(--color-border)] px-1.5 text-[9px] tracking-wider">⌘K</span>
         </button>
-        {userEmail && (
-          <span className="mono hidden max-w-[160px] truncate text-[11px] text-[var(--color-muted)] xl:inline">{userEmail}</span>
-        )}
+        <UtcClock />
         <NotificationsCenter />
         <LanguageSelector />
         <ThemeToggle />
         <SignOutButton />
+      </div>
       </div>
     </header>
   );
