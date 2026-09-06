@@ -295,7 +295,9 @@ h1, h2, h3, .font-display {
    The measure is capped at the 1440 the direction is drawn on and centred: past
    that width the screen stops stretching edge to edge, which is what made it
    read as an admin console on a wide monitor rather than a product. */
-.rhythm { display: flex; flex-direction: column; gap: clamp(2.5rem, 5vw, 100px); }
+/* The reference's 100px belongs to a full screen. On a sparse one it reads as
+   a hole, so the gap tops out lower and the page stays composed either way. */
+.rhythm { display: flex; flex-direction: column; gap: clamp(2rem, 4vw, 72px); }
 .pad-page {
   padding: clamp(1rem, 2.5vw, 40px) clamp(0.75rem, 3vw, 56px);
   max-width: 1440px;
@@ -322,7 +324,8 @@ h1, h2, h3, .font-display {
    the direction's panel is, floating on the black ground with its own padding.
    That containment is what stops a screen reading as an admin console. */
 .section-card {
-  background: var(--color-panel);
+  background: color-mix(in srgb, var(--color-panel) 88%, transparent);
+  backdrop-filter: blur(6px);
   border: 1px solid var(--color-border);
   border-radius: 22px;
   padding: clamp(1.25rem, 3.4vw, 44px) clamp(1.25rem, 3.4vw, 48px);
