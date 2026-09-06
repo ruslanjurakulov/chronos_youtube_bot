@@ -343,7 +343,10 @@ def run(
     # ── Stage 5: Subtitles
     sub_gen = SubtitleGenerator(slug)
     word_timestamps = sub_gen.transcribe(audio_path)
-    sub_gen.to_srt(word_timestamps)
+    # The .srt has always been written and then only burnt into the picture.
+    # Keeping the path lets the upload also offer it to YouTube as a caption
+    # track — see YouTubeUploader.upload_captions.
+    srt_path = sub_gen.to_srt(word_timestamps)
     word_clips_specs = sub_gen.word_clips(word_timestamps, VIDEO_WIDTH, VIDEO_HEIGHT)
     # Nothing after this point transcribes anything, and the render two stages
     # down is the one that keeps getting killed.
@@ -434,6 +437,12 @@ def run(
             uploaded = uploader.upload(
                 video_path, script, thumbnail_path=chosen_thumb, privacy=privacy,
                 title_override=chosen_title or None,
+                # Both are metadata this run already produced: the Whisper .srt
+                # and the mixer's own section timings, which become the
+                # description's chapters. Neither changes what is published or
+                # when — see modules/youtube_uploader.py.
+                captions_path=srt_path,
+                section_timeline=timeline,
             )
             video_id, video_url = uploaded["id"], uploaded["url"]
             # Recorded only on a successful upload — a failed attempt may have
