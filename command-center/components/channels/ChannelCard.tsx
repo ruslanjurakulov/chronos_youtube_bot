@@ -67,12 +67,27 @@ export function ChannelCard({
   return (
     <section className="panel flex flex-col gap-3 p-4">
       <header className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">{channel.name}</h2>
-          <p className="mono truncate text-[10px] text-[var(--color-muted)]">
-            {channel.channel_id}
-            {channel.niche ? ` · ${channel.niche}` : ""}
-          </p>
+        <div className="flex min-w-0 items-center gap-3">
+          {/* The channel's own avatar, pulled from YouTube when the channel was
+              confirmed. Public, and the fastest way to see at a glance that the
+              right channel is wired up. */}
+          {channel.credential_ref?.youtube_thumbnail && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={channel.credential_ref.youtube_thumbnail}
+              alt=""
+              width={36}
+              height={36}
+              className="h-9 w-9 shrink-0 rounded-full border border-[var(--color-border)] object-cover"
+            />
+          )}
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold">{channel.name}</h2>
+            <p className="mono truncate text-[10px] text-[var(--color-muted)]">
+              {channel.credential_ref?.youtube_custom_url || channel.channel_id}
+              {channel.niche ? ` · ${channel.niche}` : ""}
+            </p>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <StatusPill

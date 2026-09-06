@@ -1,0 +1,124 @@
+import "server-only";
+
+/**
+ * Writing GitHub Actions Repository Secrets — forward, never store.
+ *
+ * A key typed into the Command Center exists in three places and no more: the
+ * input the operator typed it into, the body of one POST to our own origin, and
+ * the sealed box we hand to GitHub. It is never written to Supabase, never put
+ * in an event's metadata, never logged, and never returned to the browser.
+ * Nothing here ever reads a secret back — GitHub does not permit that, and this
+ * module does not want it.
+ *
+ * The token that authorizes the write lives in a server-only env var. It must
+ * never be prefixed NEXT_PUBLIC_, and this file is `server-only` so importing
+ * it from a client component fails the build rather than shipping the token.
+ */
+
+export const GITHUB_TOKEN = process.env.GITHUB_SECRETS_TOKEN ?? "";
+/** "owner/repo" of the bot repository whose secrets are written. */
+export const GITHUB_REPO = process.env.GITHUB_SECRETS_REPO ?? "";
+
+export const isGithubConfigured = Boolean(GITHUB_TOKEN && GITHUB_REPO);
+
+/**
+ * The only secret names this endpoint may write.
+ *
+ * An allowlist, not a filter: without it, an authenticated caller could aim the
+ * endpoint at SUPABASE_SERVICE_KEY or at any other secret the workflow trusts
+ * and silently replace it. Anything not named here is refused.
+ */
+const FIXED_NAMES = new Set([
+  "GEMINI_API_KEY",
+  "PEXELS_API_KEY",
+  "ELEVENLABS_API_KEY",
+  "YOUTUBE_DATA_API_KEY",
+  "YOUTUBE_CLIENT_SECRET_JSON",
+  "YOUTUBE_TOKEN_JSON",
+  "YOUTUBE_CHANNEL_ID",
+]);
+
+/** Per-channel publishing tokens: CHRONOS_YT_TOKEN_<REF>. */
+const PER_CHANNEL = /^CHRONOS_YT_TOKEN_[A-Z0-9_]{1,64}$/;
+
+export function isWritableSecretName(name: string): boolean {
+  return FIXED_NAMES.has(name) || PER_CHANNEL.test(name);
+}
+
+/** The GitHub secret name for a channel's credential ref, as the bot reads it. */
+export function channelTokenSecret(ref: string): string {
+  return (
+    "CHRONOS_YT_TOKEN_" +
+    ref.toUpperCase().replace(/[^A-Z0-9]+/g, "_").replace(/^_+|_+$/g, "")
+  );
+}
+
+type PublicKey = { key_id: string; key: string };
+
+async function gh(path: string, init?: RequestInit): Promise<Response> {
+  return fetch(`https://api.github.com/repos/${GITHUB_REPO}${path}`, {
+    ...init,
+    cache: "no-store",
+    headers: {
+      Accept: "application/vnd.github+json",
+      Authorization: `Bearer ${GITHUB_TOKEN}`,
+      "X-GitHub-Api-Version": "2022-11-28",
+      ...(init?.body ? { "Content-Type": "application/json" } : {}),
+      ...init?.headers,
+    },
+  });
+}
+
+/**
+ * The repository's public key, fetched once per request batch.
+ *
+ * A failure here is reported by HTTP status alone: GitHub's error bodies are
+ * not echoed to the browser, because a misconfigured token makes them describe
+ * the token's own scopes.
+ */
+export async function fetchPublicKey(): Promise<PublicKey> {
+  const res = await gh("/actions/secrets/public-key");
+  if (!res.ok) {
+    throw new Error(
+      res.status === 401 || res.status === 403
+        ? "github_unauthorized"
+        : res.status === 404
+          ? "github_repo_not_found"
+          : "github_unavailable",
+    );
+  }
+  return (await res.json()) as PublicKey;
+}
+
+/**
+ * Seal `value` to the repository key and PUT it as `name`.
+ *
+ * Returns "created" or "updated" — GitHub answers 201 for a secret that did not
+ * exist and 204 for one that did, which is the only fact worth surfacing: the
+ * operator can tell a new channel's token from an overwritten one.
+ */
+export async function putSecret(
+  name: string,
+  value: string,
+  key: PublicKey,
+): Promise<"created" | "updated"> {
+  if (!isWritableSecretName(name)) throw new Error("secret_not_allowed");
+
+  const sodium = (await import("libsodium-wrappers")).default;
+  await sodium.ready;
+  const sealed = sodium.crypto_box_seal(
+    sodium.from_string(value),
+    sodium.from_base64(key.key, sodium.base64_variants.ORIGINAL),
+  );
+  const encrypted_value = sodium.to_base64(sealed, sodium.base64_variants.ORIGINAL);
+
+  const res = await gh(`/actions/secrets/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    body: JSON.stringify({ encrypted_value, key_id: key.key_id }),
+  });
+  if (res.status === 201) return "created";
+  if (res.status === 204) return "updated";
+  throw new Error(
+    res.status === 401 || res.status === 403 ? "github_unauthorized" : "github_write_failed",
+  );
+}
