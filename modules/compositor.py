@@ -117,9 +117,24 @@ class Compositor:
     # ------------------------------------------------------------------ Clip pool
 
     def _open_video(self, path: Path) -> VideoFileClip:
-        """Reader cache — reopening the same file per slot exhausts handles."""
+        """Reader cache — reopening the same file per slot exhausts handles.
+
+        `audio=False` is not a tidy-up: it is the fix for the memory death.
+        MoviePy 1.0.3 builds an AudioFileClip inside VideoFileClip unless told
+        not to, and that clip spawns an ffmpeg process of its own. Constructing
+        the reader and *then* calling `.without_audio()` discards the clip but
+        only after the process exists, so every source video cost two ffmpeg
+        decoders instead of one — twenty-four of them for the twelve videos a
+        run fetches, all alive for the whole render because the composed clips
+        pull frames lazily and the readers cannot be closed early.
+
+        Run #19 died exactly there: process RSS stayed flat near 1 GB while
+        system free memory fell 6348 MB -> 112 MB and the runner was reclaimed
+        (exit 143), leaving four orphaned ffmpeg processes behind. The audio we
+        were paying for was thrown away in the next breath.
+        """
         if path not in self._readers:
-            self._readers[path] = VideoFileClip(str(path)).without_audio()
+            self._readers[path] = VideoFileClip(str(path), audio=False)
         return self._readers[path]
 
     def _build_clip_pool(
@@ -320,7 +335,10 @@ class Compositor:
                 codec="libx264",
                 audio_codec="aac",
                 preset="fast",
-                threads=4,
+                # Each x264 thread keeps its own frame buffers at 1080p. Four
+                # of them is a lot to hold while a dozen decoders are also
+                # resident; two encodes the same file, a little slower.
+                threads=2,
                 verbose=False,
                 logger=None,
             )
