@@ -69,3 +69,12 @@ jobs:
       - name: Unit tests
         if: ${{ !cancelled() }}
         run: npx vitest run
+
+      # Not redundant with the typecheck. A server/client boundary violation, a
+      # bad route export, or a `"use client"` module importing something
+      # server-only all satisfy `tsc` and fail here — which is a class of
+      # breakage that reached main more than once while tsc was clean. Last
+      # because it is the slowest, so a faster check still fails fast.
+      - name: Build
+        if: ${{ !cancelled() }}
+        run: npx next build
