@@ -74,6 +74,14 @@ YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/youtube.upload",
     "https://www.googleapis.com/auth/youtube.readonly",
     "https://www.googleapis.com/auth/yt-analytics.readonly",
+    # Writing a caption track counts as editing the video, so captions.insert
+    # needs force-ssl — which also permits deleting videos. That is a real
+    # trade for a caption track and it is the account owner's to make: dropping
+    # this line loses the caption track and nothing else. Existing tokens do
+    # not gain the scope by being listed here; they must be reconnected with
+    # tools/connect_channel.py, and until they are, the uploader sees the scope
+    # missing and skips captions instead of failing an upload.
+    "https://www.googleapis.com/auth/youtube.force-ssl",
 ]
 # Separate token per channel so you can switch between two channels
 _channel_suffix = f"_{YOUTUBE_CHANNEL_ID}" if YOUTUBE_CHANNEL_ID else ""
