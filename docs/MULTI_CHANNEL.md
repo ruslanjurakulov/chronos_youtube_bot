@@ -339,6 +339,18 @@ How it holds together:
 * **Section names are reserved channel ids.** `isValidChannelId` refuses
   `videos`, `analytics`, `all-channels` and the rest, because a channel with
   one of those names would make its own path ambiguous.
+* **The segment is the channel's NAME, not its id.** `channel_id` is a database
+  key — it is what `videos.channel_id` and every other row points at, and
+  renaming it would mean rewriting all of them. But it is also the first thing
+  an operator reads in the address bar, and the production channel's id is
+  `default`, which says nothing. So `channelSlug()` puts the name there:
+  `/chronos/pipeline`, not `/default/pipeline`. The id keeps resolving, so every
+  old link still works, and the layout rewrites it to the name.
+
+  The id is used instead whenever the name cannot stand in for it without
+  ambiguity — it slugifies to nothing usable, to a reserved word, to something
+  two channels share, or to another channel's id. A URL is allowed to be ugly;
+  it is never allowed to be ambiguous.
 
 ---
 

@@ -25,12 +25,15 @@ import type { ChannelCredentialRow, ChannelRow } from "@/lib/types";
  */
 export function ChannelCard({
   channel,
+  slug,
   credential,
   health,
   queued,
   videos,
 }: {
   channel: ChannelRow;
+  /** The channel's URL segment — its name, not its internal id. */
+  slug: string;
   credential?: ChannelCredentialRow;
   health: ChannelHealth;
   queued: number;
@@ -235,7 +238,7 @@ export function ChannelCard({
       <Link
         // This channel's videos, on this channel's own URL — the link carries
         // the lens, so the page opens already scoped.
-        href={`/${encodeURIComponent(channel.channel_id)}/videos`}
+        href={`/${encodeURIComponent(slug)}/videos`}
         className="text-[10px] uppercase tracking-[0.22em] text-[var(--color-primary)] hover:underline"
       >
         {t.channels.videos} →

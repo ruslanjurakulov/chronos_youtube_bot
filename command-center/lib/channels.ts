@@ -104,8 +104,50 @@ export function resolveSelection(
   raw: string | undefined,
   channels: ChannelRow[],
 ): ChannelSelection {
-  if (!raw || raw === ALL_CHANNELS) return ALL_CHANNELS;
-  return channels.some((c) => c.channel_id === raw) ? raw : ALL_CHANNELS;
+  if (!raw || raw === ALL_CHANNELS || raw === ALL_CHANNELS_SLUG) return ALL_CHANNELS;
+  if (channels.some((c) => c.channel_id === raw)) return raw;
+  // Also accept the channel's readable slug, so /chronos/… resolves even though
+  // the row's id is "default". The id keeps working: it is what every old link
+  // and every foreign key says.
+  const byName = channels.find((c) => channelSlug(c, channels) === raw);
+  return byName ? byName.channel_id : ALL_CHANNELS;
+}
+
+/**
+ * The URL segment for a channel — its name, not its internal key.
+ *
+ * `channel_id` is a database key: it is what `videos.channel_id` and every
+ * other row points at, and renaming it would mean rewriting all of them. But it
+ * is also the first thing the operator reads in the address bar, and the
+ * production channel's id is "default", which tells them nothing. So the URL
+ * shows the channel's NAME — /chronos/pipeline — while the id stays where it
+ * belongs, in the database.
+ *
+ * The id is used instead whenever the name cannot stand in for it without
+ * ambiguity: when it slugifies to nothing usable, to a reserved word, to
+ * something two channels share, or to another channel's id. In every one of
+ * those cases the id is the only unambiguous answer, so it wins — a URL is
+ * allowed to be ugly, never ambiguous.
+ */
+export function channelSlug(channel: ChannelRow, channels: ChannelRow[]): string {
+  const candidate = slugifyChannelId(channel.name ?? "");
+  if (!candidate || !isValidChannelId(candidate)) return channel.channel_id;
+  const claimedByAnother = channels.some(
+    (c) =>
+      c.channel_id !== channel.channel_id &&
+      (c.channel_id === candidate || slugifyChannelId(c.name ?? "") === candidate),
+  );
+  return claimedByAnother ? channel.channel_id : candidate;
+}
+
+/** The URL segment for a selection: a channel's name-slug, or "all-channels". */
+export function selectionSlug(
+  selection: ChannelSelection,
+  channels: ChannelRow[],
+): string {
+  if (!isScoped(selection)) return ALL_CHANNELS_SLUG;
+  const channel = channels.find((c) => c.channel_id === selection);
+  return channel ? channelSlug(channel, channels) : selection;
 }
 
 /** True when the view is scoped to exactly one channel. */

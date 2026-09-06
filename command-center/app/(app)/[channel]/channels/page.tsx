@@ -7,7 +7,7 @@ import { Panel, EmptyState } from "@/components/ui";
 import { ChannelCard } from "@/components/channels/ChannelCard";
 import { ChannelComparison } from "@/components/channels/ChannelComparison";
 import { getChannelContext } from "@/lib/channels-server";
-import { channelHealth, channelStats } from "@/lib/channels";
+import { channelHealth, channelSlug, channelStats } from "@/lib/channels";
 import { getDictionary } from "@/lib/i18n/server";
 import type {
   ContentQueueRow,
@@ -94,6 +94,7 @@ export default async function ChannelsPage() {
               <ChannelCard
                 key={channel.channel_id}
                 channel={channel}
+                slug={channelSlug(channel, channels)}
                 credential={credentials.find(
                   (c) => c.channel_id === channel.channel_id && c.provider === "youtube",
                 )}

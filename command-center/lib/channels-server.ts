@@ -2,10 +2,12 @@ import { cookies, headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import {
   ALL_CHANNELS,
+  ALL_CHANNELS_SLUG,
   CHANNEL_COOKIE,
   CHANNEL_HEADER,
   DEFAULT_CHANNEL_ID,
   resolveSelection,
+  selectionSlug,
   slugToSelection,
   type ChannelSelection,
 } from "@/lib/channels";
@@ -31,6 +33,9 @@ export interface ChannelContextData {
   channels: ChannelRow[];
   credentials: ChannelCredentialRow[];
   selection: ChannelSelection;
+  /** The URL segment this selection SHOULD have — the channel's name, not its
+   *  internal id. The layout redirects when the URL disagrees. */
+  slug: string;
   /** True once more than one channel exists — the switcher is noise before that. */
   multi: boolean;
   /** True when the `channels` table isn't there yet (migration not applied). */
@@ -52,7 +57,14 @@ export async function getChannelContext(): Promise<ChannelContextData> {
     : (await cookies()).get(CHANNEL_COOKIE)?.value;
 
   if (!supabase) {
-    return { channels: [], credentials: [], selection: ALL_CHANNELS, multi: false, notMigrated: false };
+    return {
+      channels: [],
+      credentials: [],
+      selection: ALL_CHANNELS,
+      slug: ALL_CHANNELS_SLUG,
+      multi: false,
+      notMigrated: false,
+    };
   }
 
   const [ch, cr] = await Promise.all([
@@ -67,10 +79,12 @@ export async function getChannelContext(): Promise<ChannelContextData> {
   const channels = (ch.data as ChannelRow[]) ?? [];
   const credentials = (cr.data as ChannelCredentialRow[]) ?? [];
 
+  const selection = resolveSelection(raw, channels);
   return {
     channels,
     credentials,
-    selection: resolveSelection(raw, channels),
+    selection,
+    slug: selectionSlug(selection, channels),
     multi: channels.length > 1,
     notMigrated,
   };

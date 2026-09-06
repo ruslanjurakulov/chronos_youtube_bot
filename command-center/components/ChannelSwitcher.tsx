@@ -6,7 +6,7 @@ import { useI18n } from "@/lib/i18n/context";
 import {
   ALL_CHANNELS,
   CHANNEL_COOKIE,
-  selectionToSlug,
+  selectionSlug,
   type ChannelSelection,
 } from "@/lib/channels";
 import type { ChannelRow } from "@/lib/types";
@@ -66,7 +66,7 @@ export function ChannelSwitcher({
 
   function choose(next: string) {
     setOpen(false);
-    const slug = selectionToSlug(next);
+    const slug = selectionSlug(next, channels);
     // One year, path-wide, Lax: a view preference, not a credential.
     document.cookie = `${CHANNEL_COOKIE}=${encodeURIComponent(slug)}; path=/; max-age=31536000; samesite=lax`;
     // Same screen, different channel: replace only the first segment.
