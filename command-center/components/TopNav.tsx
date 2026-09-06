@@ -17,7 +17,7 @@ type NavKey = Exclude<keyof Dictionary["nav"], "more">;
  * is still one click away, and ⌘K still reaches all of them by name.
  */
 const PRIMARY: { href: string; key: NavKey }[] = [
-  { href: "/", key: "command" },
+  { href: "/command-center", key: "command" },
   { href: "/videos", key: "videos" },
   { href: "/pipeline", key: "pipeline" },
   { href: "/analytics", key: "analytics" },
@@ -25,17 +25,17 @@ const PRIMARY: { href: string; key: NavKey }[] = [
 
 const SECONDARY: { href: string; key: NavKey }[] = [
   { href: "/channels", key: "channels" },
-  { href: "/intelligence", key: "intelligence" },
+  { href: "/intelligence-map", key: "intelligence" },
   { href: "/agents", key: "agents" },
   { href: "/jobs", key: "jobs" },
   { href: "/topics", key: "topics" },
-  { href: "/measure", key: "measure" },
+  { href: "/measurement", key: "measure" },
   { href: "/decisions", key: "decisions" },
   { href: "/learning", key: "learning" },
   { href: "/memory", key: "memory" },
   { href: "/autonomy", key: "autonomy" },
-  { href: "/feedback", key: "feedback" },
-  { href: "/timemachine", key: "timeMachine" },
+  { href: "/feedback-loop", key: "feedback" },
+  { href: "/time-machine", key: "timeMachine" },
   { href: "/errors", key: "errors" },
   { href: "/logs", key: "logs" },
   { href: "/integrations", key: "integrations" },
@@ -43,11 +43,10 @@ const SECONDARY: { href: string; key: NavKey }[] = [
 
 export const ALL_NAV = [...PRIMARY, ...SECONDARY];
 
-/** True when `href` is the active route (exact for "/", prefix otherwise). */
+/** True when `href` is the active route — itself, or one of its children. */
 function useIsActive() {
   const pathname = usePathname();
-  return (href: string) =>
-    href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(href + "/");
+  return (href: string) => pathname === href || pathname.startsWith(href + "/");
 }
 
 export function TopNav() {

@@ -9,7 +9,7 @@ import { relativeTime } from "@/lib/format";
 
 type NavKey = keyof Dictionary["nav"];
 const NAV: { href: string; key: NavKey; hotkey?: string }[] = [
-  { href: "/", key: "command", hotkey: "d" },
+  { href: "/command-center", key: "command", hotkey: "d" },
   { href: "/channels", key: "channels", hotkey: "h" },
   { href: "/videos", key: "videos", hotkey: "v" },
   { href: "/pipeline", key: "pipeline", hotkey: "p" },
@@ -17,14 +17,14 @@ const NAV: { href: string; key: NavKey; hotkey?: string }[] = [
   { href: "/jobs", key: "jobs" },
   { href: "/topics", key: "topics" },
   { href: "/analytics", key: "analytics", hotkey: "a" },
-  { href: "/measure", key: "measure" },
-  { href: "/feedback", key: "feedback" },
-  { href: "/intelligence", key: "intelligence", hotkey: "i" },
+  { href: "/measurement", key: "measure" },
+  { href: "/feedback-loop", key: "feedback" },
+  { href: "/intelligence-map", key: "intelligence", hotkey: "i" },
   { href: "/decisions", key: "decisions", hotkey: "c" },
   { href: "/learning", key: "learning", hotkey: "n" },
   { href: "/memory", key: "memory", hotkey: "m" },
   { href: "/autonomy", key: "autonomy", hotkey: "u" },
-  { href: "/timemachine", key: "timeMachine", hotkey: "t" },
+  { href: "/time-machine", key: "timeMachine", hotkey: "t" },
   { href: "/errors", key: "errors" },
   { href: "/logs", key: "logs", hotkey: "l" },
   { href: "/integrations", key: "integrations" },

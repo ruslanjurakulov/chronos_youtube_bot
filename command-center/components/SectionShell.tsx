@@ -4,6 +4,9 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useI18n } from "@/lib/i18n/context";
 
+/** The ground floor. Named, like every other section — `/` only redirects here. */
+export const HOME = "/command-center";
+
 /**
  * How a screen presents itself, following the direction's own two screens.
  *
@@ -19,12 +22,12 @@ export function SectionShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { t } = useI18n();
-  const isHome = pathname === "/";
+  const isHome = pathname === HOME;
 
   useEffect(() => {
     if (isHome) return;
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") router.push("/");
+      if (e.key === "Escape") router.push(HOME);
     }
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
@@ -44,14 +47,14 @@ export function SectionShell({ children }: { children: React.ReactNode }) {
       <button
         type="button"
         aria-label={t.ops.shortcutsClose}
-        onClick={() => router.push("/")}
+        onClick={() => router.push(HOME)}
         className="scrim-enter fixed inset-0 z-0 cursor-default bg-black/55 backdrop-blur-[2px]"
       />
       <div className="page-rise relative z-10 mx-auto w-full max-w-[1100px]">
         <div className="section-card relative">
           <button
             type="button"
-            onClick={() => router.push("/")}
+            onClick={() => router.push(HOME)}
             aria-label={t.ops.shortcutsClose}
             className="sheet-close absolute right-4 top-4 z-10 sm:right-6 sm:top-6"
           >

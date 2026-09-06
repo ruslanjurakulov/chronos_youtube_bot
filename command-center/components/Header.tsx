@@ -37,7 +37,7 @@ export function Header({
       <div className="bar-measure flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 items-center gap-6 xl:gap-10">
         <Link
-          href="/"
+          href="/command-center"
           className="font-display shrink-0 text-lg font-semibold tracking-[-0.02em] text-[var(--color-primary)] sm:text-xl"
         >
           {t.brand.name}

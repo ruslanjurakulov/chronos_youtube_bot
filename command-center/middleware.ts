@@ -39,7 +39,7 @@ export async function middleware(request: NextRequest) {
   }
   if (user && isLogin) {
     const url = request.nextUrl.clone();
-    url.pathname = "/";
+    url.pathname = "/command-center";
     return NextResponse.redirect(url);
   }
 
