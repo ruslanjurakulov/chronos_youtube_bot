@@ -18,6 +18,7 @@
 import type {
   ChannelCredentialRow,
   ChannelRow,
+  ContentQueueRow,
   MetricsSnapshotRow,
   SystemEventRow,
   VideoRow,
@@ -53,6 +54,7 @@ export const SECTIONS = [
   "pipeline",
   "analytics",
   "channels",
+  "accounts",
   "intelligence-map",
   "agents",
   "jobs",
@@ -436,4 +438,207 @@ export function voiceOwners(channels: ChannelRow[]): Record<string, string> {
     if (voice && !owners[voice]) owners[voice] = c.name || c.channel_id;
   }
   return owners;
+}
+
+// ---------------------------------------------------------------------------
+// All Accounts
+// ---------------------------------------------------------------------------
+
+/** How far back "recently" reaches on the All Accounts screen. */
+export const ACCOUNT_WINDOW_DAYS = 7;
+
+/**
+ * What a channel *is*: whether it is something that can publish at all.
+ *
+ * Separate from what it has been doing, because conflating the two produces a
+ * single label that answers neither question. A channel can be live and silent,
+ * or paused with a failure still on its record, and an operator needs both
+ * halves to decide whether anything is wrong.
+ */
+export type AccountStanding = "live" | "paused" | "draft";
+
+/** What a channel has *been doing*, inside the window. */
+export type AccountActivity = "never-run" | "failing" | "publishing" | "quiet";
+
+export interface AccountSummary {
+  channelId: string;
+  name: string;
+  /** URL segment, so a row can link straight to that channel's own screens. */
+  slug: string;
+  standing: AccountStanding;
+  activity: AccountActivity;
+  /** Not producing right now, for whatever reason — paused, draft, or silent. */
+  dormant: boolean;
+  /**
+   * Videos uploaded inside the window. Every upload is private unless the
+   * channel's Auto publish is on, so this counts what the pipeline produced,
+   * not what the world can see.
+   */
+  published: number;
+  /** Topics still waiting in this channel's queue. */
+  queued: number;
+  /** Events this channel recorded as failed inside the window. */
+  failures: number;
+  /** The newest upload, ever. Null when the channel has never uploaded. */
+  lastPublishedAt: string | null;
+  /** The newest event of any kind, ever. Null when there has never been one. */
+  lastActivityAt: string | null;
+  /**
+   * False when nothing at all has ever been recorded for this channel.
+   *
+   * The distinction the whole screen turns on: a channel that has never run has
+   * no counts, it does not have counts of zero. Rendering "0 published, 0
+   * queued, 0 failed" for it would describe a working channel having a slow
+   * week, which is the opposite of what is true.
+   */
+  everRan: boolean;
+  health: ChannelHealth;
+}
+
+export interface AccountsRollup {
+  accounts: AccountSummary[];
+  /** Verified and ACTIVE — the ones that can publish tonight. */
+  live: number;
+  /** Verified, deliberately not running. */
+  paused: number;
+  /** Unverified: an idea, not an account. Never counted as live. */
+  drafts: number;
+  /** Not producing, for any reason. Includes drafts and never-run channels. */
+  dormant: number;
+  failing: number;
+  neverRun: number;
+  /** Uploads across every channel inside the window. */
+  published: number;
+  queued: number;
+  failures: number;
+  windowDays: number;
+}
+
+export interface AccountsInput {
+  channels: ChannelRow[];
+  /** Videos, any age — `lastPublishedAt` needs the whole history. */
+  videos: VideoRow[];
+  queue: ContentQueueRow[];
+  /** Events inside the window. Older ones are not needed and are not fetched. */
+  events: SystemEventRow[];
+  credentials: ChannelCredentialRow[];
+  /**
+   * Newest event per channel over ALL time, which `events` cannot supply: a
+   * channel that ran once six months ago and stopped has nothing in the window,
+   * and is exactly the channel this screen exists to surface. The page reads it
+   * per channel; see the note there.
+   */
+  lastEventAt: Record<string, string | null>;
+  now?: number;
+  windowDays?: number;
+}
+
+/**
+ * One row per channel for the All Accounts screen.
+ *
+ * Every figure is counted from rows the backend actually wrote. Nothing is
+ * inferred from a channel's configuration: a channel configured to publish
+ * daily that has published nothing reads as silent, because that is what
+ * happened.
+ */
+export function accountSummaries(input: AccountsInput): AccountSummary[] {
+  const {
+    channels,
+    videos,
+    queue,
+    events,
+    credentials,
+    lastEventAt,
+    now = Date.now(),
+    windowDays = ACCOUNT_WINDOW_DAYS,
+  } = input;
+  const since = now - windowDays * DAY_MS;
+
+  return channels.map((channel) => {
+    const id = channel.channel_id;
+    const mineVideos = videos.filter((v) => v.channel_id === id);
+    const mineEvents = events.filter((e) => e.channel_id === id);
+
+    const publishDates = mineVideos
+      .map((v) => v.published_at)
+      .filter((d): d is string => Boolean(d))
+      .sort();
+    const lastPublishedAt = publishDates.length ? publishDates[publishDates.length - 1] : null;
+    const published = publishDates.filter((d) => (storedMs(d) ?? 0) >= since).length;
+
+    const failures = mineEvents.filter((e) => e.status === "failed").length;
+    const queued = queue.filter((q) => q.channel_id === id && q.status === "queued").length;
+
+    // Any evidence at all that this channel has ever done something. A video row
+    // counts even with no event behind it: the video is the stronger proof.
+    const lastEvent = lastEventAt[id] ?? null;
+    const everRan = Boolean(lastEvent) || mineVideos.length > 0;
+    const lastActivityAt = newerOf(lastEvent, lastPublishedAt);
+
+    // A row that YouTube has never answered for is a draft whatever its status
+    // column says. Migration 0005 demotes the ACTIVE ones, but a dashboard that
+    // only tells the truth after a migration is applied is not telling it.
+    const standing: AccountStanding = !isChannelVerified(channel)
+      ? "draft"
+      : channel.status === "ACTIVE"
+        ? "live"
+        : "paused";
+
+    const activity: AccountActivity = !everRan
+      ? "never-run"
+      : failures > 0
+        ? // A failure outranks an upload on purpose: a channel that published
+          // twice and failed once is the one worth opening.
+          "failing"
+        : published > 0
+          ? "publishing"
+          : "quiet";
+
+    return {
+      channelId: id,
+      name: channel.name,
+      slug: channelSlug(channel, channels),
+      standing,
+      activity,
+      dormant: standing !== "live" || activity === "quiet" || activity === "never-run",
+      published,
+      queued,
+      failures,
+      lastPublishedAt,
+      lastActivityAt,
+      everRan,
+      health: channelHealth(
+        channel,
+        events,
+        credentials.find((c) => c.channel_id === id && c.provider === "youtube"),
+        now,
+      ),
+    };
+  });
+}
+
+/** The later of two stored timestamps, either of which may be absent. */
+function newerOf(a: string | null, b: string | null): string | null {
+  if (!a) return b;
+  if (!b) return a;
+  return (storedMs(a) ?? 0) >= (storedMs(b) ?? 0) ? a : b;
+}
+
+/** The same rows, plus the counts the header strip shows. */
+export function rollupAccounts(input: AccountsInput): AccountsRollup {
+  const accounts = accountSummaries(input);
+  const count = (fn: (a: AccountSummary) => boolean) => accounts.filter(fn).length;
+  return {
+    accounts,
+    live: count((a) => a.standing === "live"),
+    paused: count((a) => a.standing === "paused"),
+    drafts: count((a) => a.standing === "draft"),
+    dormant: count((a) => a.dormant),
+    failing: count((a) => a.activity === "failing"),
+    neverRun: count((a) => !a.everRan),
+    published: accounts.reduce((n, a) => n + a.published, 0),
+    queued: accounts.reduce((n, a) => n + a.queued, 0),
+    failures: accounts.reduce((n, a) => n + a.failures, 0),
+    windowDays: input.windowDays ?? ACCOUNT_WINDOW_DAYS,
+  };
 }
