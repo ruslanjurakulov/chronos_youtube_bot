@@ -32,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from modules.channel_credentials import env_var_name  # noqa: E402
 from modules.channels import DEFAULT_CHANNEL_ID, ChannelRegistry, legacy_default_channel  # noqa: E402
 
 DEFAULT_HOUR_UTC = 15
@@ -57,15 +58,28 @@ def due_channels(due_hour: int | None = None, registry=None) -> list[dict]:
             == due_hour
         ]
 
-    return [
-        {
-            "channel_id": str(c.channel_id),
-            "name": c.name,
-            "niche": c.niche,
-            "is_default": str(c.channel_id) == str(DEFAULT_CHANNEL_ID),
-        }
-        for c in channels
-    ]
+    return [_row(c) for c in channels]
+
+
+def _row(c) -> dict:
+    """One matrix entry.
+
+    `token_secret` is the name of the GitHub secret holding THIS channel's
+    YouTube token, derived by the same function the publishing side uses to
+    read it (``channel_credentials.env_var_name``) so the two cannot drift.
+    The workflow indexes ``secrets[...]`` with it, which is what lets a channel
+    upload to its own account instead of the default channel's.
+
+    It is a secret *name*, never a value: nothing secret is emitted here, and
+    this output is printed into the workflow log.
+    """
+    return {
+        "channel_id": str(c.channel_id),
+        "name": c.name,
+        "niche": c.niche,
+        "is_default": str(c.channel_id) == str(DEFAULT_CHANNEL_ID),
+        "token_secret": env_var_name(c),
+    }
 
 
 def _warn_about_shared_voices() -> None:
@@ -115,10 +129,7 @@ def main() -> int:
                 file=sys.stderr,
             )
             return 2
-        print(json.dumps({"include": [
-            {"channel_id": str(c.channel_id), "name": c.name, "niche": c.niche,
-             "is_default": str(c.channel_id) == str(DEFAULT_CHANNEL_ID)}
-        ]}))
+        print(json.dumps({"include": [_row(c)]}))
         return 0
 
     if args.all:
