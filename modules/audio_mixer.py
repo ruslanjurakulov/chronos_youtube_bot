@@ -6,6 +6,7 @@ import logging
 from pathlib import Path
 
 import edge_tts
+import requests
 from pydub import AudioSegment
 from pydub.effects import normalize
 
@@ -37,6 +38,95 @@ MUSIC_VOLUME_MAP = {
 
 # Pattern-interrupt interval: add a subtle audio trigger every N seconds
 PATTERN_INTERRUPT_INTERVAL = 35  # seconds
+
+ELEVENLABS_API = "https://api.elevenlabs.io/v1"
+
+
+class VoiceUnavailable(RuntimeError):
+    """This channel's narrator cannot speak, and no substitute will be used."""
+
+
+def verify_voice(channel=None) -> None:
+    """Check the narrator before the run spends anything. Raise if it cannot speak.
+
+    Why this refuses to fall back
+    -----------------------------
+    The obvious repair for a dead ElevenLabs key is to narrate with edge
+    instead: it is free, needs no credentials, and the run would finish. That
+    repair is wrong here. A channel is set to ElevenLabs *for the voice*, and
+    with auto publish on nobody hears the result before the audience does. A
+    video that goes out in the wrong voice is worse than one that never goes
+    out — it is the moment a viewer notices the channel is a machine. No video
+    is the better failure.
+
+    Why it runs this early
+    ----------------------
+    By the time the audio stage is reached, the run has already paid for topic
+    selection, research, a script and a fact-check pass — four Gemini calls and
+    several minutes of runner time. Run #20 died exactly there, on a key that
+    was never going to work. Checking costs one request that synthesizes no
+    characters.
+
+    A network failure is deliberately NOT fatal: the same call will be made for
+    real a few stages later, and a transient blip must not be the thing that
+    stops a run.
+    """
+    agent = channel.agent if channel is not None else None
+    provider = agent.tts_provider if agent else TTS_PROVIDER
+    if provider != "elevenlabs":
+        return
+
+    voice_id = (agent.elevenlabs_voice_id if agent else ELEVENLABS_VOICE_ID) or ""
+    if not ELEVENLABS_API_KEY:
+        raise VoiceUnavailable(
+            "This channel narrates with ElevenLabs, but ELEVENLABS_API_KEY is empty. "
+            "Add it to the repository secrets, or set the channel's tts_provider to "
+            "'edge'. Refusing to narrate in a different voice than the channel's."
+        )
+    if not voice_id:
+        raise VoiceUnavailable(
+            "This channel narrates with ElevenLabs, but no voice id is set. "
+            "Set elevenlabs_voice_id for the channel, or switch it to 'edge'."
+        )
+
+    try:
+        resp = requests.get(
+            f"{ELEVENLABS_API}/voices/{voice_id}",
+            headers={"xi-api-key": ELEVENLABS_API_KEY},
+            timeout=15,
+        )
+    except Exception as e:
+        logger.warning(
+            "Could not reach ElevenLabs to verify the voice (%s: %s) — continuing; "
+            "the narration stage will surface it if it is real",
+            type(e).__name__, e,
+        )
+        return
+
+    if resp.status_code == 200:
+        return
+
+    # Quote ElevenLabs' own reason rather than guessing at it: "invalid_api_key"
+    # and "quota_exceeded" are the same HTTP status and need opposite fixes.
+    detail = ""
+    try:
+        body = resp.json().get("detail") or {}
+        detail = body.get("status") or body.get("message") or ""
+    except Exception:
+        pass
+
+    if resp.status_code == 404:
+        raise VoiceUnavailable(
+            f"ElevenLabs has no voice with id {voice_id!r} for this account. "
+            "Copy the id from the Voices page — they look like "
+            "'pNInz6obpgDQGcFmaJgB', not a plain number."
+        )
+    raise VoiceUnavailable(
+        f"ElevenLabs refused the credentials (HTTP {resp.status_code}"
+        + (f", {detail}" if detail else "")
+        + "). 'invalid_api_key' means the key is wrong or missing; "
+        "'quota_exceeded' means the account is out of characters."
+    )
 
 
 class AudioMixer:
