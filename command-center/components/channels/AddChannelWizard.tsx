@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n/context";
+import { useChannelPath } from "@/lib/channels-client";
 import { fmt } from "@/lib/i18n";
 import { isValidChannelId, slugifyChannelId } from "@/lib/channels";
 
@@ -62,6 +63,7 @@ type ChannelInfo = {
 export function AddChannelWizard() {
   const { t } = useI18n();
   const router = useRouter();
+  const path = useChannelPath();
 
   const [step, setStep] = useState(0);
   const [name, setName] = useState("");
@@ -311,7 +313,7 @@ export function AddChannelWizard() {
         </p>
         <button
           type="button"
-          onClick={() => router.push("/channels")}
+          onClick={() => router.push(path("/channels"))}
           className="btn-sky pill px-5 py-2.5 text-[13px]"
         >
           {t.channels.title} →

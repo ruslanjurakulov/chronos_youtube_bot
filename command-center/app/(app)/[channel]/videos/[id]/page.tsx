@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getChannelPath } from "@/lib/channels-path-server";
 import { isSupabaseConfigured } from "@/lib/config";
 import { NotConfigured } from "@/components/NotConfigured";
 import { Panel, StatCard, EmptyState, StatusPill } from "@/components/ui";
@@ -43,6 +44,7 @@ export default async function VideoDetail({
   if (!isSupabaseConfigured) return <NotConfigured />;
   const { id } = await params;
   const { t } = await getDictionary();
+  const path = await getChannelPath();
 
   const supabase = await createClient();
   let video: VideoRow | null = null;
@@ -82,7 +84,7 @@ export default async function VideoDetail({
     return (
       <div className="rhythm stagger-enter">
         <Link
-          href="/videos"
+          href={path("/videos")}
           className="mono text-[11px] text-[var(--color-primary)] hover:underline"
         >
           {t.videoDetail.back}
@@ -104,7 +106,7 @@ export default async function VideoDetail({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="min-w-0">
           <Link
-            href="/videos"
+            href={path("/videos")}
             className="mono text-[11px] text-[var(--color-primary)] hover:underline"
           >
             {t.videoDetail.back}

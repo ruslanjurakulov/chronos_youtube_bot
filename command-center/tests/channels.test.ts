@@ -1,13 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
   ALL_CHANNELS,
+  ALL_CHANNELS_SLUG,
+  SECTIONS,
   channelHealth,
+  channelPath,
   channelStats,
   inSelection,
   isScoped,
+  isSection,
   isValidChannelId,
   resolveSelection,
   scopeQuery,
+  selectionToSlug,
+  slugToSelection,
   slugifyChannelId,
 } from "@/lib/channels";
 import type {
@@ -297,5 +303,59 @@ describe("channel ids", () => {
   it("slugifies a display name into a candidate id", () => {
     expect(slugifyChannelId("Extinct World")).toBe("extinct-world");
     expect(slugifyChannelId("  Chronos: Finance!  ")).toBe("chronos-finance");
+  });
+});
+
+// ── The URL is the selection ────────────────────────────────────────────────
+//
+// Every screen lives at /{channel}/{section}. These are the pure pieces that
+// make that hold: telling a section segment from a channel segment, and moving
+// between the URL's spelling and the internal sentinel.
+
+describe("isSection", () => {
+  it("recognises every section the nav offers", () => {
+    for (const s of SECTIONS) expect(isSection(s), s).toBe(true);
+  });
+
+  it("does not mistake a channel id for a section", () => {
+    expect(isSection("chronos")).toBe(false);
+    expect(isSection("extinct-world")).toBe(false);
+    expect(isSection(ALL_CHANNELS_SLUG)).toBe(false);
+    expect(isSection("")).toBe(false);
+  });
+});
+
+describe("slug ↔ selection", () => {
+  it("round-trips every channel", () => {
+    for (const id of ["chronos", "extinct-world", "default"]) {
+      expect(slugToSelection(selectionToSlug(id))).toBe(id);
+    }
+  });
+
+  it("spells ALL_CHANNELS as a readable segment, not the sentinel", () => {
+    expect(selectionToSlug(ALL_CHANNELS)).toBe("all-channels");
+    expect(selectionToSlug(ALL_CHANNELS)).not.toContain("_");
+    expect(slugToSelection("all-channels")).toBe(ALL_CHANNELS);
+  });
+});
+
+describe("channelPath", () => {
+  it("puts the channel first and the section after", () => {
+    expect(channelPath("chronos", "/videos")).toBe("/chronos/videos");
+    expect(channelPath("all-channels", "/command-center")).toBe("/all-channels/command-center");
+    expect(channelPath("chronos", "/videos/abc123")).toBe("/chronos/videos/abc123");
+  });
+});
+
+describe("isValidChannelId reserves the URL's own words", () => {
+  it("refuses a name that would make a path ambiguous", () => {
+    // A channel called "videos" would make /videos mean two things.
+    for (const s of SECTIONS) expect(isValidChannelId(s), s).toBe(false);
+    expect(isValidChannelId(ALL_CHANNELS_SLUG)).toBe(false);
+  });
+
+  it("still accepts ordinary ids", () => {
+    expect(isValidChannelId("chronos")).toBe(true);
+    expect(isValidChannelId("extinct-world")).toBe(true);
   });
 });

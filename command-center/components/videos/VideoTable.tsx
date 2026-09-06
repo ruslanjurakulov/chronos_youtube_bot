@@ -5,7 +5,8 @@ import Link from "next/link";
 import { num, relativeTime } from "@/lib/format";
 import { useI18n } from "@/lib/i18n/context";
 import { fmt } from "@/lib/i18n";
-import type { VideoWithMetrics } from "@/app/(app)/videos/page";
+import { useChannelPath } from "@/lib/channels-client";
+import type { VideoWithMetrics } from "@/app/(app)/[channel]/videos/page";
 
 const PRIVACY_FILTERS = ["all", "public", "unlisted", "private"] as const;
 type PrivacyFilter = (typeof PRIVACY_FILTERS)[number];
@@ -16,6 +17,7 @@ type PrivacyFilter = (typeof PRIVACY_FILTERS)[number];
  * fetches on its own — it only filters what the server already resolved.
  */
 export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
+  const path = useChannelPath();
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const [privacy, setPrivacy] = useState<PrivacyFilter>("all");
@@ -105,7 +107,7 @@ export function VideoTable({ rows }: { rows: VideoWithMetrics[] }) {
                 >
                   <td className="px-4 py-2 text-[var(--color-fg)]">
                     <Link
-                      href={`/videos/${v.video_id}`}
+                      href={path(`/videos/${v.video_id}`)}
                       className="hover:text-[var(--color-primary)]"
                     >
                       {v.title ?? v.video_id}

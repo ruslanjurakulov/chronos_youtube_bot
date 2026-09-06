@@ -24,10 +24,70 @@ import type {
 } from "@/lib/types";
 import { storedMs } from "@/lib/format";
 
+/** Remembers the last channel viewed, so "/" knows where to send you. It is a
+ *  memory, not the selection — the URL is the selection. */
 export const CHANNEL_COOKIE = "chronos_channel";
+
+/** Request header the middleware fills from the URL's channel segment. */
+export const CHANNEL_HEADER = "x-nightshift-channel";
+
+/** Request header carrying the full pathname, which a layout cannot otherwise see. */
+export const PATH_HEADER = "x-nightshift-path";
 
 /** The sentinel for "don't filter". Not a channel id — no channel may be named this. */
 export const ALL_CHANNELS = "__all__";
+
+/** How ALL_CHANNELS is spelled in a URL. Reserved: no channel may take it. */
+export const ALL_CHANNELS_SLUG = "all-channels";
+
+/**
+ * Every section path, without a channel prefix.
+ *
+ * The middleware needs this to tell an old-style link (`/videos`) from a
+ * channel segment (`/chronos`), since both are one path segment. Keep it in
+ * step with the routes under `app/(app)/[channel]/`.
+ */
+export const SECTIONS = [
+  "command-center",
+  "videos",
+  "pipeline",
+  "analytics",
+  "channels",
+  "intelligence-map",
+  "agents",
+  "jobs",
+  "topics",
+  "measurement",
+  "decisions",
+  "learning",
+  "memory",
+  "autonomy",
+  "feedback-loop",
+  "time-machine",
+  "errors",
+  "logs",
+  "integrations",
+] as const;
+
+/** True when `segment` names a section rather than a channel. */
+export function isSection(segment: string): boolean {
+  return (SECTIONS as readonly string[]).includes(segment);
+}
+
+/** URL segment → selection. */
+export function slugToSelection(slug: string): ChannelSelection {
+  return slug === ALL_CHANNELS_SLUG ? ALL_CHANNELS : slug;
+}
+
+/** Selection → URL segment. */
+export function selectionToSlug(selection: ChannelSelection): string {
+  return selection === ALL_CHANNELS ? ALL_CHANNELS_SLUG : selection;
+}
+
+/** `/chronos/videos` from ("chronos", "/videos"). */
+export function channelPath(slug: string, section: string): string {
+  return `/${slug}${section}`;
+}
 
 export const DEFAULT_CHANNEL_ID = "default";
 
@@ -271,6 +331,10 @@ export function channelStats(
 
 /** A channel id the user typed, validated against the same rule the bot uses. */
 export function isValidChannelId(value: string): boolean {
+  // A channel id is also a URL segment, so it may not collide with the words
+  // that segment already means — otherwise /videos would be ambiguous between
+  // "the Videos section" and "a channel called videos".
+  if (value === ALL_CHANNELS_SLUG || isSection(value)) return false;
   return /^[a-z0-9][a-z0-9-]{1,38}$/.test(value);
 }
 

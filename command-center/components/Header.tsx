@@ -3,6 +3,7 @@
 import Link from "next/link";
 
 import { useI18n } from "@/lib/i18n/context";
+import { useChannelPath } from "@/lib/channels-client";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { LanguageSelector } from "@/components/LanguageSelector";
 import { SignOutButton } from "@/components/SignOutButton";
@@ -27,6 +28,7 @@ export function Header({
   selection?: ChannelSelection;
 }) {
   const { t } = useI18n();
+  const path = useChannelPath();
 
   function openPalette() {
     window.dispatchEvent(new CustomEvent("chronos:palette-open"));
@@ -37,7 +39,7 @@ export function Header({
       <div className="bar-measure flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
         <div className="flex min-w-0 items-center gap-6 xl:gap-10">
         <Link
-          href="/command-center"
+          href={path("/command-center")}
           className="font-display shrink-0 text-lg font-semibold tracking-[-0.02em] text-[var(--color-primary)] sm:text-xl"
         >
           {t.brand.name}

@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n/context";
 import type { Dictionary } from "@/lib/i18n";
 import { relativeTime } from "@/lib/format";
+import { useChannelPath } from "@/lib/channels-client";
 
 type NavKey = keyof Dictionary["nav"];
 const NAV: { href: string; key: NavKey; hotkey?: string }[] = [
@@ -53,6 +54,9 @@ function isTyping(el: EventTarget | null): boolean {
 export function CommandPalette() {
   const router = useRouter();
   const { t } = useI18n();
+  // Every href below is a section path. The channel comes from the URL you are
+  // already on, so a jump never quietly changes which channel you are viewing.
+  const path = useChannelPath();
   const [open, setOpen] = useState(false);
   const [help, setHelp] = useState(false);
   const [query, setQuery] = useState("");
@@ -124,7 +128,7 @@ export function CommandPalette() {
         if (gTimer) clearTimeout(gTimer);
         if (target) {
           e.preventDefault();
-          router.push(target.href);
+          router.push(path(target.href));
         }
         return;
       }
@@ -143,7 +147,7 @@ export function CommandPalette() {
       window.removeEventListener("chronos:palette-open", onOpenEvent);
       if (gTimer) clearTimeout(gTimer);
     };
-  }, [loadData, openPalette, router]);
+  }, [loadData, openPalette, path, router]);
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
@@ -163,7 +167,7 @@ export function CommandPalette() {
 
   function choose(item: Item) {
     setOpen(false);
-    router.push(item.href);
+    router.push(path(item.href));
   }
 
   function onListKey(e: React.KeyboardEvent) {

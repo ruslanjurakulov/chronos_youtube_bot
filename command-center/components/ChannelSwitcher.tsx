@@ -1,18 +1,30 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useI18n } from "@/lib/i18n/context";
-import { ALL_CHANNELS, CHANNEL_COOKIE, type ChannelSelection } from "@/lib/channels";
+import {
+  ALL_CHANNELS,
+  CHANNEL_COOKIE,
+  selectionToSlug,
+  type ChannelSelection,
+} from "@/lib/channels";
 import type { ChannelRow } from "@/lib/types";
 
 /**
  * Channel selector for the header.
  *
- * Writes the selection to a cookie and calls router.refresh(), the same pattern
- * the language selector uses: the Server Components re-run and re-query scoped
- * to the chosen channel, rather than the browser fetching everything and hiding
- * rows. Filtering here is a view control, not a security boundary — RLS is what
+ * Choosing a channel NAVIGATES: it swaps the channel segment of the current
+ * URL and keeps you on the same screen, so /chronos/analytics becomes
+ * /extinct-world/analytics. That is what makes the address bar the truth —
+ * the URL says which channel you are looking at, so it survives a paste into a
+ * message, a second tab, and the browser's back button.
+ *
+ * The cookie is still written, but only as a memory: it is what a channelless
+ * URL ("/", or an old /videos link) is resolved against. It never decides what
+ * a URL that already names a channel is showing.
+ *
+ * Filtering here is a view control, not a security boundary — RLS is what
  * decides what may be read at all.
  *
  * Renders nothing when there is one channel or none: a switcher with a single
@@ -26,6 +38,7 @@ export function ChannelSwitcher({
   selection: ChannelSelection;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -53,9 +66,12 @@ export function ChannelSwitcher({
 
   function choose(next: string) {
     setOpen(false);
+    const slug = selectionToSlug(next);
     // One year, path-wide, Lax: a view preference, not a credential.
-    document.cookie = `${CHANNEL_COOKIE}=${encodeURIComponent(next)}; path=/; max-age=31536000; samesite=lax`;
-    router.refresh();
+    document.cookie = `${CHANNEL_COOKIE}=${encodeURIComponent(slug)}; path=/; max-age=31536000; samesite=lax`;
+    // Same screen, different channel: replace only the first segment.
+    const rest = pathname.split("/").slice(2).join("/");
+    router.push(`/${slug}${rest ? "/" + rest : "/command-center"}`);
   }
 
   return (

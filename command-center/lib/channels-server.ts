@@ -1,10 +1,12 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
 import {
   ALL_CHANNELS,
   CHANNEL_COOKIE,
+  CHANNEL_HEADER,
   DEFAULT_CHANNEL_ID,
   resolveSelection,
+  slugToSelection,
   type ChannelSelection,
 } from "@/lib/channels";
 import type {
@@ -37,8 +39,17 @@ export interface ChannelContextData {
 
 export async function getChannelContext(): Promise<ChannelContextData> {
   const supabase = await createClient();
-  const cookieStore = await cookies();
-  const raw = cookieStore.get(CHANNEL_COOKIE)?.value;
+
+  // The URL is the selection. The middleware reads the channel segment and
+  // sets it as a header, because a Server Component this deep cannot see route
+  // params. The cookie is only a memory of the channel last viewed, used to
+  // send a channelless URL somewhere sensible — never to decide what a URL
+  // that already names a channel is showing.
+  const headerStore = await headers();
+  const fromUrl = headerStore.get(CHANNEL_HEADER);
+  const raw = fromUrl
+    ? slugToSelection(fromUrl)
+    : (await cookies()).get(CHANNEL_COOKIE)?.value;
 
   if (!supabase) {
     return { channels: [], credentials: [], selection: ALL_CHANNELS, multi: false, notMigrated: false };
