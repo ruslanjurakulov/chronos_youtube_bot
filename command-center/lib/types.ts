@@ -220,6 +220,13 @@ export interface ChannelCredentialRef {
   youtube_title?: string;
   youtube_thumbnail?: string;
   youtube_custom_url?: string;
+  subscriber_count?: string;
+  video_count?: string;
+  /** When channels.list last answered for this channel. Set together with
+   *  `youtube_channel_id`; the pair is what the database checks before it will
+   *  let the row be ACTIVE, and what the scheduler checks before it will run
+   *  it. Absent means the row is a draft that never resolved to a real
+   *  channel. */
   verified_at?: string;
 }
 

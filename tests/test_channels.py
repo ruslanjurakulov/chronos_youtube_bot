@@ -40,7 +40,8 @@ def finance() -> ChannelContext:
             system_prompt="One financial idea per video.",
         ),
         schedule=ScheduleConfig(publish_hour_utc=15),
-        credential=CredentialRef(ref="finance", youtube_channel_id="UCfinance"),
+        credential=CredentialRef(ref="finance", youtube_channel_id="UCfinance",
+                                 verified_at="2026-01-01T00:00:00Z"),
     )
 
 
@@ -56,7 +57,8 @@ def history() -> ChannelContext:
             visual_style_prompt="Cinematic prehistoric documentary",
         ),
         schedule=ScheduleConfig(publish_hour_utc=19),
-        credential=CredentialRef(ref="extinct", youtube_channel_id="UCextinct"),
+        credential=CredentialRef(ref="extinct", youtube_channel_id="UCextinct",
+                                 verified_at="2026-01-01T00:00:00Z"),
     )
 
 
@@ -874,3 +876,163 @@ class SchedulerIsolationTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VerificationIsWhatMakesAChannelReal(unittest.TestCase):
+    """A row nobody confirmed against YouTube is a draft, not an account.
+
+    The `ruslanjurakulov` channel was created from the site with a typed name,
+    a typed niche and an ElevenLabs voice id of "16516516145" — a number, not a
+    voice. Nothing required a confirmation, so the scheduler dispatched it a job
+    on every manual run. These tests pin the rule that replaced that.
+    """
+
+    def row(self, channel_id, *, verified=True, status="ACTIVE", enabled=True, agent=None):
+        credential = {"provider": "youtube"}
+        if verified:
+            credential.update(
+                youtube_channel_id="UC_real",
+                verified_at="2026-09-06T09:00:00Z",
+                youtube_title="Extinct World",
+                youtube_thumbnail="https://yt3.example/avatar.jpg",
+            )
+        return {
+            "channel_id": channel_id,
+            "name": channel_id,
+            "niche": "n",
+            "status": status,
+            "agent_config": agent or {},
+            "schedule_config": {"publish_hour_utc": 15, "enabled": enabled},
+            "credential_ref": credential,
+        }
+
+    def test_a_confirmed_channel_is_verified(self):
+        c = ChannelContext.from_dict(self.row("extinct-world"))
+        self.assertTrue(c.is_verified)
+        self.assertTrue(c.is_runnable)
+
+    def test_a_draft_is_not_verified_however_active_it_says_it_is(self):
+        c = ChannelContext.from_dict(self.row("draft", verified=False))
+        self.assertFalse(c.is_verified)
+        self.assertFalse(c.is_runnable)
+        self.assertTrue(c.is_active, "the status is untouched — only the running is refused")
+
+    def test_a_timestamp_without_a_channel_id_is_not_proof(self):
+        """Half a record could be written by hand. Both halves say a lookup happened."""
+        row = self.row("half")
+        row["credential_ref"]["youtube_channel_id"] = ""
+        self.assertFalse(ChannelContext.from_dict(row).is_verified)
+
+    def test_a_channel_id_without_a_timestamp_is_not_proof(self):
+        row = self.row("half", verified=False)
+        row["credential_ref"]["youtube_channel_id"] = "UC_typo"
+        self.assertFalse(ChannelContext.from_dict(row).is_verified)
+
+    def test_the_default_channel_is_exempt(self):
+        """It predates the registry and never passed through a form."""
+        c = ChannelContext.from_dict(self.row("default", verified=False))
+        self.assertTrue(c.is_verified)
+        self.assertTrue(c.is_runnable)
+
+    def test_the_scheduler_skips_a_draft(self):
+        registry = ChannelRegistry(channels=[
+            ChannelContext.from_dict(self.row("real")),
+            ChannelContext.from_dict(self.row("draft", verified=False)),
+        ])
+        # `default` is always synthesized by the registry and always exempt.
+        self.assertEqual(
+            sorted(str(c.channel_id) for c in registry.active()), ["default", "real"]
+        )
+
+    def test_a_paused_schedule_still_wins(self):
+        registry = ChannelRegistry(channels=[
+            ChannelContext.from_dict(self.row("real", enabled=False)),
+        ])
+        self.assertNotIn("real", [str(c.channel_id) for c in registry.active()])
+
+    def test_verification_survives_a_round_trip(self):
+        c = ChannelContext.from_dict(self.row("extinct-world"))
+        self.assertTrue(ChannelContext.from_dict(c.to_dict()).is_verified)
+
+
+class OneVoicePerChannel(unittest.TestCase):
+    """Two channels in one voice sound like one channel with two names."""
+
+    def channel(self, channel_id, voice, provider="elevenlabs"):
+        return ChannelContext.from_dict({
+            "channel_id": channel_id,
+            "name": channel_id,
+            "niche": "n",
+            "agent_config": {"tts_provider": provider, "elevenlabs_voice_id": voice},
+            "credential_ref": {"youtube_channel_id": "UC1", "verified_at": "2026-09-06T09:00:00Z"},
+        })
+
+    def test_a_shared_voice_is_reported(self):
+        registry = ChannelRegistry(channels=[
+            self.channel("alpha", "voice-1"),
+            self.channel("bravo", "voice-1"),
+            self.channel("delta", "voice-2"),
+        ])
+        self.assertEqual(registry.voice_collisions(), {"voice-1": ["alpha", "bravo"]})
+
+    def test_distinct_voices_collide_with_nothing(self):
+        registry = ChannelRegistry(channels=[
+            self.channel("alpha", "voice-1"),
+            self.channel("bravo", "voice-2"),
+        ])
+        self.assertEqual(registry.voice_collisions(), {})
+
+    def test_edge_channels_are_not_counted(self):
+        """They do not use an ElevenLabs voice at all; the field is inherited noise."""
+        registry = ChannelRegistry(channels=[
+            self.channel("alpha", "voice-1", provider="edge"),
+            self.channel("bravo", "voice-1", provider="edge"),
+        ])
+        self.assertEqual(registry.voice_collisions(), {})
+
+
+class EachChannelUploadsToItsOwnAccount(unittest.TestCase):
+    """The matrix names each channel's own token secret.
+
+    Before this, every job in the matrix restored `YOUTUBE_TOKEN_JSON` — the
+    default channel's token — so a video made for a new channel would have
+    uploaded to somebody else's account. The workflow now indexes
+    `secrets[matrix.token_secret]`, and these pin that the name it gets is the
+    one the publishing side reads.
+    """
+
+    def channel(self, ref):
+        return ChannelContext.from_dict({
+            "channel_id": "extinct-world",
+            "name": "Extinct World",
+            "niche": "n",
+            "credential_ref": {"ref": ref, "youtube_channel_id": "UC1",
+                               "verified_at": "2026-09-06T09:00:00Z"},
+        })
+
+    def test_the_matrix_carries_the_secret_name_the_uploader_reads(self):
+        from modules.channel_credentials import env_var_name
+        from tools.list_channels import _row
+
+        c = self.channel("extinct")
+        self.assertEqual(_row(c)["token_secret"], env_var_name(c))
+        self.assertEqual(_row(c)["token_secret"], "CHRONOS_YT_TOKEN_EXTINCT")
+
+    def test_a_blank_ref_falls_back_to_the_channel_id(self):
+        from tools.list_channels import _row
+
+        self.assertEqual(_row(self.channel(""))["token_secret"], "CHRONOS_YT_TOKEN_EXTINCT_WORLD")
+
+    def test_the_row_carries_no_secret_value(self):
+        """This output is printed into the workflow log. Names only."""
+        from tools.list_channels import _row
+
+        self.assertEqual(
+            set(_row(self.channel("extinct"))),
+            {"channel_id", "name", "niche", "is_default", "token_secret"},
+        )
+
+    def test_the_default_channel_is_marked_so_the_legacy_step_can_run(self):
+        from tools.list_channels import _row
+
+        self.assertTrue(_row(legacy_default_channel())["is_default"])

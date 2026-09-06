@@ -241,21 +241,58 @@ class CredentialRef:
     provider: str = "youtube"
     ref: str = ""
     youtube_channel_id: str = ""
+    # Proof that this channel is real, written by the Command Center when
+    # channels.list answered for the id or handle the operator typed. Until
+    # `verified_at` is set, the row is a draft: a name, a niche and a guess.
+    # Everything here is public — it is what a viewer sees on the channel page.
+    verified_at: str = ""
+    youtube_title: str = ""
+    youtube_thumbnail: str = ""
+    youtube_custom_url: str = ""
+    subscriber_count: str = ""
+    video_count: str = ""
+
+    @property
+    def is_verified(self) -> bool:
+        """Did a real YouTube channel answer for this row?
+
+        Both halves are required. `verified_at` alone could be written by hand;
+        a channel id alone could be a typo that never resolved. Together they
+        say a lookup happened and returned something.
+        """
+        return bool(self.verified_at and self.youtube_channel_id)
 
     def to_dict(self) -> dict:
         return {
             "provider": self.provider,
             "ref": self.ref,
             "youtube_channel_id": self.youtube_channel_id,
+            "verified_at": self.verified_at,
+            "youtube_title": self.youtube_title,
+            "youtube_thumbnail": self.youtube_thumbnail,
+            "youtube_custom_url": self.youtube_custom_url,
+            "subscriber_count": self.subscriber_count,
+            "video_count": self.video_count,
         }
 
     @staticmethod
     def from_dict(d: dict | None) -> "CredentialRef":
         d = d or {}
+
+        def text(key: str) -> str:
+            value = d.get(key)
+            return "" if value is None else str(value)
+
         return CredentialRef(
             provider=d.get("provider") or "youtube",
             ref=d.get("ref") or "",
             youtube_channel_id=d.get("youtube_channel_id") or "",
+            verified_at=text("verified_at"),
+            youtube_title=text("youtube_title"),
+            youtube_thumbnail=text("youtube_thumbnail"),
+            youtube_custom_url=text("youtube_custom_url"),
+            subscriber_count=text("subscriber_count"),
+            video_count=text("video_count"),
         )
 
 
@@ -285,6 +322,30 @@ class ChannelContext:
     @property
     def is_default(self) -> bool:
         return self.channel_id == DEFAULT_CHANNEL_ID
+
+    @property
+    def is_verified(self) -> bool:
+        """Has a real YouTube channel answered for this row?
+
+        The default channel is exempt: it is the single channel this bot has
+        always published as, it predates the registry, and its identity comes
+        from config.py rather than from a form. Every channel created since
+        arrives through the Command Center, which cannot create one without a
+        successful channels.list lookup.
+        """
+        return self.is_default or self.credential.is_verified
+
+    @property
+    def is_runnable(self) -> bool:
+        """May the scheduler spend money on this channel?
+
+        Three separate gates, all of which must be open: someone set it ACTIVE,
+        someone left its schedule enabled, and YouTube confirmed it exists. A
+        row that fails the third is a draft — the operator typed a name and a
+        niche and stopped. It stays in the registry, visible and editable, but
+        it never runs. That is the difference between an account and an idea.
+        """
+        return self.is_active and self.schedule.enabled and self.is_verified
 
     def to_dict(self) -> dict:
         return {
@@ -463,8 +524,43 @@ class ChannelRegistry:
         return channels
 
     def active(self) -> list[ChannelContext]:
-        """Channels the scheduler may run: ACTIVE *and* schedule-enabled."""
-        return [c for c in self.list(status=STATUS_ACTIVE) if c.schedule.enabled]
+        """Channels the scheduler may run: ACTIVE, schedule-enabled *and* verified.
+
+        The third condition is what keeps a half-filled form from becoming a
+        production channel. Skipped rows are named in the log rather than
+        silently dropped: a channel that stops appearing in runs must say why.
+        """
+        runnable, unverified = [], []
+        for c in self.list(status=STATUS_ACTIVE):
+            if not c.schedule.enabled:
+                continue
+            (runnable if c.is_verified else unverified).append(c)
+        if unverified:
+            logger.warning(
+                "Skipping %d unverified channel(s): %s — created but never confirmed "
+                "against YouTube, so they stay dormant. Confirm them in the Command "
+                "Center to bring them into the schedule.",
+                len(unverified),
+                ", ".join(str(c.channel_id) for c in unverified),
+            )
+        return runnable
+
+    def voice_collisions(self) -> dict[str, list[str]]:
+        """ElevenLabs voices used by more than one channel, voice id -> channels.
+
+        Two channels narrated by the same voice sound like one channel with two
+        names, which is the opposite of why there is more than one. Creation in
+        the Command Center refuses a taken voice; this catches rows edited
+        anywhere else.
+        """
+        used: dict[str, list[str]] = {}
+        for c in self.list():
+            if c.agent.tts_provider != "elevenlabs":
+                continue
+            voice = (c.agent.elevenlabs_voice_id or "").strip()
+            if voice:
+                used.setdefault(voice, []).append(str(c.channel_id))
+        return {voice: ids for voice, ids in used.items() if len(ids) > 1}
 
     def ids(self) -> list[ChannelId]:
         return [c.channel_id for c in self.list()]

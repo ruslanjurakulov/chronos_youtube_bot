@@ -32,6 +32,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+from modules.channel_credentials import env_var_name  # noqa: E402
 from modules.channels import DEFAULT_CHANNEL_ID, ChannelRegistry, legacy_default_channel  # noqa: E402
 
 DEFAULT_HOUR_UTC = 15
@@ -57,15 +58,48 @@ def due_channels(due_hour: int | None = None, registry=None) -> list[dict]:
             == due_hour
         ]
 
-    return [
-        {
-            "channel_id": str(c.channel_id),
-            "name": c.name,
-            "niche": c.niche,
-            "is_default": str(c.channel_id) == str(DEFAULT_CHANNEL_ID),
-        }
-        for c in channels
-    ]
+    return [_row(c) for c in channels]
+
+
+def _row(c) -> dict:
+    """One matrix entry.
+
+    `token_secret` is the name of the GitHub secret holding THIS channel's
+    YouTube token, derived by the same function the publishing side uses to
+    read it (``channel_credentials.env_var_name``) so the two cannot drift.
+    The workflow indexes ``secrets[...]`` with it, which is what lets a channel
+    upload to its own account instead of the default channel's.
+
+    It is a secret *name*, never a value: nothing secret is emitted here, and
+    this output is printed into the workflow log.
+    """
+    return {
+        "channel_id": str(c.channel_id),
+        "name": c.name,
+        "niche": c.niche,
+        "is_default": str(c.channel_id) == str(DEFAULT_CHANNEL_ID),
+        "token_secret": env_var_name(c),
+    }
+
+
+def _warn_about_shared_voices() -> None:
+    """Say so when two channels narrate in the same ElevenLabs voice.
+
+    Not fatal — the videos still render, and stopping production over a
+    cosmetic collision would be the wrong trade. But two channels in one voice
+    sound like one channel with two names, and nothing else in the system would
+    ever mention it.
+    """
+    try:
+        collisions = ChannelRegistry().voice_collisions()
+    except Exception:
+        return
+    for voice, ids in collisions.items():
+        print(
+            f"warning: ElevenLabs voice {voice} is used by {', '.join(ids)} — "
+            "give each channel its own voice so they do not sound identical.",
+            file=sys.stderr,
+        )
 
 
 def main() -> int:
@@ -85,19 +119,28 @@ def main() -> int:
         except (KeyError, ValueError) as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
-        print(json.dumps({"include": [
-            {"channel_id": str(c.channel_id), "name": c.name, "niche": c.niche,
-             "is_default": str(c.channel_id) == str(DEFAULT_CHANNEL_ID)}
-        ]}))
+        # ...nor its verification. Naming a channel by hand must not be the way
+        # around the check, or the check is decoration: the dispatch dropdown
+        # lists every channel, drafts included.
+        if not c.is_verified:
+            print(
+                f"error: channel {args.only!r} has never been confirmed against YouTube. "
+                "Open it in the Command Center and confirm the channel before running it.",
+                file=sys.stderr,
+            )
+            return 2
+        print(json.dumps({"include": [_row(c)]}))
         return 0
 
     if args.all:
         rows = [
-            {"channel_id": str(c.channel_id), "name": c.name, "niche": c.niche, "status": c.status}
+            {"channel_id": str(c.channel_id), "name": c.name, "niche": c.niche,
+             "status": c.status, "verified": c.is_verified}
             for c in ChannelRegistry().list()
         ]
     else:
         rows = due_channels(args.due_hour)
+        _warn_about_shared_voices()
 
     print(json.dumps({"include": rows}))
     return 0
