@@ -989,3 +989,50 @@ class OneVoicePerChannel(unittest.TestCase):
             self.channel("bravo", "voice-1", provider="edge"),
         ])
         self.assertEqual(registry.voice_collisions(), {})
+
+
+class EachChannelUploadsToItsOwnAccount(unittest.TestCase):
+    """The matrix names each channel's own token secret.
+
+    Before this, every job in the matrix restored `YOUTUBE_TOKEN_JSON` — the
+    default channel's token — so a video made for a new channel would have
+    uploaded to somebody else's account. The workflow now indexes
+    `secrets[matrix.token_secret]`, and these pin that the name it gets is the
+    one the publishing side reads.
+    """
+
+    def channel(self, ref):
+        return ChannelContext.from_dict({
+            "channel_id": "extinct-world",
+            "name": "Extinct World",
+            "niche": "n",
+            "credential_ref": {"ref": ref, "youtube_channel_id": "UC1",
+                               "verified_at": "2026-09-06T09:00:00Z"},
+        })
+
+    def test_the_matrix_carries_the_secret_name_the_uploader_reads(self):
+        from modules.channel_credentials import env_var_name
+        from tools.list_channels import _row
+
+        c = self.channel("extinct")
+        self.assertEqual(_row(c)["token_secret"], env_var_name(c))
+        self.assertEqual(_row(c)["token_secret"], "CHRONOS_YT_TOKEN_EXTINCT")
+
+    def test_a_blank_ref_falls_back_to_the_channel_id(self):
+        from tools.list_channels import _row
+
+        self.assertEqual(_row(self.channel(""))["token_secret"], "CHRONOS_YT_TOKEN_EXTINCT_WORLD")
+
+    def test_the_row_carries_no_secret_value(self):
+        """This output is printed into the workflow log. Names only."""
+        from tools.list_channels import _row
+
+        self.assertEqual(
+            set(_row(self.channel("extinct"))),
+            {"channel_id", "name", "niche", "is_default", "token_secret"},
+        )
+
+    def test_the_default_channel_is_marked_so_the_legacy_step_can_run(self):
+        from tools.list_channels import _row
+
+        self.assertTrue(_row(legacy_default_channel())["is_default"])
