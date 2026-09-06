@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { isChannelVerified } from "@/lib/channels";
 import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n/context";
 import { fmt } from "@/lib/i18n";
@@ -50,6 +51,17 @@ export function ChannelCard({
   const agent = channel.agent_config ?? {};
   const schedule = channel.schedule_config ?? {};
   const active = channel.status === "ACTIVE";
+  /**
+   * Has YouTube ever answered for this channel?
+   *
+   * `default` is exempt: it predates the registry and its identity comes from
+   * config.py rather than from a form. Everything else needs both halves —
+   * a `verified_at` stamp and the id the lookup returned — or it is a draft:
+   * a name, a niche, and a guess. A draft cannot be activated here, the
+   * database refuses the same transition (migration 0005), and the scheduler
+   * skips it. Three checks that agree beat one that carries all the weight.
+   */
+  const verified = isChannelVerified(channel);
 
   /**
    * Auto publish, per channel.
@@ -123,19 +135,26 @@ export function ChannelCard({
         </div>
         <div className="flex items-center gap-3">
           <StatusPill
-            tone={active ? "ok" : "idle"}
-            label={active ? t.channels.active : t.channels.paused}
+            tone={!verified ? "warn" : active ? "ok" : "idle"}
+            label={!verified ? t.channels.verifyGate : active ? t.channels.active : t.channels.paused}
           />
           <button
             type="button"
             onClick={toggleStatus}
-            disabled={busy || pending}
+            disabled={busy || pending || (!active && !verified)}
+            title={!active && !verified ? t.channels.verifyRequired : undefined}
             className="btn-sky ghost pill px-4 py-2 text-[12px] disabled:opacity-50"
           >
             {busy ? t.channels.saving : active ? t.channels.pause : t.channels.activate}
           </button>
         </div>
       </header>
+
+      {!verified && (
+        <p className="max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-warn)]">
+          {t.channels.verifyRequired}
+        </p>
+      )}
 
       {/* Auto publish. Off is the default and the safe direction; the switch
           says which way it is currently pointing, in words, not just colour. */}

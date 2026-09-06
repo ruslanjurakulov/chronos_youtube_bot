@@ -6,7 +6,8 @@ import { createClient } from "@/lib/supabase/client";
 import { useI18n } from "@/lib/i18n/context";
 import { useChannelPath } from "@/lib/channels-client";
 import { fmt } from "@/lib/i18n";
-import { isValidChannelId, slugifyChannelId } from "@/lib/channels";
+import type { ChannelRow } from "@/lib/types";
+import { isValidChannelId, slugifyChannelId, voiceOwners } from "@/lib/channels";
 
 /**
  * Guided channel creation.
@@ -22,30 +23,50 @@ import { isValidChannelId, slugifyChannelId } from "@/lib/channels";
  *    is never part of the Supabase insert, never in an event, never logged, and
  *    the field is cleared the moment GitHub accepts it. Nothing about a key is
  *    readable from this dashboard afterwards — not even its length.
- * 3. **The channel is confirmed against YouTube before it is created.** The
- *    Data API key the operator just typed is used for one read of
- *    channels.list, which proves both halves at once: the key works, and the id
- *    or handle names a real channel. The avatar and counts that come back are
- *    public facts, and they are what tells the operator they opened the right
- *    channel.
+ * 3. **The channel cannot be created until YouTube confirms it.** The Data API
+ *    key the operator just typed is used for one read of channels.list, which
+ *    proves both halves at once: the key works, and the id or handle names a
+ *    real channel. The avatar and counts that come back are public facts, and
+ *    they are what tells the operator they opened the right channel.
+ *
+ *    This used to be optional, and that is how a channel came to exist whose
+ *    entire contents were a typed name, a typed niche and a guessed voice id.
+ *    Confirmation is now the gate: no proof, no row. The same rule is enforced
+ *    in the database (migration 0005) and in the scheduler, because a rule that
+ *    lives only in a form is a rule until someone uses the API.
+ * 4. **Each channel gets its own ElevenLabs voice.** The voice is picked from
+ *    the account's real voice list rather than typed, and a voice another
+ *    channel already uses cannot be chosen — two channels in one voice sound
+ *    like one channel with two names.
  *
  * The write goes to `channels` only, via the authenticated insert policy added
  * by migration 0001. No data table is writable from here.
  */
 
+// The voice step sits *after* keys on purpose: picking from the account's real
+// voice list needs the ElevenLabs key, and asking for a voice id before the key
+// is what made a free-text field the only possible design.
 const STEPS = [
   "identity",
   "niche",
   "content",
-  "voice",
   "visual",
   "schedule",
   "keys",
+  "voice",
   "connect",
   "activate",
 ] as const;
 
 type Step = (typeof STEPS)[number];
+
+type Voice = {
+  voiceId: string;
+  name: string;
+  category: string;
+  previewUrl: string;
+  labels: string;
+};
 
 type ChannelInfo = {
   channelId: string;
@@ -101,6 +122,13 @@ export function AddChannelWizard() {
   const [verifyError, setVerifyError] = useState<string | null>(null);
   const [info, setInfo] = useState<ChannelInfo | null>(null);
 
+  const [voices, setVoices] = useState<Voice[] | null>(null);
+  const [voicesBusy, setVoicesBusy] = useState(false);
+  const [voicesError, setVoicesError] = useState<string | null>(null);
+  // voice id -> the channel already narrating in it. Read from the registry so
+  // the picker can refuse a collision instead of the database doing it later.
+  const [takenVoices, setTakenVoices] = useState<Record<string, string>>({});
+
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -133,8 +161,39 @@ export function AddChannelWizard() {
     };
   }, []);
 
+  // Which ElevenLabs voices are spoken for. Read once: the picker greys them
+  // out, so a collision is impossible to select rather than rejected on save.
+  useEffect(() => {
+    let alive = true;
+    const supabase = createClient();
+    if (!supabase) return;
+    supabase
+      .from("channels")
+      .select("channel_id,name,agent_config")
+      .then(({ data }) => {
+        if (!alive || !data) return;
+        setTakenVoices(voiceOwners(data as ChannelRow[]));
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   const current: Step = STEPS[step];
-  const canAdvance = current === "identity" ? Boolean(name.trim()) && idValid : true;
+  const voiceTakenBy = elevenVoice ? takenVoices[elevenVoice] : undefined;
+  // An ElevenLabs channel needs a voice that exists and that nobody else uses.
+  const voiceReady =
+    ttsProvider !== "elevenlabs" || (Boolean(elevenVoice) && !voiceTakenBy);
+  // Nothing past "connect" is reachable without proof, so the Create button at
+  // the end can never be pressed on an unconfirmed channel.
+  const canAdvance =
+    current === "identity"
+      ? Boolean(name.trim()) && idValid
+      : current === "voice"
+        ? voiceReady
+        : current === "connect"
+          ? Boolean(info)
+          : true;
 
   /** The secrets the operator actually filled in, keyed by their GitHub name. */
   function pendingSecrets(): Record<string, string> {
@@ -148,6 +207,34 @@ export function AddChannelWizard() {
     const yt = info?.channelId || youtubeChannelId.trim();
     if (yt) out.YOUTUBE_CHANNEL_ID = yt;
     return out;
+  }
+
+  async function loadVoices() {
+    setVoicesBusy(true);
+    setVoicesError(null);
+    try {
+      const res = await fetch("/api/setup/voices", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ apiKey: elevenKey.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setVoicesError(
+          data.error === "key_rejected"
+            ? fmt(t.channels.voiceKeyRejected, { reason: data.reason || "401" })
+            : data.error === "missing_key"
+              ? t.channels.voiceNeedsKey
+              : t.channels.voiceFailed,
+        );
+        return;
+      }
+      setVoices(data.voices as Voice[]);
+    } catch {
+      setVoicesError(t.channels.voiceFailed);
+    } finally {
+      setVoicesBusy(false);
+    }
   }
 
   async function verify() {
@@ -190,6 +277,25 @@ export function AddChannelWizard() {
   async function create() {
     const supabase = createClient();
     if (!supabase) return;
+
+    // The last line of defence in the browser. The button is already disabled
+    // without proof and the "connect" step will not advance without it, but a
+    // channel nobody confirmed must not be creatable by any path from here.
+    // The database refuses to ACTIVATE such a row and the scheduler refuses to
+    // run it, so the three checks agree rather than one of them being load-bearing.
+    if (!info) {
+      setError(t.channels.verifyRequired);
+      return;
+    }
+    if (ttsProvider === "elevenlabs" && !voiceReady) {
+      setError(
+        voiceTakenBy
+          ? fmt(t.channels.voiceTakenWarn, { channel: voiceTakenBy })
+          : t.channels.voiceRequired,
+      );
+      return;
+    }
+
     setBusy(true);
     setError(null);
 
@@ -263,18 +369,20 @@ export function AddChannelWizard() {
       // A reference only — the token itself never reaches this app. The public
       // channel facts confirmed above are safe to keep: they are the proof the
       // right channel was opened.
+      // Proof, not decoration: `verified_at` is what the database checks
+      // before it will let this channel be ACTIVE, and what the scheduler
+      // checks before it will spend anything on it. None of it is secret —
+      // every field came back from a public channels.list read.
       credential_ref: {
         provider: "youtube",
         ref: credentialRef.trim() || effectiveId,
-        youtube_channel_id: info?.channelId || youtubeChannelId.trim(),
-        ...(info
-          ? {
-              youtube_title: info.title,
-              youtube_thumbnail: info.thumbnail,
-              youtube_custom_url: info.customUrl,
-              verified_at: now,
-            }
-          : {}),
+        youtube_channel_id: info.channelId,
+        youtube_title: info.title,
+        youtube_thumbnail: info.thumbnail,
+        youtube_custom_url: info.customUrl,
+        subscriber_count: info.subscribers ?? "",
+        video_count: info.videos ?? "",
+        verified_at: now,
       },
       created_at: now,
       updated_at: now,
@@ -439,14 +547,65 @@ export function AddChannelWizard() {
                 <input value={edgeVoice} onChange={(e) => setEdgeVoice(e.target.value)} className={inputClass} />
               </Field>
             ) : (
-              <Field label={t.channels.voice}>
-                <input
-                  value={elevenVoice}
-                  onChange={(e) => setElevenVoice(e.target.value)}
-                  placeholder="voice id"
-                  className={inputClass}
-                />
-              </Field>
+              <>
+                {/* Picked, never typed. A voice id is twenty characters of
+                    noise that nobody remembers, so a free-text field can only
+                    ever collect a guess. */}
+                {voices === null ? (
+                  <div className="flex flex-wrap items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={loadVoices}
+                      disabled={voicesBusy || !elevenKey.trim()}
+                      className="btn-sky pill px-5 py-2.5 text-[13px] disabled:opacity-40"
+                    >
+                      {voicesBusy ? t.channels.voiceLoading : t.channels.voiceLoad}
+                    </button>
+                    {!elevenKey.trim() && (
+                      <span className="text-[11px] text-[var(--color-muted)]">
+                        {t.channels.voiceNeedsKey}
+                      </span>
+                    )}
+                  </div>
+                ) : voices.length === 0 ? (
+                  <p className="text-[12px] text-[var(--color-warn)]">{t.channels.voiceNone}</p>
+                ) : (
+                  <Field label={t.channels.voiceChoose}>
+                    <select
+                      value={elevenVoice}
+                      onChange={(e) => setElevenVoice(e.target.value)}
+                      className={inputClass}
+                    >
+                      <option value="">{t.channels.voicePick}</option>
+                      {voices.map((v) => {
+                        const owner = takenVoices[v.voiceId];
+                        return (
+                          <option key={v.voiceId} value={v.voiceId} disabled={Boolean(owner)}>
+                            {v.name}
+                            {v.labels ? ` — ${v.labels}` : ""}
+                            {owner ? ` (${fmt(t.channels.voiceTaken, { channel: owner })})` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </Field>
+                )}
+                {voicesError && <p className="text-[12px] text-[var(--color-fail)]">{voicesError}</p>}
+                {voiceTakenBy && (
+                  <p className="text-[12px] text-[var(--color-fail)]">
+                    {fmt(t.channels.voiceTakenWarn, { channel: voiceTakenBy })}
+                  </p>
+                )}
+                {/* Hear it before committing a channel to it. */}
+                {elevenVoice && voices?.find((v) => v.voiceId === elevenVoice)?.previewUrl && (
+                  <audio
+                    controls
+                    preload="none"
+                    src={voices.find((v) => v.voiceId === elevenVoice)!.previewUrl}
+                    className="w-full max-w-[360px]"
+                  />
+                )}
+              </>
             )}
           </>
         )}
@@ -583,7 +742,13 @@ export function AddChannelWizard() {
             </div>
 
             {verifyError && <p className="text-[12px] text-[var(--color-fail)]">{verifyError}</p>}
-            {info && <ChannelProof info={info} t={t} />}
+            {info ? (
+              <ChannelProof info={info} t={t} />
+            ) : (
+              <p className="max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-warn)]">
+                {t.channels.verifyRequired}
+              </p>
+            )}
 
             <p className="max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-muted)]">
               {fmt(t.channels.connectHint, { id: effectiveId || "…", secret })}
@@ -593,7 +758,13 @@ export function AddChannelWizard() {
 
         {current === "activate" && (
           <>
-            {info && <ChannelProof info={info} t={t} />}
+            {info ? (
+              <ChannelProof info={info} t={t} />
+            ) : (
+              <p className="max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-warn)]">
+                {t.channels.verifyRequired}
+              </p>
+            )}
             <p className="max-w-[72ch] text-[12px] leading-relaxed text-[var(--color-muted)]">
               {t.channels.activateHint}
             </p>
@@ -626,7 +797,7 @@ export function AddChannelWizard() {
           <button
             type="button"
             onClick={create}
-            disabled={busy || !idValid || !name.trim()}
+            disabled={busy || !idValid || !name.trim() || !info || !voiceReady}
             className="btn-sky is-solid pill px-5 py-2.5 text-[13px] disabled:opacity-40"
           >
             {busy ? t.channels.creating : t.channels.create}

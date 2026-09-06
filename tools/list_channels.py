@@ -68,6 +68,26 @@ def due_channels(due_hour: int | None = None, registry=None) -> list[dict]:
     ]
 
 
+def _warn_about_shared_voices() -> None:
+    """Say so when two channels narrate in the same ElevenLabs voice.
+
+    Not fatal — the videos still render, and stopping production over a
+    cosmetic collision would be the wrong trade. But two channels in one voice
+    sound like one channel with two names, and nothing else in the system would
+    ever mention it.
+    """
+    try:
+        collisions = ChannelRegistry().voice_collisions()
+    except Exception:
+        return
+    for voice, ids in collisions.items():
+        print(
+            f"warning: ElevenLabs voice {voice} is used by {', '.join(ids)} — "
+            "give each channel its own voice so they do not sound identical.",
+            file=sys.stderr,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="List channels due for a scheduled run")
     parser.add_argument("--due-hour", type=int, default=None, help="Only channels scheduled at this UTC hour")
@@ -85,6 +105,16 @@ def main() -> int:
         except (KeyError, ValueError) as e:
             print(f"error: {e}", file=sys.stderr)
             return 2
+        # ...nor its verification. Naming a channel by hand must not be the way
+        # around the check, or the check is decoration: the dispatch dropdown
+        # lists every channel, drafts included.
+        if not c.is_verified:
+            print(
+                f"error: channel {args.only!r} has never been confirmed against YouTube. "
+                "Open it in the Command Center and confirm the channel before running it.",
+                file=sys.stderr,
+            )
+            return 2
         print(json.dumps({"include": [
             {"channel_id": str(c.channel_id), "name": c.name, "niche": c.niche,
              "is_default": str(c.channel_id) == str(DEFAULT_CHANNEL_ID)}
@@ -93,11 +123,13 @@ def main() -> int:
 
     if args.all:
         rows = [
-            {"channel_id": str(c.channel_id), "name": c.name, "niche": c.niche, "status": c.status}
+            {"channel_id": str(c.channel_id), "name": c.name, "niche": c.niche,
+             "status": c.status, "verified": c.is_verified}
             for c in ChannelRegistry().list()
         ]
     else:
         rows = due_channels(args.due_hour)
+        _warn_about_shared_voices()
 
     print(json.dumps({"include": rows}))
     return 0

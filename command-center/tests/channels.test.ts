@@ -10,6 +10,7 @@ import {
   inSelection,
   isScoped,
   isSection,
+  isChannelVerified,
   isValidChannelId,
   resolveSelection,
   scopeQuery,
@@ -17,6 +18,7 @@ import {
   selectionToSlug,
   slugToSelection,
   slugifyChannelId,
+  voiceOwners,
 } from "@/lib/channels";
 import type {
   ChannelCredentialRow,
@@ -433,5 +435,77 @@ describe("selectionSlug", () => {
   it("is the canonical segment the layout redirects toward", () => {
     expect(selectionSlug("default", [chronos])).toBe("chronos");
     expect(selectionSlug(ALL_CHANNELS, [chronos])).toBe("all-channels");
+  });
+});
+
+describe("a channel is an account only once YouTube says so", () => {
+  // The `ruslanjurakulov` channel existed with a typed name, a typed niche and
+  // an ElevenLabs voice id of "16516516145" — a number, not a voice. Nothing
+  // required a confirmation, so the scheduler dispatched it a job on every
+  // manual run. These pin the rule that replaced that.
+  const confirmed = {
+    verified_at: "2026-09-06T09:00:00Z",
+    youtube_channel_id: "UCreal",
+    youtube_title: "Extinct World",
+  };
+
+  it("accepts a channel YouTube answered for", () => {
+    expect(isChannelVerified({ channel_id: "extinct-world", credential_ref: confirmed })).toBe(true);
+  });
+
+  it("refuses a draft with nothing behind it", () => {
+    expect(isChannelVerified({ channel_id: "draft", credential_ref: null })).toBe(false);
+    expect(isChannelVerified({ channel_id: "draft", credential_ref: {} })).toBe(false);
+  });
+
+  it("refuses half a record, in either direction", () => {
+    // A stamp alone could be written by hand; an id alone could be a typo that
+    // never resolved. Only the pair says a lookup happened.
+    expect(
+      isChannelVerified({ channel_id: "half", credential_ref: { verified_at: confirmed.verified_at } }),
+    ).toBe(false);
+    expect(
+      isChannelVerified({ channel_id: "half", credential_ref: { youtube_channel_id: "UCtypo" } }),
+    ).toBe(false);
+  });
+
+  it("exempts the legacy default channel", () => {
+    // It predates the registry and never passed through a form.
+    expect(isChannelVerified({ channel_id: "default", credential_ref: null })).toBe(true);
+  });
+});
+
+describe("one ElevenLabs voice, one channel", () => {
+  const withVoice = (id: string, name: string, provider: string, voice: string) =>
+    channel({
+      channel_id: id,
+      name,
+      agent_config: { tts_provider: provider, elevenlabs_voice_id: voice },
+    });
+
+  it("names the channel already using each voice", () => {
+    const owners = voiceOwners([
+      withVoice("a-one", "Alpha", "elevenlabs", "voice-1"),
+      withVoice("b-two", "Bravo", "elevenlabs", "voice-2"),
+    ]);
+    expect(owners).toEqual({ "voice-1": "Alpha", "voice-2": "Bravo" });
+  });
+
+  it("ignores edge channels, which have no ElevenLabs voice to share", () => {
+    expect(voiceOwners([withVoice("a-one", "Alpha", "edge", "voice-1")])).toEqual({});
+  });
+
+  it("ignores an empty voice id rather than claiming it", () => {
+    expect(voiceOwners([withVoice("a-one", "Alpha", "elevenlabs", "   ")])).toEqual({});
+  });
+
+  it("keeps the first claimant when a collision already exists in the data", () => {
+    // The database refuses this now, but rows created before migration 0005
+    // could still hold it — the picker must still name somebody.
+    const owners = voiceOwners([
+      withVoice("a-one", "Alpha", "elevenlabs", "voice-1"),
+      withVoice("b-two", "Bravo", "elevenlabs", "voice-1"),
+    ]);
+    expect(owners["voice-1"]).toBe("Alpha");
   });
 });

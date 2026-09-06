@@ -389,3 +389,51 @@ export function slugifyChannelId(name: string): string {
     .replace(/^-+|-+$/g, "")
     .slice(0, 39);
 }
+
+/**
+ * The one channel exempt from confirmation.
+ *
+ * It predates the registry: it is the single channel this bot has always
+ * published as, its identity comes from the bot's `config.py`, and it never
+ * passed through a form that could have confirmed it.
+ */
+export const LEGACY_CHANNEL_ID = "default";
+
+/**
+ * Has a real YouTube channel ever answered for this row?
+ *
+ * Both halves are required. A `verified_at` stamp alone could be written by
+ * hand; a channel id alone could be a typo that never resolved. Together they
+ * say a lookup happened and returned something.
+ *
+ * Without this, a channel created from a typed name, a typed niche and a
+ * guessed id was indistinguishable from a real one — and the scheduler ran it.
+ * The same rule is enforced in the database (migration 0005) and in the bot's
+ * registry, so no single layer carries it alone.
+ */
+export function isChannelVerified(
+  channel: Pick<ChannelRow, "channel_id" | "credential_ref">,
+): boolean {
+  if (channel.channel_id === LEGACY_CHANNEL_ID) return true;
+  const ref = channel.credential_ref;
+  return Boolean(ref?.verified_at && ref?.youtube_channel_id);
+}
+
+/**
+ * Which ElevenLabs voice belongs to which channel, voice id -> display name.
+ *
+ * Two channels narrated by the same voice sound like one channel with two
+ * names, which is the opposite of why there is more than one. The creation
+ * wizard greys out the voices this returns, so a collision is impossible to
+ * select rather than rejected on save.
+ */
+export function voiceOwners(channels: ChannelRow[]): Record<string, string> {
+  const owners: Record<string, string> = {};
+  for (const c of channels) {
+    const agent = c.agent_config ?? {};
+    if (agent.tts_provider !== "elevenlabs") continue;
+    const voice = (agent.elevenlabs_voice_id ?? "").trim();
+    if (voice && !owners[voice]) owners[voice] = c.name || c.channel_id;
+  }
+  return owners;
+}
