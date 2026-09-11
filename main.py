@@ -508,10 +508,19 @@ def run(
             events.emit(events.UPLOAD_FAILED, agent="youtube_uploader", status=events.STATUS_FAILED,
                         channel_id=channel_id,
                         metadata={"operation": "upload", "error": f"{type(e).__name__}: {e}"})
+        else:
             # ── Stage 9: Short
-            # Strictly downstream of a video that actually published: the
-            # gate has already passed, the long video is out, and a failure
-            # from here on cannot turn a successful run into a failed one.
+            # Strictly downstream of a video that actually published: the gate
+            # has passed, the long video is out, and a failure from here on
+            # cannot turn a successful run into a failed one.
+            #
+            # An `else` clause, not the end of the `try` above, and emphatically
+            # not the `except`: this call sat in the failure handler, so a Short
+            # was cut ONLY when the long upload had failed — with a parent id and
+            # parent url of None, pointing at nothing — and never once when the
+            # video actually published. The comment claimed the opposite the
+            # whole time, which is why it survived review. `else` cannot drift
+            # back: it runs when, and only when, the block above raised nothing.
             _publish_short(
                 ctx=ctx,
                 script=script,
