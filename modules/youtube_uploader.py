@@ -16,9 +16,25 @@ uploads to whatever channel its own token owns.
 The publish gate is not implemented here and is not changed here: this module
 uploads when it is called, exactly as before. Whether it *should* be called is
 main.py's business, and main.py's behaviour is unchanged.
+
+Captions and chapters
+---------------------
+Both are metadata the pipeline already computes and used to throw away: the
+Whisper ``.srt`` that is burned into the picture was never offered to YouTube as
+a caption track, and the audio mixer's section timeline — which knows to the
+millisecond where every section starts — was never turned into chapters. Adding
+them changes nothing about *whether* or *when* a video goes out; a private video
+with captions is still a private video.
+
+Both follow the same rule as the narrator voice: rather than ship something
+plausible-but-wrong, ship nothing. A caption track is skipped when its language
+cannot be named, and the chapter block is emitted only when it satisfies every
+rule YouTube enforces (see ``build_chapters``).
 """
 
+import json
 import logging
+import re
 from pathlib import Path
 from typing import Optional
 
@@ -29,6 +45,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload
 
 from config import (
+    SCRIPT_LANGUAGE,
     YOUTUBE_CATEGORY_ID,
     YOUTUBE_CHANNEL_ID,
     YOUTUBE_CLIENT_SECRET,
@@ -48,6 +65,212 @@ from modules.script_engine import Script
 logger = logging.getLogger(__name__)
 
 MAX_TAGS = 500
+
+#: YouTube rejects a description longer than this — and rejects the upload with
+#: it. The chapter block is what gets dropped if it does not fit, never the
+#: description the script was written with.
+MAX_DESCRIPTION = 5000
+
+#: YouTube's own rules for chapters: the first must be at 0:00, there must be at
+#: least three, and each must run at least ten seconds. Break one and YouTube
+#: silently shows no chapters at all, so these are the conditions for emitting
+#: the block in the first place.
+MIN_CHAPTERS = 3
+MIN_CHAPTER_SECONDS = 10.0
+
+#: A chapter title is read at a glance under the scrubber, not studied.
+MAX_CHAPTER_TITLE = 55
+
+#: What a caption track is called in YouTube's caption list. Named for what it
+#: is: a machine transcript of a machine narration, not a human proofread.
+CAPTION_TRACK_NAME = "Auto (Whisper)"
+
+#: Languages this project can label a caption track with. YouTube shows that
+#: label to viewers and auto-translates from it, so a language this table does
+#: not know means no caption track rather than one labelled as a language it is
+#: not — the same standard audio_mixer.verify_voice applies to the narrator.
+CAPTION_LANGUAGES = {
+    "english": "en",
+    "russian": "ru",
+    "uzbek": "uz",
+    "spanish": "es",
+    "german": "de",
+    "french": "fr",
+    "italian": "it",
+    "portuguese": "pt",
+    "turkish": "tr",
+    "arabic": "ar",
+    "hindi": "hi",
+}
+
+#: A description line that opens with a timestamp. Gemini is asked for
+#: "3 paragraphs + timestamps" (see script_engine.SCRIPT_SYSTEM_PROMPT) and
+#: duly invents some, against a video that did not exist when it wrote them.
+#: YouTube reads the FIRST valid list it finds, so leaving those in place would
+#: hand viewers invented chapter marks in preference to measured ones.
+TIMESTAMP_LINE = re.compile(r"^\s*(?:[-*\u2022]\s*)?\d{1,2}:\d{2}(?::\d{2})?\b")
+
+
+#: The scope captions.insert needs. `youtube.upload` is not enough: YouTube
+#: treats writing a caption track as editing the video, so it wants force-ssl —
+#: which also permits deleting videos. That is a real trade for a caption track,
+#: and it is the account owner's to make, so nothing here assumes it was made:
+#: a token without this scope skips captions and says so once.
+CAPTION_SCOPE = "https://www.googleapis.com/auth/youtube.force-ssl"
+
+
+def caption_language(channel: Optional[ChannelContext]) -> Optional[str]:
+    """The BCP-47 code to label this channel's caption track with, or None.
+
+    A caption track carries a language that YouTube shows to viewers and
+    machine-translates from. Guessing "en" for a channel narrating in Uzbek
+    would put an English label on Uzbek words — the caption equivalent of
+    narrating in the wrong voice — so an unrecognised language yields None and
+    no track is uploaded.
+    """
+    agent = getattr(channel, "agent", None) if channel is not None else None
+    language = (getattr(agent, "language", None) or SCRIPT_LANGUAGE or "").strip()
+    if not language:
+        return None
+    # Already a code ("en", "en-US", "pt-BR") — take it as given.
+    if re.fullmatch(r"[a-z]{2}(-[A-Za-z0-9]{2,8})?", language):
+        return language
+    return CAPTION_LANGUAGES.get(language.lower())
+
+
+def _format_timestamp(seconds: float) -> str:
+    """`0:00`, `12:34`, `1:02:03` — the forms YouTube parses as a chapter mark."""
+    total = int(seconds)
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    if hours:
+        return f"{hours}:{minutes:02d}:{secs:02d}"
+    return f"{minutes}:{secs:02d}"
+
+
+def _chapter_title(section, fallback_name: str) -> str:
+    """What this chapter is called under the scrubber.
+
+    The section's own opening sentence, because that is the only text in the
+    project written for a viewer to read: section names like
+    "open_loop_plant" are the script format's internal vocabulary and say
+    nothing to somebody scrubbing through the video. The name is the fallback
+    when a section has no narration to borrow from.
+    """
+    text = ""
+    if section is not None:
+        try:
+            text = section.clean_narration()
+        except Exception:  # a section shape we do not recognise
+            text = ""
+    sentence = re.split(r"(?<=[.!?])\s+", text.strip())[0] if text.strip() else ""
+    title = " ".join(sentence.split()) or fallback_name.replace("_", " ").strip().title()
+    title = title.rstrip(" .,;:—-")
+    if len(title) > MAX_CHAPTER_TITLE:
+        clipped = title[:MAX_CHAPTER_TITLE].rsplit(" ", 1)[0].rstrip(" .,;:—-")
+        title = (clipped or title[:MAX_CHAPTER_TITLE]) + "\u2026"
+    return title
+
+
+def build_chapters(section_timeline: list[dict] | None, sections=None) -> list[str]:
+    """Chapter lines for the description, or [] when they would be malformed.
+
+    The timings are the audio mixer's own measurement of where each section
+    landed (`AudioMixer.render_narration` returns them), so these mark real
+    boundaries in the finished audio rather than the script's `duration_hint`
+    guesses.
+
+    YouTube enforces three rules and enforces them silently — break one and it
+    shows no chapters at all, with nothing in the API response to say why:
+
+      * the first mark must be at 0:00,
+      * there must be at least three marks,
+      * every chapter must run at least ten seconds, the last one included.
+
+    So a section that runs under ten seconds, or starts under ten seconds after
+    the last mark, does not get a mark of its own; it folds into the chapter
+    already running, which is also what a viewer wants — a mark for a
+    six-second section is a mark nobody can click. If what survives is fewer
+    than three marks, this returns nothing at all rather than a list YouTube
+    will ignore.
+    """
+    entries = list(section_timeline or [])
+    if len(entries) < MIN_CHAPTERS:
+        return []
+
+    marks: list[tuple[float, float, str]] = []
+    for i, entry in enumerate(entries):
+        try:
+            start = float(entry["start_ms"]) / 1000.0
+            end = float(entry["end_ms"]) / 1000.0
+        except (KeyError, TypeError, ValueError):
+            # A timeline we cannot read is not one we can label honestly.
+            return []
+        if end < start:
+            return []
+        section = sections[i] if sections is not None and i < len(sections) else None
+        name = str(entry.get("section") or getattr(section, "name", "") or f"part {i + 1}")
+        marks.append((start, end, _chapter_title(section, name)))
+
+    # The first chapter is pinned to 0:00 whatever the first section's start
+    # says: nothing precedes it, and a first mark at 0:01 invalidates the list.
+    kept: list[tuple[float, str]] = [(0.0, marks[0][2])]
+    for start, end, title in marks[1:]:
+        if end - start < MIN_CHAPTER_SECONDS:
+            continue  # too short to be a chapter of its own
+        if start - kept[-1][0] < MIN_CHAPTER_SECONDS:
+            continue  # too close behind the mark before it
+        kept.append((start, title))
+
+    if len(kept) < MIN_CHAPTERS:
+        return []
+
+    # Measure what was actually built, against the end of the audio rather than
+    # against the rules the loop above was written to satisfy. A timeline with
+    # gaps or overlaps could still produce a short chapter here, and one short
+    # chapter costs the whole list.
+    bounds = [start for start, _ in kept] + [marks[-1][1]]
+    if any(b - a < MIN_CHAPTER_SECONDS for a, b in zip(bounds, bounds[1:])):
+        return []
+
+    return [f"{_format_timestamp(start)} {title}" for start, title in kept]
+
+
+def strip_timestamp_lines(description: str) -> str:
+    """Remove lines that open with a timestamp.
+
+    Gemini is told to write "3 paragraphs + timestamps" and writes timestamps
+    for a video that did not exist yet, so they point at moments that are not
+    there. YouTube reads the FIRST valid chapter list in a description, which
+    means leaving them in would show the invented marks and ignore the measured
+    ones. Prose that happens to open with a clock time ("12:30 that afternoon…")
+    is lost too — a rare sentence, against a chapter list that is wrong every
+    time.
+    """
+    kept = [line for line in (description or "").splitlines() if not TIMESTAMP_LINE.match(line)]
+    return "\n".join(kept).strip()
+
+
+def compose_description(description: str, chapters: list[str]) -> str:
+    """The description as uploaded: the script's own text, with real chapters.
+
+    Called only when a section timeline was supplied, i.e. when the caller knows
+    the true timings. That is also why the invented timestamps are stripped even
+    when no chapter block survives `build_chapters`: at that point we know the
+    marks in the text are not the video's, and no chapters beats wrong ones.
+    """
+    base = strip_timestamp_lines(description)
+    if not chapters:
+        return base
+    block = "\n".join(["Chapters:", *chapters])
+    candidate = f"{base}\n\n{block}" if base else block
+    if len(candidate) > MAX_DESCRIPTION:
+        # The description the script was written with wins; the chapters are the
+        # addition, so the addition is what goes.
+        logger.warning("Chapters dropped: the description would exceed %d characters",
+                       MAX_DESCRIPTION)
+        return base
+    return candidate
 
 
 class YouTubeUploader:
@@ -177,6 +400,8 @@ class YouTubeUploader:
         privacy: str | None = None,
         title_override: str | None = None,
         description_override: str | None = None,
+        captions_path: Path | None = None,
+        section_timeline: list[dict] | None = None,
     ) -> dict:
         """Upload one video.
 
@@ -185,11 +410,25 @@ class YouTubeUploader:
         before the experiment existed. `description_override` exists for the
         same reason on the description — a Short points at the long video it
         was cut from, which the script's own description cannot know about.
+
+        `section_timeline` is the audio mixer's measurement of where each
+        section starts; given it, the description ships real chapters instead of
+        the ones Gemini imagined. `captions_path` is the .srt Whisper already
+        wrote for the burnt-in subtitles, offered to YouTube as a caption track.
+        Both are optional and both default to the behaviour every caller had
+        before they existed.
+
+        Quota: videos.insert is ~1600 units of the 10,000/day; a caption track
+        adds ~400. Chapters are description text and cost nothing.
         """
         privacy = privacy or YOUTUBE_PRIVACY
         tags = self._trim_tags(script.tags)
         title = (title_override or script.title or "").strip() or script.title
         description = description_override if description_override is not None else script.description
+        if section_timeline is not None:
+            description = compose_description(
+                description, build_chapters(section_timeline, script.sections)
+            )
 
         body = {
             "snippet": {
@@ -244,4 +483,90 @@ class YouTubeUploader:
             except Exception as e:
                 logger.warning("Thumbnail xatosi: %s", e)
 
+        if captions_path is not None:
+            self.upload_captions(video_id, captions_path)
+
         return {"id": video_id, "url": video_url}
+
+    # -- captions ----------------------------------------------------------
+
+    def _granted_scopes(self) -> set[str]:
+        """Scopes the stored token was actually granted.
+
+        Read from the token file rather than from the credentials object,
+        because `Credentials.from_authorized_user_file` sets `scopes` to what
+        the caller *asked* for — checking that would only confirm that
+        config.YOUTUBE_SCOPES contains what config.YOUTUBE_SCOPES contains.
+        Only scope names are read; no token value is touched or logged.
+        An unreadable file yields an empty set, which reads as "not granted".
+        """
+        try:
+            data = json.loads(Path(self.token_file).read_text(encoding="utf-8"))
+        except Exception:
+            return set()
+        if not isinstance(data, dict):
+            return set()
+        return {str(s) for s in (data.get("scopes") or [])}
+
+    def upload_captions(self, video_id: str, captions_path: Path) -> bool:
+        """Attach the Whisper .srt as a caption track. Never raises.
+
+        The file is already written and already burnt into the picture; this
+        just also hands it to YouTube, where it becomes searchable text, a
+        translation source, and the captions a viewer can turn on over the
+        burnt-in ones. It costs ~400 quota units against the day's 10,000.
+
+        Everything here is a soft failure. The video is up by the time this
+        runs, and no caption problem may turn a published video into a failed
+        run — so each refusal below returns False after saying, once, exactly
+        what would make it work.
+        """
+        path = Path(captions_path)
+        if not path.exists() or path.stat().st_size == 0:
+            # An empty .srt is what a transcription that found no words leaves
+            # behind; uploading it would attach an empty caption track.
+            logger.info("%sNo subtitles to upload (%s)", self._label, path.name)
+            return False
+
+        language = caption_language(self.channel)
+        if language is None:
+            logger.warning(
+                "%sSubtitles not uploaded: this channel's language is not one this "
+                "code can name a caption track with, and a track labelled with the "
+                "wrong language is worse than none. Add it to "
+                "youtube_uploader.CAPTION_LANGUAGES.",
+                self._label,
+            )
+            return False
+
+        granted = self._granted_scopes()
+        if granted and CAPTION_SCOPE not in granted:
+            logger.warning(
+                "%sSubtitles not uploaded: this token was never granted %s, which "
+                "YouTube requires to write a caption track. Add it to "
+                "config.YOUTUBE_SCOPES and reconnect the channel with "
+                "tools/connect_channel.py. The video itself is unaffected.",
+                self._label, CAPTION_SCOPE,
+            )
+            return False
+
+        try:
+            self.service.captions().insert(
+                part="snippet",
+                body={
+                    "snippet": {
+                        "videoId": video_id,
+                        "language": language,
+                        "name": CAPTION_TRACK_NAME,
+                        "isDraft": False,
+                    }
+                },
+                media_body=MediaFileUpload(str(path), mimetype="application/octet-stream"),
+            ).execute()
+        except Exception as e:
+            logger.warning("%sSubtitle track failed (%s: %s) — the video is published "
+                           "and unaffected", self._label, type(e).__name__, e)
+            return False
+
+        logger.info("%sSubtitle track uploaded (%s, ~400 quota units)", self._label, language)
+        return True
