@@ -126,6 +126,13 @@ FEEDBACK_APPLIED = "feedback.applied"
 # video: `playlist.failed` never means the run failed — the video is published.
 PLAYLIST_ADDED = "playlist.added"
 PLAYLIST_FAILED = "playlist.failed"
+# Engagement comment (modules/pinned_comment.py). The channel's own first comment
+# — an on-topic question — posted right after a video publishes; the creator pins
+# it in one tap (the Data API can't pin). Best-effort and downstream of a live
+# video: `comment.failed`/`comment.skipped` never mean the run failed.
+COMMENT_POSTED = "comment.posted"
+COMMENT_SKIPPED = "comment.skipped"
+COMMENT_FAILED = "comment.failed"
 # Niche RPM intelligence (modules/niche_rpm.py). Advisory: a ranking of niches
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
