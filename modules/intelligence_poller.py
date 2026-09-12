@@ -320,29 +320,29 @@ class IntelligencePoller:
             logger.info("Retention: %d point(s) recorded for %s", written, video_id)
         return written
 
-    # -- orchestration --------------------------------------------------
+    def _videos_with_metrics(self):
+        """The channel's videos plus a {video_id: latest_metrics} map. Shared by
+        the advisory passes below so each doesn't re-read the store separately."""
+        videos = self.state_store.list_videos(limit=100000, channel_id=self.channel_id)
+        metrics_by_id = {}
+        for v in videos:
+            vid = v.get("video_id")
+            if not vid:
+                continue
+            m = self.state_store.latest_metrics(vid)
+            if m is not None:
+                metrics_by_id[vid] = m
+        return videos, metrics_by_id
 
     def suggest_repackages(self) -> int:
         """Flag published videos whose CTR is well below this channel's own
         median as candidates for a new title/thumbnail, emitting one
-        `repackage.suggested` roll-up. Advisory only — it reads history and
-        reports; it never edits a live video. Runs after the metrics poll so it
-        sees the freshest CTR. Never raises: a failure here must not abort a
-        poll, and it changes nothing that publishes.
-        """
+        `repackage.suggested` roll-up. Advisory only. Never raises."""
         try:
             from modules import event_log as events
             from modules import repackage
 
-            videos = self.state_store.list_videos(limit=100000, channel_id=self.channel_id)
-            metrics_by_id = {}
-            for v in videos:
-                vid = v.get("video_id")
-                if not vid:
-                    continue
-                m = self.state_store.latest_metrics(vid)
-                if m is not None:
-                    metrics_by_id[vid] = m
+            videos, metrics_by_id = self._videos_with_metrics()
             candidates = repackage.find_candidates(videos, metrics_by_id)
             events.emit(events.REPACKAGE_SUGGESTED, agent="repackage",
                         status=events.STATUS_COMPLETED, channel_id=self.channel_id,
@@ -354,6 +354,29 @@ class IntelligencePoller:
         except Exception:
             logger.exception("Repackage suggestion pass failed; suggesting zero")
             return 0
+
+    def suggest_publish_time(self) -> bool:
+        """Recommend the publish hour (UTC) and weekday from when this channel's
+        best-performing videos went out, emitting one `publish.timing`. Advisory
+        only. Never raises."""
+        try:
+            from modules import event_log as events
+            from modules import publish_timing
+
+            videos, metrics_by_id = self._videos_with_metrics()
+            report = publish_timing.analyze(videos, metrics_by_id)
+            events.emit(events.PUBLISH_TIMING, agent="publish_timing",
+                        status=events.STATUS_COMPLETED, channel_id=self.channel_id,
+                        metadata=publish_timing.summarize(report))
+            if report.has_recommendation:
+                logger.info("[channel: %s] Best publish slot: %sh UTC, %s",
+                            self.channel_id, report.best_hour_utc, report.best_weekday_name or "?")
+            return report.has_recommendation
+        except Exception:
+            logger.exception("Publish-time suggestion pass failed; recommending nothing")
+            return False
+
+    # -- orchestration --------------------------------------------------
 
     def run_all(self, competitor_channel_ids: list | None = None) -> dict:
         """Runs all three polls and returns a small summary dict. This is
@@ -368,8 +391,9 @@ class IntelligencePoller:
 
         trending_videos = self.poll_trends()
 
-        # Advisory, after the metrics poll so it reads the freshest CTR.
+        # Advisory passes, after the metrics poll so they read the freshest data.
         repackage_candidates = self.suggest_repackages()
+        publish_timing_ready = self.suggest_publish_time()
 
         return {
             "own_metrics_written": own_metrics_written,
@@ -378,4 +402,5 @@ class IntelligencePoller:
             "trending_videos_found": len(trending_videos),
             "trending_snapshots_written": self._last_trending_snapshots_written,
             "repackage_candidates": repackage_candidates,
+            "publish_timing_ready": publish_timing_ready,
         }
