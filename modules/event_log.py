@@ -107,6 +107,12 @@ CHANNEL_OAUTH_FAILED = "channel.oauth.failed"
 # Credential health preflight (modules/credential_health.py). Advisory: reports
 # which credentials a run needs and whether they are present, before it spends.
 CREDENTIAL_HEALTH = "credential.health"
+# Per-channel spend ceiling (modules/budget.py). `budget.preflight` records the
+# channel's spend vs its ceiling before a run; `budget.exceeded` records a run
+# stopped BEFORE spending because the ceiling was already met. Off unless a
+# channel sets a ceiling; a data gap (unpriced costs) never triggers a block.
+BUDGET_PREFLIGHT = "budget.preflight"
+BUDGET_EXCEEDED = "budget.exceeded"
 # Analytics / feedback loop
 ANALYTICS_UPDATED = "analytics.updated"
 FEEDBACK_GENERATED = "feedback.generated"

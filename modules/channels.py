@@ -101,6 +101,19 @@ def _env_competitor_ids() -> list[str]:
     return [c.strip() for c in raw.split(",") if c.strip()]
 
 
+def _as_optional_float(value) -> Optional[float]:
+    """A positive float, or None. Empty / unset / non-numeric / non-positive all
+    read as None (no ceiling) — a malformed ceiling must never silently become a
+    small number that blocks every run."""
+    if value is None or value == "":
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return f if f > 0 else None
+
+
 def _clean_ids(value) -> tuple:
     """Parse competitor ids from a stored list or a comma-separated string.
 
@@ -162,6 +175,12 @@ class AgentConfig:
     # as before; a channel sets it False to run fully but stop short of upload.
     # Stored in this same agent_config blob, so turning it off costs no migration.
     auto_publish: bool = True
+    # Optional monthly USD spend ceiling for this channel. None (the default)
+    # means no ceiling — the channel runs unmetered, exactly as before. When set,
+    # a run that would push the channel's KNOWN spend at or past it does not start
+    # (see modules/budget.py). It stops spending, never the publish gate, and a
+    # data gap (unpriced costs) never blocks. Stored in this blob — no migration.
+    spend_ceiling_usd: Optional[float] = None
 
     def to_dict(self) -> dict:
         return {
@@ -177,6 +196,7 @@ class AgentConfig:
             "publish_gate": dict(self.publish_gate),
             "shorts": dict(self.shorts),
             "auto_publish": self.auto_publish,
+            "spend_ceiling_usd": self.spend_ceiling_usd,
         }
 
     @staticmethod
@@ -205,6 +225,7 @@ class AgentConfig:
             # that never opted out keeps publishing, exactly as before. Only an
             # explicit false holds uploads.
             auto_publish=(False if d.get("auto_publish") is False else True),
+            spend_ceiling_usd=_as_optional_float(d.get("spend_ceiling_usd")),
         )
 
 

@@ -39,6 +39,7 @@ from modules.credential_health import check_run_credentials
 from modules.cost_ledger import (
     CostLedger, PEXELS_REQUESTS, RENDER_SECONDS, TTS_CHARACTERS, UPLOAD_BYTES,
 )
+from modules import budget
 from modules import shorts
 from modules.claim_extractor import extract_claims
 from modules.compositor import Compositor
@@ -248,6 +249,31 @@ def run(
                     channel_id=channel_id, metadata=health.to_dict())
     except Exception as e:
         logger.warning("Credential preflight failed (%s: %s) — continuing", type(e).__name__, e)
+    # Spend ceiling — a hard stop BEFORE the run spends anything. Off unless this
+    # channel set a ceiling; then a run that would push its known monthly spend
+    # at or past the ceiling does not start. It halts spending, never the publish
+    # gate, and a data gap (unpriced costs) never blocks. See modules/budget.py.
+    ceiling = getattr(ctx.agent, "spend_ceiling_usd", None)
+    if ceiling is not None:
+        try:
+            with StateStore() as _store:
+                budget_status = budget.check_budget(
+                    _store, channel_id, ceiling, since_iso=budget.month_start_iso())
+            events.emit(events.BUDGET_PREFLIGHT, agent="budget", status=events.STATUS_COMPLETED,
+                        channel_id=channel_id, metadata=budget_status.to_dict())
+            if budget.should_block_run(budget_status):
+                logger.error(
+                    "[channel: %s] Spend ceiling reached ($%.2f of $%.2f this month) — "
+                    "run stopped before spending.",
+                    channel_id, budget_status.spent_usd, ceiling)
+                print(f"\n⛔ Spend ceiling reached (${budget_status.spent_usd:.2f} of "
+                      f"${ceiling:.2f}). Run stopped before spending.")
+                events.emit(events.BUDGET_EXCEEDED, agent="budget", status=events.STATUS_FAILED,
+                            channel_id=channel_id, metadata=budget_status.to_dict())
+                return None
+        except Exception as e:
+            logger.warning("Budget preflight failed (%s: %s) — continuing without a ceiling check",
+                           type(e).__name__, e)
     # What this run consumes. Recorded whether or not it ends in an upload —
     # a render that is later blocked still cost real money.
     costs = CostLedger(channel_id=channel_id)
