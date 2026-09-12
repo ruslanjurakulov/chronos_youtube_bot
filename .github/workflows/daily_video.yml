@@ -207,6 +207,14 @@ jobs:
           YOUTUBE_PRIVACY: ${{ github.event.inputs.privacy || 'private' }}
           TTS_PROVIDER: edge
           SCRIPT_LANGUAGE: English
+          # Dispatch inputs and the matrix channel are passed through the
+          # environment, never interpolated into the shell below. GitHub
+          # expands ${{ ... }} as raw text before the shell runs, so a topic
+          # like  '; rm -rf ~ #  spliced straight into a command would execute;
+          # as an env var it is just a string the shell reads with "$VAR".
+          CHANNEL_ID: ${{ matrix.channel_id }}
+          INPUT_TOPIC: ${{ github.event.inputs.topic }}
+          INPUT_NICHE: ${{ github.event.inputs.niche }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
           # --- Per-channel publishing tokens -------------------------------
@@ -221,17 +229,17 @@ jobs:
           # credential ref upper-cased. Example, for ref "finance":
           # CHRONOS_YT_TOKEN_FINANCE: ${{ secrets.CHRONOS_YT_TOKEN_FINANCE }}
         run: |
-          ARGS=""
-          if [ -n "${{ github.event.inputs.topic }}" ]; then
-            ARGS="$ARGS --topic '${{ github.event.inputs.topic }}'"
+          # Build argv as an array so each value stays one argument. No value
+          # is ever re-parsed by the shell: env vars are read with "$VAR", and
+          # "${args[@]}" hands python exactly the elements we appended.
+          args=(--channel "$CHANNEL_ID" --privacy "${YOUTUBE_PRIVACY:-private}")
+          if [ -n "$INPUT_TOPIC" ]; then
+            args+=(--topic "$INPUT_TOPIC")
           fi
-          if [ -n "${{ github.event.inputs.niche }}" ]; then
-            ARGS="$ARGS --niche '${{ github.event.inputs.niche }}'"
+          if [ -n "$INPUT_NICHE" ]; then
+            args+=(--niche "$INPUT_NICHE")
           fi
-          python main.py \
-            --channel "${{ matrix.channel_id }}" \
-            --privacy "${{ github.event.inputs.privacy || 'private' }}" \
-            $ARGS
+          python main.py "${args[@]}"
 
       - name: Upload video artifact
         if: always()
