@@ -210,6 +210,39 @@ def _competition_dim(saturation: Optional[float]) -> Dimension:
     return Dimension("competition", score, 0.05, MEASURED, f"saturation {saturation:.2f}")
 
 
+def inputs_from_script(
+    script,
+    *,
+    past_retention_pct: Optional[float] = None,
+    past_ctr_pct: Optional[float] = None,
+    competitor_saturation: Optional[float] = None,
+) -> ScoreInputs:
+    """Build ScoreInputs from a Script (duck-typed) plus whatever historical /
+    external signal the caller has. The content fields are read off the real
+    script — `hook_sentence`, `title`, `description`, `tags`,
+    `thumbnail_overlay_text`, and `cta` if the script carries one. Prediction
+    signals default to None (→ "not enough data"), so a caller that has no
+    history yet still gets an honest content-only score."""
+
+    def field(name: str, default=""):
+        return getattr(script, name, default) or default
+
+    tags = field("tags", [])
+    if not isinstance(tags, (list, tuple)):
+        tags = []
+    return ScoreInputs(
+        hook=field("hook_sentence") or field("hook"),
+        title=field("title"),
+        description=field("description"),
+        tags=tuple(str(t) for t in tags if str(t).strip()),
+        cta=field("cta"),
+        thumbnail_text=field("thumbnail_overlay_text"),
+        past_retention_pct=past_retention_pct,
+        past_ctr_pct=past_ctr_pct,
+        competitor_saturation=competitor_saturation,
+    )
+
+
 def evaluate(inputs: ScoreInputs) -> PublishScore:
     """Compute the publish score from whatever real signal is present.
 
