@@ -96,6 +96,11 @@ PUBLISH_SCORE = "publish.score"
 SHORT_STARTED = "short.started"
 SHORT_COMPLETED = "short.completed"
 SHORT_FAILED = "short.failed"
+# Run checkpoint / resume (modules/run_checkpoint.py). `run.resumed` records a
+# run that reused a crashed run's saved artifacts (today: the script, skipping
+# the paid Gemini generation). Advisory bookkeeping — it never changes what is
+# produced, only what gets re-paid-for.
+RUN_RESUMED = "run.resumed"
 # Channels (Phase 5). Lifecycle only — the per-stage events above already
 # carry a channel_id, so there is no channel.job.* duplicate of job.*.
 CHANNEL_CREATED = "channel.created"
