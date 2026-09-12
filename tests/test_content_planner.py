@@ -94,6 +94,40 @@ class ContentPlannerTestCase(unittest.TestCase):
         next_up = self.planner.next_topic()
         self.assertEqual(next_up.entry_id, second.entry_id)
 
+    # -- reserve / mark_rendered lifecycle -------------------------------
+
+    def test_reserve_then_render_then_publish(self):
+        entry = self.planner.enqueue("Topic A")
+
+        self.assertEqual(self.planner.reserve(entry.entry_id).status, "reserved")
+        self.assertEqual(self.planner.list_entries()[0].status, "reserved")
+
+        self.assertEqual(self.planner.mark_rendered(entry.entry_id).status, "rendered")
+        self.assertEqual(self.planner.list_entries()[0].status, "rendered")
+
+        self.assertEqual(self.planner.mark_published(entry.entry_id).status, "published")
+        self.assertEqual(self.planner.list_entries()[0].status, "published")
+
+    def test_next_topic_skips_reserved_and_rendered_entries(self):
+        """A reserved or rendered entry belongs to a run already in flight; it
+        must never be handed to a second run as the next thing to make."""
+        first = self.planner.enqueue("Topic A")
+        second = self.planner.enqueue("Topic B")
+        self.planner.reserve(first.entry_id)
+
+        self.assertEqual(self.planner.next_topic().entry_id, second.entry_id)
+
+        self.planner.mark_rendered(first.entry_id)
+        self.assertEqual(self.planner.next_topic().entry_id, second.entry_id)
+
+    def test_reserve_unknown_id_raises(self):
+        with self.assertRaises(ValueError):
+            self.planner.reserve("nonexistent-id")
+
+    def test_mark_rendered_unknown_id_raises(self):
+        with self.assertRaises(ValueError):
+            self.planner.mark_rendered("nonexistent-id")
+
     # -- mark_published / mark_skipped ----------------------------------
 
     def test_mark_published_updates_status(self):
