@@ -104,6 +104,12 @@ CHANNEL_PAUSED = "channel.paused"
 CHANNEL_ACTIVATED = "channel.activated"
 CHANNEL_OAUTH_CONNECTED = "channel.oauth.connected"
 CHANNEL_OAUTH_FAILED = "channel.oauth.failed"
+# Per-channel spend ceiling (modules/budget.py). `budget.preflight` records the
+# channel's spend vs its ceiling before a run; `budget.exceeded` records a run
+# stopped BEFORE spending because the ceiling was already met. Off unless a
+# channel sets a ceiling; a data gap (unpriced costs) never triggers a block.
+BUDGET_PREFLIGHT = "budget.preflight"
+BUDGET_EXCEEDED = "budget.exceeded"
 # Analytics / feedback loop
 ANALYTICS_UPDATED = "analytics.updated"
 FEEDBACK_GENERATED = "feedback.generated"
