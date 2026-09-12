@@ -35,6 +35,7 @@ from modules.avatar import (
 )
 from modules.audio_mixer import AudioMixer, VoiceUnavailable, verify_voice
 from modules.channels import ChannelContext, resolve_channel
+from modules.credential_health import check_run_credentials
 from modules.cost_ledger import (
     CostLedger, PEXELS_REQUESTS, RENDER_SECONDS, TTS_CHARACTERS, UPLOAD_BYTES,
 )
@@ -228,6 +229,24 @@ def run(
     if series_obj and (visual_style or voice_style or cadence):
         logger.info("Series style — visual: %r | voice: %r | cadence: %s",
                     visual_style, voice_style, cadence)
+    # Credential preflight — a safe-to-log report of which keys this run needs
+    # and whether they are present, BEFORE it spends anything. Advisory: it logs
+    # and emits, and never aborts on its own (verify_voice below is the one hard
+    # stop, for the voice). A missing required key is surfaced loudly here so the
+    # failure is legible at the top of the run rather than three paid stages in.
+    try:
+        health = check_run_credentials(ctx)
+        if health.blocking:
+            logger.error("[channel: %s] Credential preflight — MISSING required: %s",
+                         channel_id, ", ".join(c.name for c in health.blocking))
+        elif health.publish_blocking:
+            logger.warning("[channel: %s] Credential preflight — publish token not ready: %s",
+                           channel_id, ", ".join(c.name for c in health.publish_blocking))
+        events.emit(events.CREDENTIAL_HEALTH, agent="credential_health",
+                    status=events.STATUS_COMPLETED if health.ok else events.STATUS_FAILED,
+                    channel_id=channel_id, metadata=health.to_dict())
+    except Exception as e:
+        logger.warning("Credential preflight failed (%s: %s) — continuing", type(e).__name__, e)
     # What this run consumes. Recorded whether or not it ends in an upload —
     # a render that is later blocked still cost real money.
     costs = CostLedger(channel_id=channel_id)

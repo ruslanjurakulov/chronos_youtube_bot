@@ -104,6 +104,9 @@ CHANNEL_PAUSED = "channel.paused"
 CHANNEL_ACTIVATED = "channel.activated"
 CHANNEL_OAUTH_CONNECTED = "channel.oauth.connected"
 CHANNEL_OAUTH_FAILED = "channel.oauth.failed"
+# Credential health preflight (modules/credential_health.py). Advisory: reports
+# which credentials a run needs and whether they are present, before it spends.
+CREDENTIAL_HEALTH = "credential.health"
 # Analytics / feedback loop
 ANALYTICS_UPDATED = "analytics.updated"
 FEEDBACK_GENERATED = "feedback.generated"
