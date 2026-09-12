@@ -50,6 +50,7 @@ from modules.media_fetcher import MediaFetcher
 from modules import playlist
 from modules.pipeline_stages import PipelineStage, PipelineStateMachine
 from modules.research_engine import research_topic
+from modules import run_checkpoint
 from modules.script_engine import ScriptEngine
 from modules.series import (
     effective_cadence, effective_niche, effective_visual_style, effective_voice_style,
@@ -199,6 +200,7 @@ def run(
     script_file: str | None = None,
     channel: ChannelContext | str | None = None,
     series: str | None = None,
+    resume: bool = False,
 ):
     """Run the pipeline once, for one channel.
 
@@ -313,6 +315,30 @@ def run(
                     channel_id=channel_id, metadata={"error": str(e), "stage": "preflight"})
         raise
 
+    # ── Resume a crashed run ────────────────────────────────────────────
+    # With --resume, reuse a previous run's saved artifacts instead of paying to
+    # regenerate them. Today that means loading the saved script.json — skipping
+    # the topic/research/script Gemini calls — which is the same reuse
+    # --script-file has always offered, now found automatically from the run
+    # checkpoint (by topic when given, else the most recent unfinished run). A
+    # stage is only reused when its files are still on disk. Off (the default) ⇒
+    # the flow below is byte-for-byte unchanged, and this never raises.
+    if resume and not script_file:
+        resume_slug = slugify(topic) if topic else None
+        cp = run_checkpoint.load(resume_slug) if resume_slug else run_checkpoint.latest_incomplete()
+        saved_script = cp.artifact(run_checkpoint.STAGE_SCRIPT, "script_json") if cp else None
+        if cp is not None and cp.can_resume_stage(run_checkpoint.STAGE_SCRIPT) and saved_script:
+            script_file = saved_script
+            topic = topic or (cp.topic or None)
+            logger.info("Resuming run %r from saved script %s — skipping topic/research/script generation",
+                        cp.slug, saved_script)
+            events.emit(events.RUN_RESUMED, agent="pipeline", status=events.STATUS_RUNNING,
+                        channel_id=channel_id,
+                        metadata={"slug": cp.slug, "reused": "script",
+                                  "stages_recorded": list(cp.stages.keys())})
+        else:
+            logger.info("Resume requested but no reusable script checkpoint found — running fresh")
+
     # ── Stages 1-2: Topic and Script
     # A saved script skips both Gemini calls, so a crash in a later stage — or a
     # spent daily quota — does not mean paying for generation again.
@@ -390,6 +416,14 @@ def run(
     if not script_file:
         saved = script.save(OUTPUT_DIR / slug / "script.json")
         logger.info("Script saved: %s — reuse with --script-file", saved)
+    # Checkpoint the script stage so a later --resume can reuse it without
+    # paying for the Gemini generation again. Records the canonical script path
+    # only when it is actually on disk (an external --script-file may live
+    # elsewhere), so the checkpoint never points at a file resume can't find.
+    _script_json = OUTPUT_DIR / slug / "script.json"
+    run_checkpoint.record_stage(
+        slug, run_checkpoint.STAGE_SCRIPT, topic=topic, channel_id=channel_id,
+        artifacts={"script_json": str(_script_json)} if _script_json.exists() else None)
 
     # ── Fact-check pass
     # Claims are flagged here; the pre-publish gate below decides what that
@@ -426,6 +460,7 @@ def run(
     # Only what was actually synthesized — cached segments cost nothing this run.
     costs.add(TTS_CHARACTERS, mixer.characters_synthesized, stage="voice")
     events.emit(events.VOICE_COMPLETED, agent="audio_mixer", status=events.STATUS_COMPLETED, channel_id=channel_id)
+    run_checkpoint.record_stage(slug, run_checkpoint.STAGE_VOICE, artifacts={"audio": str(audio_path)})
 
     # ── Stage 4: Media
     events.emit(events.MEDIA_STARTED, agent="media_fetcher", status=events.STATUS_RUNNING, channel_id=channel_id)
@@ -454,6 +489,7 @@ def run(
     log_usage("before transcription")
     events.emit(events.MEDIA_COMPLETED, agent="media_fetcher", status=events.STATUS_COMPLETED,
                 channel_id=channel_id, metadata={"videos": len(videos), "images": len(images)})
+    run_checkpoint.record_stage(slug, run_checkpoint.STAGE_MEDIA)
 
     # ── Stage 5: Subtitles
     sub_gen = SubtitleGenerator(slug)
@@ -466,6 +502,7 @@ def run(
     # Nothing after this point transcribes anything, and the render two stages
     # down is the one that keeps getting killed.
     sub_gen.release_model()
+    run_checkpoint.record_stage(slug, run_checkpoint.STAGE_SUBTITLES, artifacts={"srt": str(srt_path)})
 
     # ── Stage 6: Thumbnails
     # Which arm this video ships on. Both thumbnails have always been rendered;
@@ -496,6 +533,8 @@ def run(
     published_title = chosen_title or script.title
     logger.info("Thumbnails: %s | %s — shipping %s", thumb_a.name, thumb_b.name, chosen_thumb.name)
     events.emit(events.THUMBNAIL_COMPLETED, agent="thumbnail_generator", status=events.STATUS_COMPLETED, channel_id=channel_id)
+    run_checkpoint.record_stage(slug, run_checkpoint.STAGE_THUMBNAILS,
+                                artifacts={"thumbnail_a": str(thumb_a), "thumbnail_b": str(thumb_b)})
 
     # ── Stage 6b: AITuber presenter (optional, off by default)
     # A synthetic on-camera character composited into a corner of the video.
@@ -547,6 +586,7 @@ def run(
     logger.info("Video: %s", video_path)
     events.emit(events.RENDER_COMPLETED, agent="compositor", status=events.STATUS_COMPLETED,
                 channel_id=channel_id, metadata={"video_path": str(video_path)})
+    run_checkpoint.record_stage(slug, run_checkpoint.STAGE_RENDER, artifacts={"video": str(video_path)})
     # The video exists on disk now. If this topic came off the content-planner
     # queue, record that it reached "rendered" — true whether or not the upload
     # below succeeds, so a blocked or failed-upload run leaves an honest
@@ -665,6 +705,12 @@ def run(
             # any) to "published". Only here, at real upload success, never at
             # pick time.
             topic_mgr.mark_queue_entry_published()
+
+            # The run is fully done — drop its checkpoint so a later run for the
+            # same topic starts clean and a bare --resume never re-opens it. A
+            # blocked, held or failed run deliberately keeps its checkpoint, so
+            # --resume can reuse the saved script instead of re-paying for it.
+            run_checkpoint.clear(slug)
 
             # If this run is scoped to a series with a playlist, add the freshly
             # published video to it — a playlist keeps the series bingeable.
@@ -801,6 +847,10 @@ if __name__ == "__main__":
     parser.add_argument("--series", default=None,
                         help="Series id to run this video under (default: none — "
                              "the channel's own niche is used; see modules/series.py)")
+    parser.add_argument("--resume", action="store_true",
+                        help="Resume a crashed run: reuse its saved script (skipping the "
+                             "paid Gemini generation) from the run checkpoint. With --topic, "
+                             "resumes that run; alone, resumes the most recent unfinished run.")
     args = parser.parse_args()
 
     if args.list_channels:
@@ -814,4 +864,5 @@ if __name__ == "__main__":
             script_file=args.script_file,
             channel=args.channel,
             series=args.series,
+            resume=args.resume,
         )
