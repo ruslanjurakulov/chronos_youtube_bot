@@ -104,6 +104,9 @@ CHANNEL_PAUSED = "channel.paused"
 CHANNEL_ACTIVATED = "channel.activated"
 CHANNEL_OAUTH_CONNECTED = "channel.oauth.connected"
 CHANNEL_OAUTH_FAILED = "channel.oauth.failed"
+# Credential health preflight (modules/credential_health.py). Advisory: reports
+# which credentials a run needs and whether they are present, before it spends.
+CREDENTIAL_HEALTH = "credential.health"
 # Per-channel spend ceiling (modules/budget.py). `budget.preflight` records the
 # channel's spend vs its ceiling before a run; `budget.exceeded` records a run
 # stopped BEFORE spending because the ceiling was already met. Off unless a
@@ -114,6 +117,10 @@ BUDGET_EXCEEDED = "budget.exceeded"
 ANALYTICS_UPDATED = "analytics.updated"
 FEEDBACK_GENERATED = "feedback.generated"
 FEEDBACK_APPLIED = "feedback.applied"
+# Series playlist (modules/playlist.py). Best-effort, downstream of a live
+# video: `playlist.failed` never means the run failed — the video is published.
+PLAYLIST_ADDED = "playlist.added"
+PLAYLIST_FAILED = "playlist.failed"
 # Niche RPM intelligence (modules/niche_rpm.py). Advisory: a ranking of niches
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.

@@ -35,6 +35,7 @@ from modules.avatar import (
 )
 from modules.audio_mixer import AudioMixer, VoiceUnavailable, verify_voice
 from modules.channels import ChannelContext, resolve_channel
+from modules.credential_health import check_run_credentials
 from modules.cost_ledger import (
     CostLedger, PEXELS_REQUESTS, RENDER_SECONDS, TTS_CHARACTERS, UPLOAD_BYTES,
 )
@@ -46,6 +47,7 @@ from modules.resource_monitor import MemorySampler, log_usage
 from modules.video_review import VideoReview
 from modules.fact_checker import fact_check_claims
 from modules.media_fetcher import MediaFetcher
+from modules import playlist
 from modules.pipeline_stages import PipelineStage, PipelineStateMachine
 from modules.research_engine import research_topic
 from modules.script_engine import ScriptEngine
@@ -229,6 +231,24 @@ def run(
     if series_obj and (visual_style or voice_style or cadence):
         logger.info("Series style — visual: %r | voice: %r | cadence: %s",
                     visual_style, voice_style, cadence)
+    # Credential preflight — a safe-to-log report of which keys this run needs
+    # and whether they are present, BEFORE it spends anything. Advisory: it logs
+    # and emits, and never aborts on its own (verify_voice below is the one hard
+    # stop, for the voice). A missing required key is surfaced loudly here so the
+    # failure is legible at the top of the run rather than three paid stages in.
+    try:
+        health = check_run_credentials(ctx)
+        if health.blocking:
+            logger.error("[channel: %s] Credential preflight — MISSING required: %s",
+                         channel_id, ", ".join(c.name for c in health.blocking))
+        elif health.publish_blocking:
+            logger.warning("[channel: %s] Credential preflight — publish token not ready: %s",
+                           channel_id, ", ".join(c.name for c in health.publish_blocking))
+        events.emit(events.CREDENTIAL_HEALTH, agent="credential_health",
+                    status=events.STATUS_COMPLETED if health.ok else events.STATUS_FAILED,
+                    channel_id=channel_id, metadata=health.to_dict())
+    except Exception as e:
+        logger.warning("Credential preflight failed (%s: %s) — continuing", type(e).__name__, e)
     # Spend ceiling — a hard stop BEFORE the run spends anything. Off unless this
     # channel set a ceiling; then a run that would push its known monthly spend
     # at or past the ceiling does not start. It halts spending, never the publish
@@ -645,6 +665,22 @@ def run(
             # any) to "published". Only here, at real upload success, never at
             # pick time.
             topic_mgr.mark_queue_entry_published()
+
+            # If this run is scoped to a series with a playlist, add the freshly
+            # published video to it — a playlist keeps the series bingeable.
+            # Best-effort and downstream of a live video: a playlist error never
+            # turns a successful publish into a failed run. See modules/playlist.py.
+            playlist_id = playlist.resolve_playlist_id(series_obj)
+            if playlist_id:
+                item_id = playlist.add_video_to_playlist(uploader.service, playlist_id, video_id)
+                events.emit(
+                    events.PLAYLIST_ADDED if item_id else events.PLAYLIST_FAILED,
+                    agent="playlist",
+                    status=events.STATUS_COMPLETED if item_id else events.STATUS_FAILED,
+                    channel_id=channel_id, video_id=video_id,
+                    metadata={"playlist_id": playlist_id,
+                              **({"item_id": item_id} if item_id else {})},
+                    store=store)
 
             # ── Review: put the finished video where a human can watch it ──
             # Every upload is private (config.YOUTUBE_PRIVACY defaults to it,
