@@ -236,6 +236,11 @@ jobs:
           # Higgsfield credentials must be set, or the run stays faceless. An
           # unset secret is an empty string; the provider then fails loud only
           # when the presenter is enabled — it never ships a blank/wrong avatar.
+          # To turn the presenter on: set the NIGHTSHIFT_AVATAR_ENABLED repo
+          # VARIABLE to true and add the two HIGGSFIELD_API_KEY_* SECRETS. The
+          # model defaults to Kling 3.0 (the cost-effective pick, ~6 credits per
+          # generation); leave HIGGSFIELD_AVATAR_ENDPOINT unset to use it, or set
+          # the variable to override with another model path.
           NIGHTSHIFT_AVATAR_ENABLED: ${{ vars.NIGHTSHIFT_AVATAR_ENABLED }}
           HIGGSFIELD_API_KEY_ID: ${{ secrets.HIGGSFIELD_API_KEY_ID }}
           HIGGSFIELD_API_KEY_SECRET: ${{ secrets.HIGGSFIELD_API_KEY_SECRET }}
