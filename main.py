@@ -55,6 +55,7 @@ from modules.series import (
 from modules.state_store import StateStore
 from modules.subtitle_generator import SubtitleGenerator
 from modules.thumbnail_generator import ThumbnailGenerator
+from modules.title_planner import plan_titles
 from modules.topic_manager import TopicManager
 from modules.youtube_uploader import YouTubeUploader
 from tools.generate_assets import ensure_assets
@@ -315,10 +316,23 @@ def run(
                         channel_id=channel_id, metadata={"error": f"{type(e).__name__}: {e}"})
 
     if not script_file:
-        events.emit(events.SCRIPT_STARTED, agent="script_engine", status=events.STATUS_RUNNING,
-                    channel_id=channel_id, metadata={"topic": topic})
         engine = ScriptEngine(channel=ctx)
-        script = engine.generate(topic, research_brief=research_brief)
+        # Growth: decide the packaging BEFORE the script. The title and a
+        # thumbnail concept are planned from the topic, then the script is
+        # written to deliver on that exact promise (see modules/title_planner.py).
+        # Degrades to a heuristic title if the model call fails — never blocks.
+        title_plan = plan_titles(topic, niche, gen=engine._gen)
+        logger.info("Planned title: %r (%s)", title_plan.chosen, title_plan.source)
+        events.emit(events.TITLE_PLANNED, agent="title_planner", status=events.STATUS_COMPLETED,
+                    channel_id=channel_id,
+                    metadata={"chosen": title_plan.chosen, "alt": title_plan.alt,
+                              "source": title_plan.source,
+                              "candidates": list(title_plan.candidates),
+                              "thumbnail_concept": title_plan.thumbnail_concept})
+        events.emit(events.SCRIPT_STARTED, agent="script_engine", status=events.STATUS_RUNNING,
+                    channel_id=channel_id, metadata={"topic": topic, "working_title": title_plan.chosen})
+        script = engine.generate(topic, research_brief=research_brief,
+                                 working_title=title_plan.chosen)
         costs.add_gemini_usage(engine.last_response, stage="script")
 
     slug = slugify(topic)

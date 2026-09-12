@@ -401,8 +401,21 @@ class ScriptEngine:
         self.last_response = response
         return response.text
 
-    def generate(self, topic: str, research_brief: "ResearchBrief | None" = None) -> Script:
-        prompt = self._build_prompt(topic, research_brief, channel=self.channel)
+    def generate(
+        self,
+        topic: str,
+        research_brief: "ResearchBrief | None" = None,
+        working_title: str | None = None,
+    ) -> Script:
+        """Generate a script for `topic`.
+
+        `working_title`, when given, is a title decided BEFORE this call (see
+        modules/title_planner.py): the script is written to deliver on that exact
+        promise, and the produced Script's `title` is set to it so the video
+        ships under the title it was planned for. None keeps today's behaviour —
+        the title comes from the model."""
+        prompt = self._build_prompt(topic, research_brief, channel=self.channel,
+                                    working_title=working_title)
         performance_context = self._performance_context()
         if performance_context:
             prompt += f"\n\n{performance_context}"
@@ -412,11 +425,23 @@ class ScriptEngine:
         logger.info("Generating script for: %s", topic)
         text = self._gen(prompt, system=SCRIPT_SYSTEM_PROMPT)
         raw = self._extract_json(text)
-        return self._parse(topic, raw)
+        script = self._parse(topic, raw)
+        # The planned title is the decision; the script delivers it. Overriding
+        # here guarantees the video ships under the title it was made for, even
+        # if the model echoed a slightly different one. The model's own title
+        # becomes the A/B alternative when it didn't already supply one.
+        if working_title:
+            planned = working_title.strip()
+            if planned:
+                if not script.title_ab and script.title and script.title.strip() != planned:
+                    script.title_ab = script.title
+                script.title = planned
+        return script
 
     @staticmethod
     def _build_prompt(
-        topic: str, research_brief: "ResearchBrief | None" = None, channel=None
+        topic: str, research_brief: "ResearchBrief | None" = None, channel=None,
+        working_title: str | None = None,
     ) -> str:
         """Assemble the user-side prompt.
 
@@ -451,6 +476,15 @@ class ScriptEngine:
                     f"footage in this style:\n{agent.visual_style_prompt}\n"
                 )
             prompt += "\n"
+
+        if working_title:
+            prompt += (
+                "\nPre-decided title — this video is being MADE to deliver this exact promise:\n"
+                f'"{working_title}"\n'
+                "Use this as the JSON `title`. Write the hook and open loops to pay it off "
+                "directly; do not drift to a different angle or over-promise beyond what the "
+                "script can honestly deliver.\n\n"
+            )
 
         prompt += (
             "Write the full viral YouTube script JSON now. "
