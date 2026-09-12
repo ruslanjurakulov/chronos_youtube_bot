@@ -150,7 +150,8 @@ def _publish_short(
             thumbnail_path=None,
             privacy=privacy,
             title_override=shorts.short_title(script.title),
-            description_override=shorts.short_description(script.title, parent_url),
+            description_override=shorts.short_description(
+                script.title, parent_url, hook=getattr(script, "hook_sentence", "")),
         )
         try:
             costs.add(UPLOAD_BYTES, float(short_path.stat().st_size), stage="short_upload")
