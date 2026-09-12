@@ -44,7 +44,13 @@ SCRIPT_LANGUAGE = os.getenv("SCRIPT_LANGUAGE", "English")
 VIDEO_DURATION_TARGET = int(os.getenv("VIDEO_DURATION_TARGET", "300"))  # seconds
 
 # TTS
-TTS_PROVIDER = os.getenv("TTS_PROVIDER", "edge")  # "edge" | "elevenlabs"
+# ElevenLabs is the better narration and is now the default WHENEVER a key is
+# configured — a natural voice is a real retention lever. It is not forced when
+# no key is set: elevenlabs without credentials would fail verify_voice (which,
+# by design, never falls back to edge — a wrong voice is worse than no video),
+# so the default is edge until a key exists. An explicit TTS_PROVIDER always
+# wins, so a channel can still choose edge on purpose.
+TTS_PROVIDER = os.getenv("TTS_PROVIDER", "elevenlabs" if ELEVENLABS_API_KEY else "edge")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID", "pNInz6obpgDQGcFmaJgB")
 EDGE_TTS_VOICE = os.getenv("EDGE_TTS_VOICE", "en-US-ChristopherNeural")
 
