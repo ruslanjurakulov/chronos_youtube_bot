@@ -350,3 +350,59 @@ def effective_niche(explicit: Optional[str], series_obj: Optional[Series], ctx_n
     the series' own niche, then the channel's, then the long-standing default."""
     series_niche = series_obj.niche if series_obj and series_obj.niche else None
     return explicit or series_niche or ctx_niche or "history mysteries"
+
+
+def effective_visual_style(explicit: Optional[str], series_obj: Optional[Series],
+                           channel_default: Optional[str] = None) -> str:
+    """The visual style a run should aim for. Precedence, most specific first:
+    an explicit override, the series' own ``visual_style``, then a channel
+    default. Empty string when nothing is set — a run with no style opinion is
+    valid and must not be forced to invent one."""
+    series_style = series_obj.visual_style if series_obj and series_obj.visual_style else None
+    return (explicit or series_style or channel_default or "").strip()
+
+
+def effective_voice_style(explicit: Optional[str], series_obj: Optional[Series],
+                          channel_default: Optional[str] = None) -> str:
+    """The narration style a run should aim for, same precedence as
+    ``effective_visual_style``. Empty when unset — this is a descriptive hint
+    recorded and passed downstream, never a substitute for the channel's
+    configured TTS voice (which audio_mixer.verify_voice still governs)."""
+    series_voice = series_obj.voice_style if series_obj and series_obj.voice_style else None
+    return (explicit or series_voice or channel_default or "").strip()
+
+
+def effective_cadence(series_obj: Optional[Series]) -> dict:
+    """The series' publishing cadence (e.g. ``{"long_per_week": 2}``), or an
+    empty dict when there is no series or it declares none. A copy, so a caller
+    can't mutate the immutable Series' cadence through the returned dict."""
+    if series_obj and isinstance(series_obj.cadence, dict):
+        return dict(series_obj.cadence)
+    return {}
+
+
+# Words that carry no visual meaning as a stock-footage search term. Kept small
+# and generic; the point is to drop connective tissue, not to curate a taxonomy.
+_STYLE_STOPWORDS = frozenset({
+    "a", "an", "the", "and", "or", "with", "of", "in", "on", "to", "for", "very",
+    "style", "look", "feel", "vibe", "aesthetic", "tone", "video", "footage",
+})
+_STYLE_TOKEN_RE = re.compile(r"[a-z0-9]+")
+
+
+def style_keywords(visual_style: Optional[str], limit: int = 4) -> list[str]:
+    """Turn a free-text visual style ("dark, cinematic, moody") into a few
+    search tokens ("dark", "cinematic", "moody") that can bias b-roll toward the
+    series' look. Order-preserving and de-duplicated, connective words dropped,
+    capped at ``limit``. Empty in → empty out; this only ever *adds* a handful
+    of style terms alongside the topic's own keywords, never replaces them."""
+    if not visual_style:
+        return []
+    seen: list[str] = []
+    for token in _STYLE_TOKEN_RE.findall(str(visual_style).lower()):
+        if len(token) < 3 or token in _STYLE_STOPWORDS or token in seen:
+            continue
+        seen.append(token)
+        if len(seen) >= max(1, limit):
+            break
+    return seen
