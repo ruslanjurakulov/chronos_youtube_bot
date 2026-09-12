@@ -133,6 +133,11 @@ PLAYLIST_FAILED = "playlist.failed"
 COMMENT_POSTED = "comment.posted"
 COMMENT_SKIPPED = "comment.skipped"
 COMMENT_FAILED = "comment.failed"
+# Re-package underperformers (modules/repackage.py). Advisory: flags published
+# videos whose CTR is well below the channel's own median as candidates for a
+# new title/thumbnail. It never edits a live video — like publish.score it
+# informs a human/Command Center, it does not act.
+REPACKAGE_SUGGESTED = "repackage.suggested"
 # Publish-time optimizer (modules/publish_timing.py). Advisory: the hour (UTC)
 # and weekday this channel's best-performing videos were published, for the
 # scheduler/human to use. It never reschedules or holds a run on its own.

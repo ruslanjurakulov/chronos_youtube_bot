@@ -235,8 +235,11 @@ class IntelligencePollerTestCase(unittest.TestCase):
                 "competitor_snapshots_written": 0,
                 "trending_videos_found": 3,
                 "trending_snapshots_written": 0,
-                # Advisory publish-time pass runs too; with one video there is no
-                # slot that clears the sample threshold, so no recommendation.
+                # Advisory repackage pass runs too; with one measured video there
+                # is no channel baseline, so it flags nothing.
+                "repackage_candidates": 0,
+                # Advisory publish-time pass runs too; one video clears no slot's
+                # sample threshold, so no recommendation.
                 "publish_timing_ready": False,
             },
         )
