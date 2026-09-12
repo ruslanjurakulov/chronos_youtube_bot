@@ -13,13 +13,16 @@ and it is bound by one hard rule:
 Provider
 --------
 `HiggsfieldAvatarProvider` targets Higgsfield's public API, which uses the
-documented async lifecycle: submit a generation request, then poll for the
-result (API-key auth). This module does NOT hardcode Higgsfield's endpoint
-path or credentials — the operator supplies HIGGSFIELD_API_KEY and the base/
-endpoint via environment, so nothing here is a guessed or faked call. Until
-those are set, generate() raises AvatarUnavailable with exactly what to set,
-the same "no silent fallback" posture as audio_mixer.verify_voice: a broken
-avatar must fail loudly, never quietly ship a wrong or empty presenter.
+documented async lifecycle: submit a generation request, then poll
+`<base>/requests/<id>/status` for the result. Auth is Higgsfield's documented
+`Authorization: Key <id>:<secret>` (a two-part key, not a bearer token). This
+module does NOT hardcode the per-model endpoint path or credentials — the
+operator supplies HIGGSFIELD_API_KEY_ID / HIGGSFIELD_API_KEY_SECRET and the
+model path via HIGGSFIELD_AVATAR_ENDPOINT (HIGGSFIELD_API_BASE is optional and
+defaults to https://api.higgsfield.ai), so nothing here is a guessed or faked
+call. Until those are set, generate() raises AvatarUnavailable with exactly what
+to set, the same "no silent fallback" posture as audio_mixer.verify_voice: a
+broken avatar must fail loudly, never quietly ship a wrong or empty presenter.
 
 Nothing here is wired into the render pipeline yet; enabling the presenter in a
 run is a later, gated change (behind AvatarConfig.enabled and the publish gate,
@@ -112,25 +115,46 @@ class AvatarConfig:
         )
 
 
+# Higgsfield's documented API base and status path. The auth scheme is
+# `Authorization: Key <id>:<secret>` (a two-part key, NOT a bearer token), and
+# a submit returns a request id polled at `<base>/requests/<id>/status`. These
+# are the verified public-API conventions; the per-model endpoint PATH still
+# comes from the operator (each model — soul, speech2video, image2video — has
+# its own path), so nothing model-specific is guessed here.
+_HIGGSFIELD_DEFAULT_BASE = "https://api.higgsfield.ai"
+
+
 @dataclass(frozen=True)
 class _HiggsfieldEnv:
-    api_key: str
+    api_key_id: str
+    api_key_secret: str
     base_url: str
     endpoint: str
 
     @property
     def configured(self) -> bool:
-        return bool(self.api_key and self.base_url and self.endpoint)
+        # base_url has a default, so only the credential pair and the model path
+        # are truly required from the operator.
+        return bool(self.api_key_id and self.api_key_secret and self.endpoint)
+
+    @property
+    def auth_header(self) -> str:
+        return f"Key {self.api_key_id}:{self.api_key_secret}"
 
 
 class HiggsfieldAvatarProvider:
     """Real AvatarProvider over Higgsfield's async submit→poll API.
 
-    Endpoint and credentials come from the environment so nothing is guessed:
-      * HIGGSFIELD_API_KEY       — server-side credential
-      * HIGGSFIELD_API_BASE      — API base URL (e.g. https://.../v1)
-      * HIGGSFIELD_AVATAR_ENDPOINT — the avatar/talking-head model path
-    When any is missing, generate() raises AvatarUnavailable naming what to set.
+    Credentials and the model path come from the environment so nothing is
+    guessed:
+      * HIGGSFIELD_API_KEY_ID      — the key id half of the credential
+      * HIGGSFIELD_API_KEY_SECRET  — the key secret half
+      * HIGGSFIELD_AVATAR_ENDPOINT — the avatar model path (e.g.
+        ``higgsfield-ai/soul/v2/standard`` or the speech/talking-head model),
+        copied from the Higgsfield API dashboard
+      * HIGGSFIELD_API_BASE        — optional; defaults to https://api.higgsfield.ai
+    When the credential pair or the model path is missing, generate() raises
+    AvatarUnavailable naming exactly what to set.
     """
 
     def __init__(self, *, poll_interval: float = 5.0, max_polls: int = 60):
@@ -139,8 +163,9 @@ class HiggsfieldAvatarProvider:
 
     def _env(self) -> _HiggsfieldEnv:
         return _HiggsfieldEnv(
-            api_key=os.getenv("HIGGSFIELD_API_KEY", "").strip(),
-            base_url=os.getenv("HIGGSFIELD_API_BASE", "").strip().rstrip("/"),
+            api_key_id=os.getenv("HIGGSFIELD_API_KEY_ID", "").strip(),
+            api_key_secret=os.getenv("HIGGSFIELD_API_KEY_SECRET", "").strip(),
+            base_url=(os.getenv("HIGGSFIELD_API_BASE", "").strip() or _HIGGSFIELD_DEFAULT_BASE).rstrip("/"),
             endpoint=os.getenv("HIGGSFIELD_AVATAR_ENDPOINT", "").strip(),
         )
 
@@ -151,15 +176,17 @@ class HiggsfieldAvatarProvider:
         env = self._env()
         if not env.configured:
             raise AvatarUnavailable(
-                "Higgsfield avatar is not configured. Set HIGGSFIELD_API_KEY, "
-                "HIGGSFIELD_API_BASE and HIGGSFIELD_AVATAR_ENDPOINT to enable it. "
-                "No presenter is generated until then (a blank/wrong avatar is "
-                "never shipped)."
+                "Higgsfield avatar is not configured. Set HIGGSFIELD_API_KEY_ID, "
+                "HIGGSFIELD_API_KEY_SECRET and HIGGSFIELD_AVATAR_ENDPOINT (the model "
+                "path from your Higgsfield API dashboard; HIGGSFIELD_API_BASE is "
+                "optional and defaults to https://api.higgsfield.ai). No presenter "
+                "is generated until then (a blank/wrong avatar is never shipped)."
             )
 
         import requests  # local import: this module is usable (config/guard) without it
 
-        headers = {"Authorization": f"Bearer {env.api_key}"}
+        # Higgsfield's documented scheme: `Authorization: Key <id>:<secret>`.
+        headers = {"Authorization": env.auth_header}
         submit_url = f"{env.base_url}/{env.endpoint.lstrip('/')}"
         body = {"prompt": prompt}
         if character_ref:
@@ -172,17 +199,25 @@ class HiggsfieldAvatarProvider:
         if not job_id:
             raise AvatarUnavailable(f"Higgsfield submit returned no job id: {submitted!r}")
 
-        # Poll the documented async lifecycle. Field access is defensive across
-        # the common shapes (status/state, url/output_url/video_url); verify
-        # against the live API response before enabling in production.
-        status_url = f"{submit_url.rstrip('/')}/{job_id}"
+        # Poll the documented status endpoint: <base>/requests/<id>/status. If the
+        # submit response handed back an explicit status link, prefer it. Field
+        # access stays defensive across the common shapes (status/state,
+        # url/output_url/video_url); verify against the live API before enabling.
+        status_url = (
+            submitted.get("status_url")
+            or (submitted.get("links") or {}).get("status")
+            or f"{env.base_url}/requests/{job_id}/status"
+        )
         for _ in range(self.max_polls):
             poll = requests.get(status_url, headers=headers, timeout=30)
             poll.raise_for_status()
             data = poll.json() if poll.content else {}
             state = str(data.get("status") or data.get("state") or "").lower()
             if state in ("completed", "succeeded", "success", "done"):
-                url = data.get("url") or data.get("output_url") or data.get("video_url")
+                url = (
+                    data.get("url") or data.get("output_url") or data.get("video_url")
+                    or (data.get("result") or {}).get("url")
+                )
                 if not url:
                     raise AvatarUnavailable(f"Higgsfield job {job_id} finished with no output url")
                 return self._download(url, out_path)
