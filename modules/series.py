@@ -319,3 +319,34 @@ class SeriesRegistry:
         when given. (Automation level governs how much a run may do on its own,
         never whether the publish gate is consulted — it always is.)"""
         return self.list(channel_id=channel_id, status=STATUS_ACTIVE)
+
+
+# -- pipeline helpers -------------------------------------------------------
+# Kept here rather than in main.py so they can be unit-tested without importing
+# the whole pipeline (which pulls heavy render dependencies).
+
+def resolve_series(series_id, registry: Optional["SeriesRegistry"] = None) -> Optional[Series]:
+    """Resolve a Series by id, or None when none is asked for or it can't be
+    found. Never raises: a series is an optional overlay on a channel, so a
+    missing or misconfigured one must not stop a run — it just runs unscoped.
+    `registry` is injectable for tests."""
+    if not series_id:
+        return None
+    try:
+        reg = registry or SeriesRegistry()
+        series = reg.get(str(series_id))
+        logger.info("Run scoped to series %s (%s)", series.series_id, series.name)
+        return series
+    except Exception as e:
+        logger.warning(
+            "Could not resolve series %r (%s: %s) — running without a series",
+            series_id, type(e).__name__, e,
+        )
+        return None
+
+
+def effective_niche(explicit: Optional[str], series_obj: Optional[Series], ctx_niche: Optional[str]) -> str:
+    """Niche precedence, most specific first: an explicit override wins, then
+    the series' own niche, then the channel's, then the long-standing default."""
+    series_niche = series_obj.niche if series_obj and series_obj.niche else None
+    return explicit or series_niche or ctx_niche or "history mysteries"

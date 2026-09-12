@@ -44,6 +44,7 @@ from modules.media_fetcher import MediaFetcher
 from modules.pipeline_stages import PipelineStage, PipelineStateMachine
 from modules.research_engine import research_topic
 from modules.script_engine import ScriptEngine
+from modules.series import effective_niche, resolve_series
 from modules.state_store import StateStore
 from modules.subtitle_generator import SubtitleGenerator
 from modules.thumbnail_generator import ThumbnailGenerator
@@ -186,6 +187,7 @@ def run(
     skip_upload: bool = False,
     script_file: str | None = None,
     channel: ChannelContext | str | None = None,
+    series: str | None = None,
 ):
     """Run the pipeline once, for one channel.
 
@@ -201,7 +203,11 @@ def run(
     Path("logs").mkdir(exist_ok=True)
     ctx = channel if isinstance(channel, ChannelContext) else resolve_channel(channel)
     channel_id = str(ctx.channel_id)
-    niche = niche or ctx.niche or "history mysteries"
+    # A series is an optional recurring content line within the channel. When
+    # given, its niche seeds this run (unless --niche was passed explicitly).
+    # See modules/series.py; resolution never raises.
+    series_obj = resolve_series(series)
+    niche = effective_niche(niche, series_obj, ctx.niche)
     logger.info("=== Chronos YouTube Bot starting [channel: %s] ===", channel_id)
     # What this run consumes. Recorded whether or not it ends in an upload —
     # a render that is later blocked still cost real money.
@@ -247,7 +253,8 @@ def run(
             topic = topic_mgr.pick_topic(niche)
         logger.info("Topic: %s", topic)
     events.emit(events.TOPIC_SELECTED, agent="topic_manager", status=events.STATUS_COMPLETED,
-                channel_id=channel_id, metadata={"topic": topic})
+                channel_id=channel_id,
+                metadata={"topic": topic, **({"series_id": series_obj.series_id} if series_obj else {})})
 
     # ── Pipeline stage tracking (audit trail only — does NOT gate publish)
     # This run is tracked through Topic -> Research -> Script -> Fact Check ->
@@ -614,6 +621,9 @@ if __name__ == "__main__":
     parser.add_argument("--script-file", default=None,
                         help="Reuse a saved script JSON instead of calling Gemini "
                              "(e.g. output/<slug>/script.json, or samples/demo_script.json)")
+    parser.add_argument("--series", default=None,
+                        help="Series id to run this video under (default: none — "
+                             "the channel's own niche is used; see modules/series.py)")
     args = parser.parse_args()
 
     if args.list_channels:
@@ -626,4 +636,5 @@ if __name__ == "__main__":
             skip_upload=args.no_upload,
             script_file=args.script_file,
             channel=args.channel,
+            series=args.series,
         )

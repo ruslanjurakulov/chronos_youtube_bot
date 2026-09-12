@@ -16,8 +16,10 @@ from modules.series import (
     STATUS_PAUSED,
     Series,
     SeriesRegistry,
+    effective_niche,
     normalize_automation_level,
     normalize_status,
+    resolve_series,
     validate_series_id,
 )
 
@@ -161,6 +163,39 @@ class SeriesRegistryTestCase(unittest.TestCase):
             path.write_text("{not valid json")
             reg = SeriesRegistry(sync=_FakeSync([], enabled=False), file_path=path)
             self.assertEqual(reg.list(), [])
+
+
+class PipelineHelpersTestCase(unittest.TestCase):
+    def _series(self, sid, niche="history", status="ACTIVE"):
+        return Series.from_row({"series_id": sid, "niche": niche, "status": status})
+
+    def test_resolve_series_none_for_empty(self):
+        self.assertIsNone(resolve_series(None))
+        self.assertIsNone(resolve_series(""))
+
+    def test_resolve_series_returns_from_registry(self):
+        reg = SeriesRegistry([self._series("ancient")])
+        s = resolve_series("ancient", registry=reg)
+        self.assertIsNotNone(s)
+        self.assertEqual(s.series_id, "ancient")
+
+    def test_resolve_series_unknown_id_returns_none_not_raise(self):
+        reg = SeriesRegistry([self._series("ancient")])
+        # An overlay that can't be found must not stop a run.
+        self.assertIsNone(resolve_series("missing", registry=reg))
+
+    def test_effective_niche_precedence(self):
+        s = self._series("x", niche="finance")
+        # explicit wins over everything
+        self.assertEqual(effective_niche("space", s, "gaming"), "space")
+        # then the series' niche over the channel's
+        self.assertEqual(effective_niche(None, s, "gaming"), "finance")
+        # then the channel's over the default
+        self.assertEqual(effective_niche(None, None, "gaming"), "gaming")
+        # then the long-standing default
+        self.assertEqual(effective_niche(None, None, None), "history mysteries")
+        # a series with an empty niche falls through to the channel's
+        self.assertEqual(effective_niche(None, self._series("y", niche=""), "gaming"), "gaming")
 
 
 if __name__ == "__main__":
