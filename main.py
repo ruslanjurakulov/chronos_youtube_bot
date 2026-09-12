@@ -546,8 +546,13 @@ def run(
         events.emit(events.PUBLISH_ALLOWED, agent="publish_gate", status=events.STATUS_COMPLETED,
                     channel_id=channel_id, metadata=gate.to_metadata())
 
+    # Auto-publish is a per-channel policy on top of the gate, never a weakening
+    # of it: the gate has already decided (above), and this only governs whether
+    # an ALLOWED video uploads now or waits on disk for a human. Defaults on, so
+    # existing channels are unaffected.
+    auto_publish = ctx.auto_publish
     video_id, video_url = None, None
-    if not skip_upload and gate.allowed:
+    if not skip_upload and gate.allowed and auto_publish:
         events.emit(events.UPLOAD_STARTED, agent="youtube_uploader", status=events.STATUS_RUNNING,
                     channel_id=channel_id, metadata={"topic": topic})
         try:
@@ -657,6 +662,16 @@ def run(
             )
     elif not gate.allowed:
         pass  # already reported above
+    elif not skip_upload and not auto_publish:
+        # The gate PASSED but this channel's auto-publish is off: the video is
+        # finished and waits on disk for a human to publish. A policy hold, not a
+        # gate failure — publish.allowed already fired for this same video.
+        logger.info("[channel: %s] Auto-publish OFF — gate passed, holding %s for review",
+                    channel_id, video_path)
+        print(f"\n⏸ Auto-publish OFF: gate passed, video held for review: {video_path}")
+        events.emit(events.PUBLISH_HELD, agent="publish_gate", status=events.STATUS_COMPLETED,
+                    channel_id=channel_id,
+                    metadata={"reason": "auto_publish_off", "video_path": str(video_path)})
     else:
         print(f"\n✓ Video saved (upload skipped): {video_path}")
 
