@@ -47,6 +47,7 @@ from modules.resource_monitor import MemorySampler, log_usage
 from modules.video_review import VideoReview
 from modules.fact_checker import fact_check_claims
 from modules.media_fetcher import MediaFetcher
+from modules import pinned_comment
 from modules import playlist
 from modules.pipeline_stages import PipelineStage, PipelineStateMachine
 from modules.research_engine import research_topic
@@ -680,6 +681,28 @@ def run(
                     channel_id=channel_id, video_id=video_id,
                     metadata={"playlist_id": playlist_id,
                               **({"item_id": item_id} if item_id else {})},
+                    store=store)
+
+            # ── Engagement comment ──────────────────────────────────────
+            # Post the channel's own first comment — an on-topic question — so
+            # the video opens with a reply prompt (the creator pins it in one
+            # tap; the Data API can't pin). Best-effort and downstream of a live
+            # video: a comment failure never turns a successful publish into a
+            # failed run. Off when the channel set pinned_comment=false, and a
+            # no-op without the force-ssl scope. See modules/pinned_comment.py.
+            if getattr(ctx.agent, "pinned_comment", True):
+                question = pinned_comment.craft_question(
+                    topic, title=published_title, hook=getattr(script, "hook_sentence", ""))
+                thread_id = pinned_comment.post_pinned_comment(
+                    uploader.service, video_id, question,
+                    granted_scopes=uploader._granted_scopes())
+                events.emit(
+                    events.COMMENT_POSTED if thread_id else events.COMMENT_SKIPPED,
+                    agent="pinned_comment",
+                    status=events.STATUS_COMPLETED if thread_id else events.STATUS_FAILED,
+                    channel_id=channel_id, video_id=video_id,
+                    metadata={"question": question,
+                              **({"thread_id": thread_id} if thread_id else {})},
                     store=store)
 
             # ── Review: put the finished video where a human can watch it ──
