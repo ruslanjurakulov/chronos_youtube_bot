@@ -107,6 +107,10 @@ class Series:
     platforms: tuple[str, ...] = ("youtube",)
     automation_level: str = DEFAULT_AUTOMATION_LEVEL
     status: str = STATUS_PAUSED
+    # The YouTube playlist this series' videos are added to after publishing.
+    # Empty (the default) means no playlist — reading it never needs a schema
+    # change, since a missing column/key simply reads as "". See modules/playlist.py.
+    playlist_id: str = ""
     created_at: Optional[str] = None
     updated_at: Optional[str] = None
 
@@ -136,6 +140,7 @@ class Series:
             platforms=tuple(platforms) if platforms else ("youtube",),
             automation_level=normalize_automation_level(row.get("automation_level")),
             status=normalize_status(row.get("status")),
+            playlist_id=str(row.get("playlist_id") or ""),
             created_at=row.get("created_at"),
             updated_at=row.get("updated_at"),
         )
@@ -156,6 +161,7 @@ class Series:
             "platforms": list(self.platforms),
             "automation_level": self.automation_level,
             "status": self.status,
+            "playlist_id": self.playlist_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }

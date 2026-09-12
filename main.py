@@ -45,6 +45,7 @@ from modules.resource_monitor import MemorySampler, log_usage
 from modules.video_review import VideoReview
 from modules.fact_checker import fact_check_claims
 from modules.media_fetcher import MediaFetcher
+from modules import playlist
 from modules.pipeline_stages import PipelineStage, PipelineStateMachine
 from modules.research_engine import research_topic
 from modules.script_engine import ScriptEngine
@@ -619,6 +620,22 @@ def run(
             # any) to "published". Only here, at real upload success, never at
             # pick time.
             topic_mgr.mark_queue_entry_published()
+
+            # If this run is scoped to a series with a playlist, add the freshly
+            # published video to it — a playlist keeps the series bingeable.
+            # Best-effort and downstream of a live video: a playlist error never
+            # turns a successful publish into a failed run. See modules/playlist.py.
+            playlist_id = playlist.resolve_playlist_id(series_obj)
+            if playlist_id:
+                item_id = playlist.add_video_to_playlist(uploader.service, playlist_id, video_id)
+                events.emit(
+                    events.PLAYLIST_ADDED if item_id else events.PLAYLIST_FAILED,
+                    agent="playlist",
+                    status=events.STATUS_COMPLETED if item_id else events.STATUS_FAILED,
+                    channel_id=channel_id, video_id=video_id,
+                    metadata={"playlist_id": playlist_id,
+                              **({"item_id": item_id} if item_id else {})},
+                    store=store)
 
             # ── Review: put the finished video where a human can watch it ──
             # Every upload is private (config.YOUTUBE_PRIVACY defaults to it,
