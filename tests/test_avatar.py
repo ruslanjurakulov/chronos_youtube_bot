@@ -23,7 +23,10 @@ from modules.avatar import (
     synthetic_only_guard,
 )
 
-_ENV_KEYS = ("HIGGSFIELD_API_KEY", "HIGGSFIELD_API_BASE", "HIGGSFIELD_AVATAR_ENDPOINT")
+_ENV_KEYS = (
+    "HIGGSFIELD_API_KEY_ID", "HIGGSFIELD_API_KEY_SECRET",
+    "HIGGSFIELD_API_BASE", "HIGGSFIELD_AVATAR_ENDPOINT",
+)
 _AVATAR_ENV_KEYS = (
     "NIGHTSHIFT_AVATAR", "NIGHTSHIFT_AVATAR_ENABLED", "NIGHTSHIFT_AVATAR_PROVIDER",
     "NIGHTSHIFT_AVATAR_CHARACTER_PROMPT", "NIGHTSHIFT_AVATAR_CHARACTER_REF",
@@ -109,8 +112,9 @@ class HiggsfieldProviderTestCase(unittest.TestCase):
                 return self._payload
 
         env = {
-            "HIGGSFIELD_API_KEY": "k", "HIGGSFIELD_API_BASE": "https://api.example/v1",
-            "HIGGSFIELD_AVATAR_ENDPOINT": "avatar/generate",
+            "HIGGSFIELD_API_KEY_ID": "id123", "HIGGSFIELD_API_KEY_SECRET": "sec456",
+            "HIGGSFIELD_API_BASE": "https://api.higgsfield.ai",
+            "HIGGSFIELD_AVATAR_ENDPOINT": "higgsfield-ai/soul/v2/standard",
         }
         with patch.dict(os.environ, env, clear=False), \
              patch("requests.post", return_value=FakeResp({"id": "job-1"})) as post, \
@@ -121,6 +125,26 @@ class HiggsfieldProviderTestCase(unittest.TestCase):
         post.assert_called_once()
         get.assert_called()
         dl.assert_called_once()
+        # Higgsfield's documented auth scheme — `Key <id>:<secret>`, not Bearer.
+        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Key id123:sec456")
+        # Submit hits the model path; polling hits the documented status endpoint.
+        self.assertEqual(post.call_args.args[0], "https://api.higgsfield.ai/higgsfield-ai/soul/v2/standard")
+        self.assertEqual(get.call_args.args[0], "https://api.higgsfield.ai/requests/job-1/status")
+
+    def test_base_url_defaults_when_unset(self):
+        # HIGGSFIELD_API_BASE is optional: the credential pair + model path are
+        # enough, and the base defaults to the documented host.
+        env = {
+            "HIGGSFIELD_API_KEY_ID": "id", "HIGGSFIELD_API_KEY_SECRET": "sec",
+            "HIGGSFIELD_AVATAR_ENDPOINT": "higgsfield-ai/soul/v2/standard",
+            "HIGGSFIELD_API_BASE": "",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            os.environ.pop("HIGGSFIELD_API_BASE", None)
+            env_obj = HiggsfieldAvatarProvider()._env()
+        self.assertTrue(env_obj.configured)
+        self.assertEqual(env_obj.base_url, "https://api.higgsfield.ai")
+        self.assertEqual(env_obj.auth_header, "Key id:sec")
 
 
 class _FakeSeries:

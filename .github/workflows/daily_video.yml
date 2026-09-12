@@ -230,6 +230,16 @@ jobs:
           INPUT_NICHE: ${{ github.event.inputs.niche }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+          # --- AITuber presenter (optional, off unless enabled) -------------
+          # The synthetic on-camera character (modules/avatar.py). Faceless by
+          # default: NIGHTSHIFT_AVATAR_ENABLED must be an explicit true, and the
+          # Higgsfield credentials must be set, or the run stays faceless. An
+          # unset secret is an empty string; the provider then fails loud only
+          # when the presenter is enabled — it never ships a blank/wrong avatar.
+          NIGHTSHIFT_AVATAR_ENABLED: ${{ vars.NIGHTSHIFT_AVATAR_ENABLED }}
+          HIGGSFIELD_API_KEY_ID: ${{ secrets.HIGGSFIELD_API_KEY_ID }}
+          HIGGSFIELD_API_KEY_SECRET: ${{ secrets.HIGGSFIELD_API_KEY_SECRET }}
+          HIGGSFIELD_AVATAR_ENDPOINT: ${{ vars.HIGGSFIELD_AVATAR_ENDPOINT }}
           # --- Per-channel publishing tokens -------------------------------
           # GitHub Actions secrets cannot be enumerated at runtime, so each
           # channel's token secret is listed here explicitly — one line per
