@@ -145,7 +145,23 @@ class Notifier:
         if webhook_url:
             results["slack"] = self._send_slack(webhook_url, summary)
 
+        # Telegram, when TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID are set. Same
+        # opt-in, degrade-safe posture as slack — TelegramControl.notify never
+        # raises, so a missing token or a blip can't affect the run.
+        telegram = self._telegram()
+        if telegram is not None and telegram.enabled:
+            results["telegram"] = telegram.notify(summary)
+
         return results
+
+    @staticmethod
+    def _telegram():
+        try:
+            from modules.telegram_control import TelegramControl
+
+            return TelegramControl()
+        except Exception:  # import guard — never let it break notifications
+            return None
 
     def _send_log(self, summary: str) -> bool:
         logger.info("Pending approval notification:\n%s", summary)
