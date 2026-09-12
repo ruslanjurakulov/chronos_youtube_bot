@@ -111,12 +111,19 @@ def plan_titles(
     *,
     gen: Optional[Callable[[str, Optional[str]], str]] = None,
     n: int = 5,
+    seed_titles: tuple = (),
 ) -> TitlePlan:
     """Decide the title/thumbnail packaging for a topic before the script.
 
     `gen(prompt, system) -> text` is an optional model callable (the script
     engine's `_gen` fits). Without it — or on any failure — a heuristic plan is
-    returned. Never raises. `chosen` is the A title, `alt` the A/B alternative."""
+    returned. Never raises. `chosen` is the A title, `alt` the A/B alternative.
+
+    `seed_titles` are proven-formula titles (from modules/title_formulas, ranked
+    by the channel's own CTR) to lead the candidate list with, so the chosen A
+    title leans on a shape that has worked here. Advisory: they seed and bias,
+    never replace the model's own titles — the deduped model/heuristic candidates
+    still follow, and a channel with no measured history simply passes none."""
     topic = _clean_title(topic) or "Untitled"
     candidates: list[str] = []
     thumbnail_concept = ""
@@ -144,6 +151,18 @@ def plan_titles(
 
     if not candidates:
         candidates = _heuristic_candidates(topic, niche)
+
+    # Lead with the channel's proven-formula seeds, then the model/heuristic
+    # candidates, deduped. Seeds only reorder and enrich — nothing the model
+    # produced is dropped, so this can't degrade a good title, only surface a
+    # shape that has earned clicks here. With no seeds this is a no-op.
+    if seed_titles:
+        seeds = [_clean_title(s) for s in seed_titles if _clean_title(s)]
+        merged: list[str] = []
+        for t in seeds + candidates:
+            if t and t not in merged:
+                merged.append(t)
+        candidates = merged
 
     candidates = candidates[: max(1, n)]
     chosen = candidates[0] if candidates else topic
