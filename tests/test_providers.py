@@ -10,14 +10,20 @@ from pathlib import Path
 from unittest.mock import patch
 
 from modules.providers import (
+    AnalyticsClientAnalyticsProvider,
     AnalyticsProvider,
+    AudioMixerVoiceProvider,
     GeminiResearchProvider,
     ImageProvider,
     PublishingProvider,
     ResearchProvider,
     VideoProvider,
     VoiceProvider,
+    YouTubeUploaderPublishingProvider,
+    analytics_provider,
+    publishing_provider,
     research_provider,
+    voice_provider,
 )
 
 
@@ -75,6 +81,78 @@ class MediaFetcherSatisfiesMediaProtocolsTestCase(unittest.TestCase):
         fetcher = MediaFetcher("test-slug")
         self.assertIsInstance(fetcher, ImageProvider)
         self.assertIsInstance(fetcher, VideoProvider)
+
+
+class ConcreteAdaptersTestCase(unittest.TestCase):
+    """The voice/publishing/analytics adapters conform to their protocols and
+    delegate faithfully to the wrapped module — tested with injected fakes, so
+    no edge_tts / pydub / Google client is imported."""
+
+    def test_voice_adapter_conforms_and_delegates(self):
+        class FakeMixer:
+            def __init__(self):
+                self.calls = []
+
+            def synthesize_text(self, text, out_path, voice_role="main"):
+                self.calls.append((text, Path(out_path), voice_role))
+                return out_path
+
+        fake = FakeMixer()
+        provider = AudioMixerVoiceProvider(fake)
+        self.assertIsInstance(provider, VoiceProvider)
+        out = provider.synthesize("hello world", Path("/tmp/v.mp3"))
+        self.assertEqual(out, Path("/tmp/v.mp3"))
+        self.assertEqual(fake.calls[0][0], "hello world")
+        self.assertEqual(fake.calls[0][2], "main")
+
+    def test_publishing_adapter_conforms_and_passes_kwargs(self):
+        class FakeUploader:
+            def __init__(self):
+                self.calls = []
+
+            def upload(self, video_path, script, **kwargs):
+                self.calls.append((Path(video_path), script, kwargs))
+                return {"id": "vid-1"}
+
+        fake = FakeUploader()
+        provider = YouTubeUploaderPublishingProvider(fake)
+        self.assertIsInstance(provider, PublishingProvider)
+        script = object()
+        result = provider.upload(Path("/tmp/final.mp4"), script, privacy="private", title_override="B title")
+        self.assertEqual(result, {"id": "vid-1"})
+        # kwargs flow through untouched — nothing the uploader can do is hidden.
+        self.assertEqual(fake.calls[0][2], {"privacy": "private", "title_override": "B title"})
+
+    def test_analytics_adapter_conforms_and_preserves_empty(self):
+        class FakeClient:
+            def __init__(self, ret):
+                self.ret = ret
+                self.calls = []
+
+            def video_performance(self, video_id, start_date, end_date):
+                self.calls.append((video_id, start_date, end_date))
+                return self.ret
+
+        # A real metric passes through.
+        fake = FakeClient({"views": 1234})
+        provider = AnalyticsClientAnalyticsProvider(fake, lookback_days=7)
+        self.assertIsInstance(provider, AnalyticsProvider)
+        self.assertEqual(provider.fetch_metrics("vid-1"), {"views": 1234})
+        # A date window was computed and passed (start < end, ISO dates).
+        vid, start, end = fake.calls[0]
+        self.assertEqual(vid, "vid-1")
+        self.assertLess(start, end)
+
+        # An absent metric stays absent — never fabricated as a zero.
+        empty = AnalyticsClientAnalyticsProvider(FakeClient({}))
+        self.assertEqual(empty.fetch_metrics("vid-2"), {})
+
+    def test_factories_return_conforming_providers(self):
+        # Factories build without importing the heavy modules (construction is
+        # lazy), and what they return conforms to the right protocol.
+        self.assertIsInstance(voice_provider(), VoiceProvider)
+        self.assertIsInstance(publishing_provider(), PublishingProvider)
+        self.assertIsInstance(analytics_provider(), AnalyticsProvider)
 
 
 if __name__ == "__main__":
