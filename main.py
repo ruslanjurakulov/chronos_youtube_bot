@@ -61,6 +61,7 @@ from modules.series import (
 from modules.state_store import StateStore
 from modules.subtitle_generator import SubtitleGenerator
 from modules.thumbnail_generator import ThumbnailGenerator
+from modules import title_formulas
 from modules.title_planner import plan_titles
 from modules.topic_manager import TopicManager
 from modules.youtube_uploader import YouTubeUploader
@@ -96,6 +97,27 @@ def _pick_variant(channel_id: str) -> str:
     except Exception as e:
         logger.warning("A/B variant selection failed (%s: %s) — shipping A", type(e).__name__, e)
         return "A"
+
+
+def _title_seeds(channel_id: str, topic: str) -> tuple:
+    """Proven-formula title seeds for this topic, from the channel's own
+    best-CTR title shapes. Advisory input to the title planner; any failure
+    returns no seeds, so title planning is exactly as it was before this
+    existed. See modules/title_formulas.py."""
+    try:
+        with StateStore() as store:
+            videos = store.list_videos(limit=100000, channel_id=channel_id)
+            metrics = {
+                v["video_id"]: m
+                for v in videos
+                if v.get("video_id") and (m := store.latest_metrics(v["video_id"])) is not None
+            }
+        stats = title_formulas.rank_formulas_by_ctr(videos, metrics)
+        return title_formulas.seed_titles(topic, title_formulas.best_formulas(stats, k=2))
+    except Exception as e:
+        logger.warning("Title-formula seeding failed (%s: %s) — planning without seeds",
+                       type(e).__name__, e)
+        return ()
 
 
 def _publish_short(
@@ -396,13 +418,18 @@ def run(
         # thumbnail concept are planned from the topic, then the script is
         # written to deliver on that exact promise (see modules/title_planner.py).
         # Degrades to a heuristic title if the model call fails — never blocks.
-        title_plan = plan_titles(topic, niche, gen=engine._gen)
+        # Seed the planner with the title shapes that have earned the best CTR
+        # on THIS channel (modules/title_formulas.py). Advisory: it leads the
+        # candidate list, never overrides the model. Empty for a new channel.
+        seeds = _title_seeds(channel_id, topic)
+        title_plan = plan_titles(topic, niche, gen=engine._gen, seed_titles=seeds)
         logger.info("Planned title: %r (%s)", title_plan.chosen, title_plan.source)
         events.emit(events.TITLE_PLANNED, agent="title_planner", status=events.STATUS_COMPLETED,
                     channel_id=channel_id,
                     metadata={"chosen": title_plan.chosen, "alt": title_plan.alt,
                               "source": title_plan.source,
                               "candidates": list(title_plan.candidates),
+                              "seeded_formulas": list(seeds),
                               "thumbnail_concept": title_plan.thumbnail_concept})
         events.emit(events.SCRIPT_STARTED, agent="script_engine", status=events.STATUS_RUNNING,
                     channel_id=channel_id, metadata={"topic": topic, "working_title": title_plan.chosen})

@@ -133,6 +133,11 @@ PLAYLIST_FAILED = "playlist.failed"
 COMMENT_POSTED = "comment.posted"
 COMMENT_SKIPPED = "comment.skipped"
 COMMENT_FAILED = "comment.failed"
+# Re-package underperformers (modules/repackage.py). Advisory: flags published
+# videos whose CTR is well below the channel's own median as candidates for a
+# new title/thumbnail. It never edits a live video — like publish.score it
+# informs a human/Command Center, it does not act.
+REPACKAGE_SUGGESTED = "repackage.suggested"
 # Watch-next link (modules/watch_next.py). A "▶ WATCH NEXT" link into another of
 # the channel's videos, added to the description (the API can't set end screens).
 # Best-effort description text: it never changes what publishes or when.

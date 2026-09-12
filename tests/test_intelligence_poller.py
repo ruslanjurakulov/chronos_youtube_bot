@@ -235,6 +235,9 @@ class IntelligencePollerTestCase(unittest.TestCase):
                 "competitor_snapshots_written": 0,
                 "trending_videos_found": 3,
                 "trending_snapshots_written": 0,
+                # Advisory repackage pass runs too; with one measured video there
+                # is no channel baseline, so it flags nothing.
+                "repackage_candidates": 0,
             },
         )
 
