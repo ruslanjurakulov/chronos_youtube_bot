@@ -101,6 +101,10 @@ CHANNEL_OAUTH_FAILED = "channel.oauth.failed"
 ANALYTICS_UPDATED = "analytics.updated"
 FEEDBACK_GENERATED = "feedback.generated"
 FEEDBACK_APPLIED = "feedback.applied"
+# Niche RPM intelligence (modules/niche_rpm.py). Advisory: a ranking of niches
+# by measured performance for a human/scheduler to consult. It never changes
+# niche selection on its own — like publish.score, it informs, it does not gate.
+NICHE_RPM = "niche.rpm"
 
 # Status vocabulary (free-form, but these are the common ones).
 STATUS_RUNNING = "running"
