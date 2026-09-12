@@ -131,6 +131,18 @@ class HiggsfieldProviderTestCase(unittest.TestCase):
         self.assertEqual(post.call_args.args[0], "https://api.higgsfield.ai/higgsfield-ai/soul/v2/standard")
         self.assertEqual(get.call_args.args[0], "https://api.higgsfield.ai/requests/job-1/status")
 
+    def test_endpoint_defaults_to_kling(self):
+        # The model path is optional: it defaults to Kling 3.0 (the cost pick),
+        # so only the credential pair is required to be configured.
+        env = {"HIGGSFIELD_API_KEY_ID": "id", "HIGGSFIELD_API_KEY_SECRET": "sec"}
+        with patch.dict(os.environ, {k: "" for k in _ENV_KEYS}, clear=False):
+            for k in _ENV_KEYS:
+                os.environ.pop(k, None)
+            os.environ.update(env)
+            e = HiggsfieldAvatarProvider()._env()
+        self.assertTrue(e.configured)
+        self.assertEqual(e.endpoint, "jobs/v2/kling3_0")
+
     def test_base_url_defaults_when_unset(self):
         # HIGGSFIELD_API_BASE is optional: the credential pair + model path are
         # enough, and the base defaults to the documented host.

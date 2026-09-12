@@ -16,13 +16,12 @@ Provider
 documented async lifecycle: submit a generation request, then poll
 `<base>/requests/<id>/status` for the result. Auth is Higgsfield's documented
 `Authorization: Key <id>:<secret>` (a two-part key, not a bearer token). This
-module does NOT hardcode the per-model endpoint path or credentials — the
-operator supplies HIGGSFIELD_API_KEY_ID / HIGGSFIELD_API_KEY_SECRET and the
-model path via HIGGSFIELD_AVATAR_ENDPOINT (HIGGSFIELD_API_BASE is optional and
-defaults to https://api.higgsfield.ai), so nothing here is a guessed or faked
-call. Until those are set, generate() raises AvatarUnavailable with exactly what
-to set, the same "no silent fallback" posture as audio_mixer.verify_voice: a
-broken avatar must fail loudly, never quietly ship a wrong or empty presenter.
+operator supplies HIGGSFIELD_API_KEY_ID / HIGGSFIELD_API_KEY_SECRET; the model
+defaults to Kling 3.0 (jobs/v2/kling3_0), the most cost-effective video model
+(~6 credits/generation), and HIGGSFIELD_AVATAR_ENDPOINT overrides it. Until the
+credentials are set, generate() raises AvatarUnavailable with exactly what to
+set, the same "no silent fallback" posture as audio_mixer.verify_voice: a broken
+avatar must fail loudly, never quietly ship a wrong or empty presenter.
 
 Nothing here is wired into the render pipeline yet; enabling the presenter in a
 run is a later, gated change (behind AvatarConfig.enabled and the publish gate,
@@ -117,11 +116,16 @@ class AvatarConfig:
 
 # Higgsfield's documented API base and status path. The auth scheme is
 # `Authorization: Key <id>:<secret>` (a two-part key, NOT a bearer token), and
-# a submit returns a request id polled at `<base>/requests/<id>/status`. These
-# are the verified public-API conventions; the per-model endpoint PATH still
-# comes from the operator (each model — soul, speech2video, image2video — has
-# its own path), so nothing model-specific is guessed here.
+# a submit returns a request id polled at `<base>/requests/<id>/status`.
 _HIGGSFIELD_DEFAULT_BASE = "https://api.higgsfield.ai"
+# The default presenter model: Kling 3.0, whose documented job endpoint is
+# `POST /jobs/v2/kling3_0`. Chosen because it is by far the most cost-effective
+# video model on the plan — ~6 credits/generation (≈167 per 1,000 credits),
+# versus ~32.5 for seedance (≈30 per 1,000). One presenter clip per video loops
+# in the corner, so at ~6 credits a 1,000-credit month covers a daily channel
+# many times over. The operator can override HIGGSFIELD_AVATAR_ENDPOINT to point
+# at a different model (soul, speech2video, …) when they want one.
+_HIGGSFIELD_DEFAULT_ENDPOINT = "jobs/v2/kling3_0"
 
 
 @dataclass(frozen=True)
@@ -133,8 +137,8 @@ class _HiggsfieldEnv:
 
     @property
     def configured(self) -> bool:
-        # base_url has a default, so only the credential pair and the model path
-        # are truly required from the operator.
+        # base_url and endpoint both have defaults, so only the credential pair
+        # is truly required from the operator — Kling 3.0 is the default model.
         return bool(self.api_key_id and self.api_key_secret and self.endpoint)
 
     @property
@@ -149,12 +153,12 @@ class HiggsfieldAvatarProvider:
     guessed:
       * HIGGSFIELD_API_KEY_ID      — the key id half of the credential
       * HIGGSFIELD_API_KEY_SECRET  — the key secret half
-      * HIGGSFIELD_AVATAR_ENDPOINT — the avatar model path (e.g.
-        ``higgsfield-ai/soul/v2/standard`` or the speech/talking-head model),
-        copied from the Higgsfield API dashboard
+      * HIGGSFIELD_AVATAR_ENDPOINT — optional; the model path. Defaults to
+        ``jobs/v2/kling3_0`` (Kling 3.0 — the cost-effective default). Override
+        to point at another model (soul, speech2video, …).
       * HIGGSFIELD_API_BASE        — optional; defaults to https://api.higgsfield.ai
-    When the credential pair or the model path is missing, generate() raises
-    AvatarUnavailable naming exactly what to set.
+    When the credential pair is missing, generate() raises AvatarUnavailable
+    naming exactly what to set.
     """
 
     def __init__(self, *, poll_interval: float = 5.0, max_polls: int = 60):
@@ -166,7 +170,7 @@ class HiggsfieldAvatarProvider:
             api_key_id=os.getenv("HIGGSFIELD_API_KEY_ID", "").strip(),
             api_key_secret=os.getenv("HIGGSFIELD_API_KEY_SECRET", "").strip(),
             base_url=(os.getenv("HIGGSFIELD_API_BASE", "").strip() or _HIGGSFIELD_DEFAULT_BASE).rstrip("/"),
-            endpoint=os.getenv("HIGGSFIELD_AVATAR_ENDPOINT", "").strip(),
+            endpoint=(os.getenv("HIGGSFIELD_AVATAR_ENDPOINT", "").strip() or _HIGGSFIELD_DEFAULT_ENDPOINT).lstrip("/"),
         )
 
     def generate(self, prompt: str, character_ref: Optional[str], out_path: Path) -> Path:
@@ -176,11 +180,12 @@ class HiggsfieldAvatarProvider:
         env = self._env()
         if not env.configured:
             raise AvatarUnavailable(
-                "Higgsfield avatar is not configured. Set HIGGSFIELD_API_KEY_ID, "
-                "HIGGSFIELD_API_KEY_SECRET and HIGGSFIELD_AVATAR_ENDPOINT (the model "
-                "path from your Higgsfield API dashboard; HIGGSFIELD_API_BASE is "
-                "optional and defaults to https://api.higgsfield.ai). No presenter "
-                "is generated until then (a blank/wrong avatar is never shipped)."
+                "Higgsfield avatar is not configured. Set HIGGSFIELD_API_KEY_ID and "
+                "HIGGSFIELD_API_KEY_SECRET (the model defaults to Kling 3.0, "
+                "jobs/v2/kling3_0, ~6 credits/generation; override with "
+                "HIGGSFIELD_AVATAR_ENDPOINT, and HIGGSFIELD_API_BASE defaults to "
+                "https://api.higgsfield.ai). No presenter is generated until then "
+                "(a blank/wrong avatar is never shipped)."
             )
 
         import requests  # local import: this module is usable (config/guard) without it
