@@ -111,6 +111,10 @@ CREDENTIAL_HEALTH = "credential.health"
 ANALYTICS_UPDATED = "analytics.updated"
 FEEDBACK_GENERATED = "feedback.generated"
 FEEDBACK_APPLIED = "feedback.applied"
+# Series playlist (modules/playlist.py). Best-effort, downstream of a live
+# video: `playlist.failed` never means the run failed — the video is published.
+PLAYLIST_ADDED = "playlist.added"
+PLAYLIST_FAILED = "playlist.failed"
 # Niche RPM intelligence (modules/niche_rpm.py). Advisory: a ranking of niches
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
