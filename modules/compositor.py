@@ -273,6 +273,40 @@ class Compositor:
 
     # ------------------------------------------------------------------ Master render
 
+    def _build_presenter_clip(self, presenter_path: Path, total_duration: float):
+        """Load the AITuber presenter clip and size/position it into a corner
+        inset. Returns a positioned VideoClip, or None if the file can't be used
+        — a bad presenter must degrade to a faceless render, never crash it or
+        put a broken frame on screen. Its own audio is dropped so it can't
+        displace the narration set on the final composite."""
+        from modules.avatar import presenter_layout
+
+        try:
+            clip = VideoFileClip(str(presenter_path))
+        except Exception as e:
+            logger.error("Could not open presenter clip %s (%s: %s) — rendering faceless",
+                         presenter_path, type(e).__name__, e)
+            return None
+        # Registered so the finally-block in render() closes its reader.
+        self._readers[Path(presenter_path)] = clip
+        try:
+            layout = presenter_layout(VIDEO_WIDTH, VIDEO_HEIGHT)
+            src_dur = clip.duration or total_duration
+            dur = min(src_dur, total_duration)
+            positioned = (
+                clip.subclip(0, dur)
+                .without_audio()
+                .resize(newsize=(layout["w"], layout["h"]))
+                .set_position((layout["x"], layout["y"]))
+                .set_start(0)
+                .set_duration(dur)
+            )
+            return positioned
+        except Exception as e:
+            logger.error("Could not place presenter clip (%s: %s) — rendering faceless",
+                         type(e).__name__, e)
+            return None
+
     def render(
         self,
         script: Script,
@@ -281,6 +315,7 @@ class Compositor:
         image_paths: list[Path],
         word_timestamps: list[dict],
         section_timeline: list[dict],
+        presenter_path: Path | None = None,
     ) -> Path:
         logger.info("Starting render for: %s", self.slug)
 
@@ -338,8 +373,19 @@ class Compositor:
                 len(subtitle_clips), len(self._text_clips),
             )
 
-            mark_stage(f"composite {len(subtitle_clips) + 1} layer(s)")
-            final = CompositeVideoClip([bg] + subtitle_clips,
+            # Optional AITuber presenter, composited into a corner beneath the
+            # subtitles (so captions always stay legible on top of it). Absent by
+            # default — presenter_layer is then empty and the layer stack is
+            # exactly what it has always been.
+            presenter_layer = []
+            if presenter_path is not None:
+                mark_stage("build presenter overlay")
+                presenter_clip = self._build_presenter_clip(presenter_path, total_duration)
+                if presenter_clip is not None:
+                    presenter_layer = [presenter_clip]
+
+            mark_stage(f"composite {len(subtitle_clips) + len(presenter_layer) + 1} layer(s)")
+            final = CompositeVideoClip([bg] + presenter_layer + subtitle_clips,
                                        size=(VIDEO_WIDTH, VIDEO_HEIGHT))
             final = final.set_audio(audio).set_duration(total_duration)
 

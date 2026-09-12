@@ -61,6 +61,15 @@ MEDIA_COMPLETED = "media.completed"
 RENDER_STARTED = "render.started"
 RENDER_COMPLETED = "render.completed"
 RENDER_FAILED = "render.failed"
+# AITuber presenter (modules/avatar.py). Optional, off by default; a run stays
+# faceless unless a channel/series enables it. `avatar.skipped` records the
+# common case (no presenter asked for); `avatar.failed` records an enabled-but-
+# -unconfigured or refused request — the run then continues faceless (a wrong or
+# blank presenter is never shipped), it never means the video failed.
+AVATAR_STARTED = "avatar.started"
+AVATAR_COMPLETED = "avatar.completed"
+AVATAR_SKIPPED = "avatar.skipped"
+AVATAR_FAILED = "avatar.failed"
 THUMBNAIL_STARTED = "thumbnail.started"
 THUMBNAIL_COMPLETED = "thumbnail.completed"
 UPLOAD_STARTED = "upload.started"
