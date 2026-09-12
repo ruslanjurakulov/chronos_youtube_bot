@@ -127,12 +127,39 @@ def short_title(title: str) -> str:
     return f"{base}{tag}"
 
 
-def short_description(title: str, video_url: str | None) -> str:
-    """A description that points at the full video, when there is one to point at."""
-    lines = [(title or "").strip()]
+#: Hashtags that tag the clip as a Short and give it a little discovery surface.
+#: Kept short so the description stays about the funnel, not a hashtag wall.
+_SHORT_HASHTAGS = "#Shorts #shorts"
+
+
+def short_description(title: str, video_url: str | None, hook: str = "") -> str:
+    """A funnel description whose whole job is to send the viewer to the full
+    video.
+
+    The link goes on the FIRST line: YouTube collapses a description after
+    roughly three lines behind "...more", so a "full video" link buried at the
+    bottom is a link almost nobody sees. Above the fold it is one tap away. An
+    explicit call to action and a one-line tease (the script's hook, when given)
+    tell the viewer there is a whole story waiting; hashtags tag it as a Short.
+
+    With no URL there is nothing to funnel into, so it degrades to a clean
+    title-only description — and, deliberately, contains no dangling "Full
+    video" label pointing nowhere.
+    """
+    title = (title or "").strip()
+    hook = " ".join((hook or "").split()).strip()
     if video_url:
-        lines += ["", f"Full video: {video_url}"]
-    return "\n".join(line for line in lines if line is not None).strip()
+        lines = [
+            f"▶ Full video: {video_url}",
+            "",
+            "You just watched the hook — the full story is in the video above 👆",
+        ]
+        if hook:
+            lines += ["", hook]
+        lines += ["", title, "", _SHORT_HASHTAGS]
+    else:
+        lines = [title, "", _SHORT_HASHTAGS]
+    return "\n".join(lines).strip()
 
 
 def render_short(
