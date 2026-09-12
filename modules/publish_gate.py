@@ -183,7 +183,14 @@ def _check_fact_results(decision: GateDecision, config: GateConfig, fact_results
     reaches the event stream.
     """
     if fact_results is None:
-        decision.warnings.append("fact_check_not_run")
+        # A check you configured to block, when it did not run, blocks — a
+        # fact-check that never ran is a missing gate, not a passed one, and
+        # letting it through silently is exactly the "unknown read as OK" this
+        # gate exists to prevent. When block_on_fact_check is off you only
+        # wanted a warning anyway, so it stays one.
+        (decision.blocks if config.block_on_fact_check else decision.warnings).append(
+            "fact_check_not_run"
+        )
         return
     decision.checks_run.append("fact_check")
     try:
@@ -193,7 +200,10 @@ def _check_fact_results(decision: GateDecision, config: GateConfig, fact_results
         reason = f"fact_check_flagged:{len(flagged)}"
         (decision.blocks if config.block_on_fact_check else decision.warnings).append(reason)
     except Exception as e:
-        decision.warnings.append(f"fact_check_errored:{type(e).__name__}")
+        # Same reasoning: the check was asked for and could not complete.
+        (decision.blocks if config.block_on_fact_check else decision.warnings).append(
+            f"fact_check_errored:{type(e).__name__}"
+        )
 
 
 def _check_originality(decision: GateDecision, config: GateConfig, topic: str, originality) -> None:
@@ -205,7 +215,12 @@ def _check_originality(decision: GateDecision, config: GateConfig, topic: str, o
     reused content, so it belongs here too.
     """
     if not topic:
-        decision.warnings.append("originality_not_run:no_topic")
+        # No topic means duplication cannot be checked at all. If the channel
+        # is configured to block duplicates, an uncheckable case blocks rather
+        # than passing unverified.
+        (decision.blocks if config.block_on_duplicate else decision.warnings).append(
+            "originality_not_run:no_topic"
+        )
         return
     decision.checks_run.append("originality")
     try:
@@ -216,9 +231,14 @@ def _check_originality(decision: GateDecision, config: GateConfig, topic: str, o
             engine = OriginalityEngine()
         result = engine.check(topic)
     except Exception as e:
-        # Loading a model can fail on a constrained runner. A missing check is
-        # a gap to report, not a reason to stop the channel.
-        decision.warnings.append(f"originality_errored:{type(e).__name__}")
+        # Loading a model can fail on a constrained runner. That is a real risk,
+        # but a duplicate check that could not run is not evidence the topic is
+        # original — so it inherits block_on_duplicate rather than passing. The
+        # safe direction: a blocked video stays private on disk for a human, it
+        # is never lost. Set block_on_duplicate off to make this a warning.
+        (decision.blocks if config.block_on_duplicate else decision.warnings).append(
+            f"originality_errored:{type(e).__name__}"
+        )
         return
 
     if getattr(result, "is_duplicate", False):

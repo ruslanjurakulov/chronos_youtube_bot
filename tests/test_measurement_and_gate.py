@@ -357,8 +357,12 @@ class PublishGateTestCase(unittest.TestCase):
             )
             self.assertIn("rendered_file_too_small", decision.blocks)
 
-    def test_a_broken_checker_warns_but_never_blocks(self):
-        # A checker outage must not become a channel outage.
+    def test_a_broken_checker_blocks_by_default(self):
+        # A duplicate check that could not run is not evidence the topic is
+        # original. With block_on_duplicate on (the default) the video is held
+        # for a human rather than passed unchecked; a channel that only wants a
+        # warning turns block_on_duplicate off (covered in
+        # GateFailsClosedWhenAConfiguredCheckCannotRun).
         with tempfile.TemporaryDirectory() as tmp:
             decision = publish_gate.evaluate(
                 script=script(),
@@ -367,10 +371,10 @@ class PublishGateTestCase(unittest.TestCase):
                 channel=channel(),
                 originality=BrokenOriginality(),
             )
-        self.assertTrue(decision.allowed)
-        self.assertTrue(any(w.startswith("originality_errored") for w in decision.warnings))
+        self.assertFalse(decision.allowed)
+        self.assertTrue(any(b.startswith("originality_errored") for b in decision.blocks))
 
-    def test_a_fact_check_that_never_ran_warns_but_does_not_block(self):
+    def test_a_fact_check_that_never_ran_blocks_by_default(self):
         with tempfile.TemporaryDirectory() as tmp:
             decision = publish_gate.evaluate(
                 script=script(),
@@ -379,8 +383,8 @@ class PublishGateTestCase(unittest.TestCase):
                 channel=channel(),
                 originality=NoDuplicates(),
             )
-        self.assertTrue(decision.allowed)
-        self.assertIn("fact_check_not_run", decision.warnings)
+        self.assertFalse(decision.allowed)
+        self.assertIn("fact_check_not_run", decision.blocks)
 
     def test_a_channel_can_disable_the_gate_entirely(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -476,3 +480,74 @@ class PexelsCostTestCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OriginalityErrors:
+    """An originality engine that cannot load its model — the constrained-runner
+    case the gate used to wave through as a warning."""
+
+    def check(self, topic):
+        raise RuntimeError("model load failed")
+
+
+class GateFailsClosedWhenAConfiguredCheckCannotRun(unittest.TestCase):
+    """A check you told the gate to block on, when it cannot run, blocks.
+
+    Before this, a fact-check that never produced a verdict (None) and an
+    originality engine that failed to load were both downgraded to warnings —
+    so a video with no fact-check and no duplicate-check at all still came back
+    allowed. That is the "unknown read as passed" the gate exists to prevent.
+    The severity now follows the same config flag as a check that ran and failed:
+    strict when you asked for strictness, a warning when you only asked for one.
+    A blocked video is never lost — it stays private on disk for a human.
+    """
+
+    def _video(self, tmp):
+        path = Path(tmp) / "final_video.mp4"
+        path.write_bytes(b"0" * 200_000)
+        return path
+
+    def test_a_fact_check_that_did_not_run_blocks_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = publish_gate.evaluate(
+                script=script(), video_path=self._video(tmp),
+                fact_results=None, channel=channel(), originality=NoDuplicates(),
+            )
+        self.assertFalse(d.allowed)
+        self.assertIn("fact_check_not_run", d.blocks)
+
+    def test_a_missing_fact_check_is_a_warning_when_the_channel_turned_it_off(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = publish_gate.evaluate(
+                script=script(), video_path=self._video(tmp), fact_results=None,
+                channel=channel({"block_on_fact_check": False}), originality=NoDuplicates(),
+            )
+        self.assertTrue(d.allowed)
+        self.assertIn("fact_check_not_run", d.warnings)
+
+    def test_an_originality_engine_that_errors_blocks_by_default(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = publish_gate.evaluate(
+                script=script(), video_path=self._video(tmp), fact_results=[],
+                channel=channel(), originality=OriginalityErrors(),
+            )
+        self.assertFalse(d.allowed)
+        self.assertTrue(any(b.startswith("originality_errored") for b in d.blocks))
+
+    def test_an_originality_error_is_a_warning_when_duplicate_blocking_is_off(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            d = publish_gate.evaluate(
+                script=script(), video_path=self._video(tmp), fact_results=[],
+                channel=channel({"block_on_duplicate": False}), originality=OriginalityErrors(),
+            )
+        self.assertTrue(d.allowed)
+        self.assertTrue(any(w.startswith("originality_errored") for w in d.warnings))
+
+    def test_both_checks_missing_does_not_come_back_allowed(self):
+        # The exact hole Codex reported: neither control present, yet allowed=True.
+        with tempfile.TemporaryDirectory() as tmp:
+            d = publish_gate.evaluate(
+                script=script(), video_path=self._video(tmp), fact_results=None,
+                channel=channel(), originality=OriginalityErrors(),
+            )
+        self.assertFalse(d.allowed)
