@@ -31,7 +31,12 @@ LOGS_DIR = BASE_DIR / "logs"
 TOPIC_HISTORY_FILE = HISTORY_DIR / "topics.json"
 
 # Script Engine
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+# gemini-3.6-flash is the current model. Do NOT "correct" this to 2.0-flash:
+# as of 2026-09 the API returns 404 for gemini-2.0-flash — "This model is no
+# longer available. Please update your code to use models/gemini-3.6-flash" —
+# so a run set to 2.0 dies at the first script call, before it renders anything.
+# Override with the GEMINI_MODEL env var when Google ships the next one.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
 # Transient 503/429 retries. Daily-quota 429s are not retried — see gemini_client.
 GEMINI_MAX_RETRIES = int(os.getenv("GEMINI_MAX_RETRIES", "5"))
 GEMINI_RETRY_MAX_DELAY = float(os.getenv("GEMINI_RETRY_MAX_DELAY", "60"))
