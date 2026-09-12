@@ -155,6 +155,13 @@ class AgentConfig:
     # second videos.insert, ~1600 more quota units out of 10,000 a day, so it
     # is opted into rather than out of. See modules/shorts.ShortsConfig.
     shorts: dict = field(default_factory=dict)
+    # Whether an allowed video actually uploads, or is held on disk for a human
+    # to publish. This NEVER weakens the publish gate — the gate still runs and
+    # still blocks on its own; auto_publish only decides what happens to a video
+    # the gate ALLOWED. Defaults True so existing channels keep publishing exactly
+    # as before; a channel sets it False to run fully but stop short of upload.
+    # Stored in this same agent_config blob, so turning it off costs no migration.
+    auto_publish: bool = True
 
     def to_dict(self) -> dict:
         return {
@@ -169,6 +176,7 @@ class AgentConfig:
             "competitor_channel_ids": list(self.competitor_channel_ids),
             "publish_gate": dict(self.publish_gate),
             "shorts": dict(self.shorts),
+            "auto_publish": self.auto_publish,
         }
 
     @staticmethod
@@ -193,6 +201,10 @@ class AgentConfig:
             competitor_channel_ids=_clean_ids(d.get("competitor_channel_ids")),
             publish_gate=dict(d.get("publish_gate") or {}),
             shorts=dict(d.get("shorts") or {}),
+            # Absent (an older row, or the column never set) → True: a channel
+            # that never opted out keeps publishing, exactly as before. Only an
+            # explicit false holds uploads.
+            auto_publish=(False if d.get("auto_publish") is False else True),
         )
 
 
@@ -318,6 +330,13 @@ class ChannelContext:
     @property
     def is_active(self) -> bool:
         return self.status == STATUS_ACTIVE
+
+    @property
+    def auto_publish(self) -> bool:
+        """Does an allowed video upload automatically, or wait for a human?
+        A convenience read-through to the agent config; the publish gate is
+        consulted regardless of this — it only governs an ALLOWED video."""
+        return self.agent.auto_publish
 
     @property
     def is_default(self) -> bool:

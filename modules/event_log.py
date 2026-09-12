@@ -80,6 +80,10 @@ VIDEO_PUBLISHED = "video.published"
 # vocabulary that records something the pipeline REFUSED to do.
 PUBLISH_BLOCKED = "publish.blocked"
 PUBLISH_ALLOWED = "publish.allowed"
+# The gate allowed the video, but the channel's auto-publish is OFF, so the
+# upload is held for a human to publish. This is a policy hold, never a gate
+# failure — `publish.allowed` still fired; the video is finished and on disk.
+PUBLISH_HELD = "publish.held"
 # Advisory pre-publish intelligence (modules/publish_score.py). Records a
 # quality/prediction score for a human to read; it never gates, blocks, or
 # permits anything — the gate above is the only thing that decides publishing.
