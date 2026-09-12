@@ -137,6 +137,11 @@ PLAYLIST_FAILED = "playlist.failed"
 COMMENT_POSTED = "comment.posted"
 COMMENT_SKIPPED = "comment.skipped"
 COMMENT_FAILED = "comment.failed"
+# Re-package underperformers (modules/repackage.py). Advisory: flags published
+# videos whose CTR is well below the channel's own median as candidates for a
+# new title/thumbnail. It never edits a live video — like publish.score it
+# informs a human/Command Center, it does not act.
+REPACKAGE_SUGGESTED = "repackage.suggested"
 # Niche RPM intelligence (modules/niche_rpm.py). Advisory: a ranking of niches
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
