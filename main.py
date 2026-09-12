@@ -45,7 +45,10 @@ from modules.media_fetcher import MediaFetcher
 from modules.pipeline_stages import PipelineStage, PipelineStateMachine
 from modules.research_engine import research_topic
 from modules.script_engine import ScriptEngine
-from modules.series import effective_niche, resolve_series
+from modules.series import (
+    effective_cadence, effective_niche, effective_visual_style, effective_voice_style,
+    resolve_series, style_keywords,
+)
 from modules.state_store import StateStore
 from modules.subtitle_generator import SubtitleGenerator
 from modules.thumbnail_generator import ThumbnailGenerator
@@ -205,19 +208,39 @@ def run(
     ctx = channel if isinstance(channel, ChannelContext) else resolve_channel(channel)
     channel_id = str(ctx.channel_id)
     # A series is an optional recurring content line within the channel. When
-    # given, its niche seeds this run (unless --niche was passed explicitly).
-    # See modules/series.py; resolution never raises.
+    # given, its niche seeds this run (unless --niche was passed explicitly) and
+    # its style/cadence shape the run below. See modules/series.py; resolution
+    # never raises.
     series_obj = resolve_series(series)
     niche = effective_niche(niche, series_obj, ctx.niche)
+    # A series carries more than a niche: its look (biases b-roll and, with the
+    # avatar on, the presenter), its narration style (a recorded hint), and its
+    # cadence. All empty when there is no series — the run then behaves exactly
+    # as before.
+    visual_style = effective_visual_style(None, series_obj)
+    voice_style = effective_voice_style(None, series_obj)
+    cadence = effective_cadence(series_obj)
     logger.info("=== Chronos YouTube Bot starting [channel: %s] ===", channel_id)
+    if series_obj and (visual_style or voice_style or cadence):
+        logger.info("Series style — visual: %r | voice: %r | cadence: %s",
+                    visual_style, voice_style, cadence)
     # What this run consumes. Recorded whether or not it ends in an upload —
     # a render that is later blocked still cost real money.
     costs = CostLedger(channel_id=channel_id)
     # Observability events (event_log.emit never raises and never alters the
     # pipeline — see modules/event_log.py). They feed the Command Center's live
     # activity feed and per-video pipeline timeline.
+    _start_meta = {"channel": ctx.name, "niche": niche}
+    if series_obj:
+        _start_meta["series_id"] = series_obj.series_id
+        if visual_style:
+            _start_meta["visual_style"] = visual_style
+        if voice_style:
+            _start_meta["voice_style"] = voice_style
+        if cadence:
+            _start_meta["cadence"] = cadence
     events.emit(events.SYSTEM_STARTED, agent="pipeline", status=events.STATUS_RUNNING,
-                channel_id=channel_id, metadata={"channel": ctx.name, "niche": niche})
+                channel_id=channel_id, metadata=_start_meta)
 
     # ── Stage 0: Assets
     # SFX/music are synthesized rather than committed (17MB of WAV from 12KB of
@@ -349,6 +372,14 @@ def run(
     all_keywords = list({kw for entry in keyword_map for kw in entry.get("keywords", [])})
     if not all_keywords:
         all_keywords = fetcher.extract_keywords(topic)
+
+    # A series' visual style biases the b-roll toward its look — a few style
+    # tokens ("dark", "cinematic") ADDED to the topic's own keywords, never
+    # replacing them, and nothing at all when there is no series/style.
+    series_style_kw = style_keywords(visual_style)
+    if series_style_kw:
+        all_keywords = list(dict.fromkeys(all_keywords + series_style_kw))
+        logger.info("Series visual style biases b-roll with +%s", series_style_kw)
 
     videos = fetcher.fetch_videos(all_keywords, count=12)
     images = fetcher.fetch_images(all_keywords, count=8)

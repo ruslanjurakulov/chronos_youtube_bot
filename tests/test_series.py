@@ -16,10 +16,14 @@ from modules.series import (
     STATUS_PAUSED,
     Series,
     SeriesRegistry,
+    effective_cadence,
     effective_niche,
+    effective_visual_style,
+    effective_voice_style,
     normalize_automation_level,
     normalize_status,
     resolve_series,
+    style_keywords,
     validate_series_id,
 )
 
@@ -196,6 +200,39 @@ class PipelineHelpersTestCase(unittest.TestCase):
         self.assertEqual(effective_niche(None, None, None), "history mysteries")
         # a series with an empty niche falls through to the channel's
         self.assertEqual(effective_niche(None, self._series("y", niche=""), "gaming"), "gaming")
+
+    def test_effective_visual_and_voice_style_precedence(self):
+        s = Series(series_id="x", visual_style="dark cinematic", voice_style="calm narrator")
+        # explicit wins
+        self.assertEqual(effective_visual_style("neon", s, "plain"), "neon")
+        # then the series
+        self.assertEqual(effective_visual_style(None, s, "plain"), "dark cinematic")
+        self.assertEqual(effective_voice_style(None, s, "plain"), "calm narrator")
+        # then the channel default
+        self.assertEqual(effective_visual_style(None, None, "plain"), "plain")
+        # empty when nothing set — a run may legitimately have no style opinion
+        self.assertEqual(effective_visual_style(None, None, None), "")
+        self.assertEqual(effective_voice_style(None, None, None), "")
+
+    def test_effective_cadence_is_a_copy(self):
+        s = Series(series_id="x", cadence={"long_per_week": 2})
+        got = effective_cadence(s)
+        self.assertEqual(got, {"long_per_week": 2})
+        got["long_per_week"] = 99  # mutating the result must not touch the Series
+        self.assertEqual(s.cadence, {"long_per_week": 2})
+        # no series → empty dict
+        self.assertEqual(effective_cadence(None), {})
+
+    def test_style_keywords_tokenizes_and_caps(self):
+        self.assertEqual(style_keywords("dark, cinematic, moody"), ["dark", "cinematic", "moody"])
+        # connective words dropped, de-duplicated, capped
+        self.assertEqual(
+            style_keywords("a very cinematic and cinematic dramatic epic wide look", limit=3),
+            ["cinematic", "dramatic", "epic"],
+        )
+        # empty in → empty out (no style means no added keywords)
+        self.assertEqual(style_keywords(""), [])
+        self.assertEqual(style_keywords(None), [])
 
 
 if __name__ == "__main__":
