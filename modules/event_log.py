@@ -142,6 +142,10 @@ REPACKAGE_SUGGESTED = "repackage.suggested"
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
 NICHE_RPM = "niche.rpm"
+# State durability (modules/durability.py). Advisory: whether the ephemeral
+# local history is safely mirrored to Supabase, and when a JSON backup was
+# written. It never deletes or overwrites history — it reports and backs up.
+DURABILITY_CHECK = "durability.check"
 
 # Status vocabulary (free-form, but these are the common ones).
 STATUS_RUNNING = "running"
