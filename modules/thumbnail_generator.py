@@ -64,6 +64,56 @@ def _darken_and_vignette(img: Image.Image) -> Image.Image:
     return img.convert("RGB")
 
 
+# -- pure layout helpers (unit-tested without rendering) --------------------
+
+def wrap_capped(text: str, width: int, max_lines: int) -> list[str]:
+    """Wrap `text` to `width` characters and cap at `max_lines`, ending the last
+    kept line with an ellipsis when text was dropped. Keeps big overlay text from
+    spilling off the canvas — an overflowing thumbnail is worse than a trimmed
+    one. Empty/blank in → []."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    lines = textwrap.wrap(text, width=max(1, width)) or []
+    if len(lines) <= max_lines:
+        return lines
+    kept = lines[:max_lines]
+    kept[-1] = (kept[-1].rstrip(" .") + "…")[: max(1, width + 1)]
+    return kept
+
+
+def scrim_alpha(y: int, top_y: int, height: int, max_alpha: int = 210) -> int:
+    """Alpha for a bottom-anchored gradient scrim at row `y`: 0 above `top_y`,
+    ramping to `max_alpha` at the bottom. A scrim guarantees the caption reads on
+    ANY stock photo, bright or busy — the difference between a designed thumbnail
+    and text floating on noise. Clamped to 0..255."""
+    if height <= top_y or y <= top_y:
+        return 0
+    frac = (y - top_y) / float(height - top_y)
+    return max(0, min(255, int(max(0, min(1.0, frac)) * max_alpha)))
+
+
+def _apply_bottom_scrim(img: Image.Image, top_frac: float = 0.52, max_alpha: int = 210) -> Image.Image:
+    """Composite a transparent-to-dark vertical gradient over the lower part of
+    the image, so bottom-anchored text always has contrast."""
+    img = img.convert("RGBA")
+    w, h = img.size
+    top_y = int(h * top_frac)
+    scrim = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    sdraw = ImageDraw.Draw(scrim)
+    for y in range(top_y, h):
+        sdraw.line([(0, y), (w, y)], fill=(0, 0, 0, scrim_alpha(y, top_y, h, max_alpha)))
+    return Image.alpha_composite(img, scrim).convert("RGB")
+
+
+def _accent_bar(img: Image.Image, color: tuple, width_px: int = 18) -> Image.Image:
+    """A solid left accent bar — a small designed element that lifts the frame
+    above bare text-over-photo and gives the channel a consistent signature."""
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([0, 0, width_px, img.size[1]], fill=color)
+    return img
+
+
 def _draw_text_with_stroke(
     draw: ImageDraw.ImageDraw,
     text: str,
@@ -96,14 +146,21 @@ def _make_thumbnail(
         img = Image.new("RGB", (THUMBNAIL_W, THUMBNAIL_H), color)
 
     img = _darken_and_vignette(img)
+    # A bottom gradient scrim so the topic caption always reads on any photo, and
+    # a left accent bar for a designed, on-brand frame (raises the thumbnail above
+    # plain text-over-stock). Both are cheap composites over the existing image.
+    img = _apply_bottom_scrim(img)
+    accent = (255, 215, 0) if variant == "A" else (255, 68, 68)
+    img = _accent_bar(img, accent)
     draw = ImageDraw.Draw(img)
 
-    # Overlay shock text (top, large, yellow/red)
+    # Overlay shock text (top, large, yellow/red). Capped to 3 lines so a long
+    # phrase can never spill off the canvas.
     shock_font_size = 120 if variant == "A" else 110
     shock_font = _load_font(shock_font_size)
     shock_color = "#FFD700" if variant == "A" else "#FF4444"
 
-    shock_lines = textwrap.wrap(overlay_text.upper(), width=12)
+    shock_lines = wrap_capped(overlay_text.upper(), width=12, max_lines=3)
     shock_y = 40
     for line in shock_lines:
         bbox = draw.textbbox((0, 0), line, font=shock_font)
@@ -119,9 +176,9 @@ def _make_thumbnail(
         )
         shock_y += shock_font_size + 10
 
-    # Topic subtitle (bottom)
+    # Topic subtitle (bottom), capped to 2 lines and sitting on the scrim.
     topic_font = _load_font(42)
-    topic_lines = textwrap.wrap(topic, width=40)
+    topic_lines = wrap_capped(topic, width=40, max_lines=2)
     topic_y = THUMBNAIL_H - 40 - len(topic_lines) * 52
     for line in topic_lines:
         bbox = draw.textbbox((0, 0), line, font=topic_font)
