@@ -211,6 +211,40 @@ class TopicManagerQueueIntegrationTestCase(unittest.TestCase):
 
         self.assertEqual(topic, "Gemini's Pick")
 
+    def _construct_with_patched_collaborators(self, channel):
+        """Build a TopicManager with every collaborator patched to a bare mock,
+        returning the TopicRecommender patch so a test can assert how it was
+        constructed. No pick_topic() call — this is about construction wiring."""
+        with patch("modules.topic_manager.make_client", return_value=MagicMock()), \
+             patch("modules.topic_manager.OriginalityEngine", return_value=MagicMock()), \
+             patch("modules.topic_manager.TopicRecommender", return_value=MagicMock()) as recommender, \
+             patch("modules.topic_manager.PerformanceAnalyzer", return_value=MagicMock()), \
+             patch("modules.topic_manager.FeedbackEngine", return_value=MagicMock()), \
+             patch("modules.topic_manager.ContentPlanner", return_value=MagicMock()):
+            from modules.topic_manager import TopicManager
+            TopicManager(channel=channel)
+        return recommender
+
+    def test_recommender_is_scoped_to_the_channel(self):
+        """The class docstring promises every collaborator is scoped to the
+        channel. The recommender's competitor and audience-demand inputs are
+        channel-owned, so it must receive the channel id like ContentPlanner,
+        PerformanceAnalyzer, and FeedbackEngine do — otherwise one channel's
+        demand signals leak into another channel's topic prompt."""
+        fake_channel = MagicMock()
+        fake_channel.channel_id = "chan-history-123"
+
+        recommender = self._construct_with_patched_collaborators(fake_channel)
+
+        recommender.assert_called_once_with(channel_id="chan-history-123")
+
+    def test_recommender_is_unscoped_for_a_single_channel_run(self):
+        """No channel means the pre-multi-channel behaviour: channel_id=None,
+        which TopicRecommender treats as "every row, unscoped"."""
+        recommender = self._construct_with_patched_collaborators(None)
+
+        recommender.assert_called_once_with(channel_id=None)
+
 
 if __name__ == "__main__":
     unittest.main()

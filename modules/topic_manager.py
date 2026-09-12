@@ -45,9 +45,16 @@ class TopicManager:
         broken store, etc. all return "" rather than raising), but its
         constructor is not exercised by that guarantee — so failing to
         construct it at all must not stop topic selection from working.
+
+        Scoped to this channel like every other collaborator above: the
+        recommender's competitor and audience-demand inputs are channel-owned,
+        and feeding another channel's demand signals into this channel's topic
+        prompt is exactly the cross-channel contamination this class exists to
+        prevent. ``channel_id`` is None for a single-channel run, which keeps
+        TopicRecommender's own pre-multi-channel (unscoped) behaviour.
         """
         try:
-            return TopicRecommender()
+            return TopicRecommender(channel_id=self.channel_id)
         except Exception as e:
             logger.warning(
                 "Failed to construct TopicRecommender (%s: %s) — proceeding without "
