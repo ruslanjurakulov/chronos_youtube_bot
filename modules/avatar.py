@@ -28,11 +28,12 @@ which still decides every upload).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Optional, Protocol, runtime_checkable
 
@@ -212,3 +213,107 @@ def avatar_provider(config: AvatarConfig) -> Optional[AvatarProvider]:
     if config.provider == "higgsfield":
         return HiggsfieldAvatarProvider()
     raise AvatarUnavailable(f"Unknown avatar provider {config.provider!r}")
+
+
+# -- pipeline helpers -------------------------------------------------------
+# Kept here (not in main.py) so a run's avatar decision is unit-testable without
+# importing the render pipeline, which pulls heavy MoviePy dependencies.
+
+# Discrete env vars, so a deploy can turn the presenter on channel-wide without
+# a JSON blob. A per-channel mapping (see resolve_avatar_config) still wins.
+_ENABLED_ENV = "NIGHTSHIFT_AVATAR_ENABLED"
+_PROVIDER_ENV = "NIGHTSHIFT_AVATAR_PROVIDER"
+_PROMPT_ENV = "NIGHTSHIFT_AVATAR_CHARACTER_PROMPT"
+_REF_ENV = "NIGHTSHIFT_AVATAR_CHARACTER_REF"
+_JSON_ENV = "NIGHTSHIFT_AVATAR"  # a full AvatarConfig mapping as JSON
+
+
+def _truthy(value) -> bool:
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def resolve_avatar_config(channel_ctx=None, series_obj=None) -> AvatarConfig:
+    """Decide whether this run has a presenter, and which character.
+
+    Precedence, least to most specific (later overrides earlier):
+      1. ``NIGHTSHIFT_AVATAR`` — a whole config mapping as JSON (deploy default).
+      2. Discrete ``NIGHTSHIFT_AVATAR_*`` env vars.
+      3. A per-channel ``avatar`` mapping on the channel context, if one exists.
+    The result is **off unless something explicitly turns it on** — a run with
+    nothing configured stays faceless, exactly as today. When enabled without an
+    explicit character description, the series' ``visual_style`` seeds the look,
+    so a Series can carry its presenter's appearance without new DB columns.
+    Never raises: a malformed source is logged and ignored, not fatal."""
+    merged: dict = {}
+
+    raw_json = os.getenv(_JSON_ENV, "").strip()
+    if raw_json:
+        try:
+            data = json.loads(raw_json)
+            if isinstance(data, dict):
+                merged.update(data)
+            else:
+                logger.warning("%s is not a JSON object — ignoring", _JSON_ENV)
+        except Exception as e:
+            logger.warning("Could not parse %s (%s) — ignoring", _JSON_ENV, e)
+
+    if os.getenv(_ENABLED_ENV) is not None:
+        merged["enabled"] = _truthy(os.getenv(_ENABLED_ENV))
+    for env_key, field in ((_PROVIDER_ENV, "provider"), (_PROMPT_ENV, "character_prompt"), (_REF_ENV, "character_ref")):
+        val = os.getenv(env_key)
+        if val:
+            merged[field] = val
+
+    ctx_avatar = getattr(channel_ctx, "avatar", None)
+    if isinstance(ctx_avatar, dict):
+        merged.update(ctx_avatar)
+
+    config = AvatarConfig.from_mapping(merged)
+
+    # Seed the character's look from the series only when enabled and no explicit
+    # description was given — a Series' visual_style is the natural place for it.
+    if config.enabled and not config.character_prompt and series_obj is not None:
+        visual = getattr(series_obj, "visual_style", "") or ""
+        if visual:
+            config = replace(config, character_prompt=visual)
+    return config
+
+
+def presenter_layout(video_w: int, video_h: int, *, corner: str = "bottom-right",
+                     scale: float = 0.28, margin_frac: float = 0.03) -> dict:
+    """Geometry for the presenter overlay: a corner inset sized to a fraction of
+    the frame, with a small margin. Pure arithmetic, so the placement is tested
+    without rendering. Returns width/height/x/y in pixels (top-left origin)."""
+    scale = min(max(float(scale), 0.05), 0.6)
+    w = max(1, int(round(video_w * scale)))
+    h = max(1, int(round(video_h * scale)))
+    margin = int(round(min(video_w, video_h) * max(margin_frac, 0.0)))
+    right_x = max(0, video_w - w - margin)
+    bottom_y = max(0, video_h - h - margin)
+    positions = {
+        "bottom-right": (right_x, bottom_y),
+        "bottom-left": (margin, bottom_y),
+        "top-right": (right_x, margin),
+        "top-left": (margin, margin),
+    }
+    x, y = positions.get(corner, positions["bottom-right"])
+    return {"w": w, "h": h, "x": x, "y": y}
+
+
+def maybe_generate_presenter(config: AvatarConfig, prompt: str, out_path: Path) -> Optional[Path]:
+    """Generate a presenter clip for this run, or None when the run is faceless.
+
+    * Avatars off (the default) → ``None``: the run renders faceless, unchanged.
+    * On → the configured provider generates the clip. There is **no silent
+      fallback**: an enabled-but-unconfigured provider raises ``AvatarUnavailable``
+      and an unsafe request raises ``UnsafeAvatarRequest`` — the caller decides
+      what that means (the pipeline logs loudly and continues faceless rather
+      than shipping a blank/wrong presenter; it never quietly substitutes one).
+    """
+    if not config.enabled:
+        return None
+    provider = avatar_provider(config)
+    if provider is None:  # defensive: enabled but factory returned nothing
+        return None
+    character_prompt = (prompt or config.character_prompt or "").strip()
+    return provider.generate(character_prompt, config.character_ref or None, Path(out_path))

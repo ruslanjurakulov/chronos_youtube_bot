@@ -30,6 +30,9 @@ from modules import event_log as events
 from modules import publish_gate
 from modules import publish_score
 from modules.ab_testing import choose_variant, variant_performance
+from modules.avatar import (
+    AvatarUnavailable, UnsafeAvatarRequest, maybe_generate_presenter, resolve_avatar_config,
+)
 from modules.audio_mixer import AudioMixer, VoiceUnavailable, verify_voice
 from modules.channels import ChannelContext, resolve_channel
 from modules.cost_ledger import (
@@ -403,6 +406,35 @@ def run(
     logger.info("Thumbnails: %s | %s — shipping %s", thumb_a.name, thumb_b.name, chosen_thumb.name)
     events.emit(events.THUMBNAIL_COMPLETED, agent="thumbnail_generator", status=events.STATUS_COMPLETED, channel_id=channel_id)
 
+    # ── Stage 6b: AITuber presenter (optional, off by default)
+    # A synthetic on-camera character composited into a corner of the video.
+    # Nightshift is faceless unless a channel/series enables this; when off,
+    # presenter_path stays None and the render below is byte-for-byte the same.
+    # No silent fallback: an enabled-but-unconfigured or unsafe request is logged
+    # loudly and the run continues faceless — a blank/wrong presenter is never
+    # shipped, and the publish gate below still decides every upload.
+    presenter_path = None
+    avatar_cfg = resolve_avatar_config(ctx, series_obj)
+    if avatar_cfg.enabled:
+        events.emit(events.AVATAR_STARTED, agent="avatar", status=events.STATUS_RUNNING,
+                    channel_id=channel_id, metadata={"provider": avatar_cfg.provider})
+        try:
+            presenter_prompt = avatar_cfg.character_prompt or (series_obj.visual_style if series_obj else "")
+            presenter_path = maybe_generate_presenter(
+                avatar_cfg, presenter_prompt, OUTPUT_DIR / slug / "presenter.mp4")
+            events.emit(events.AVATAR_COMPLETED, agent="avatar", status=events.STATUS_COMPLETED,
+                        channel_id=channel_id, metadata={"presenter_path": str(presenter_path)})
+            logger.info("Presenter generated: %s", presenter_path)
+        except (AvatarUnavailable, UnsafeAvatarRequest) as e:
+            presenter_path = None
+            logger.error("Presenter unavailable (%s: %s) — rendering faceless this run",
+                         type(e).__name__, e)
+            events.emit(events.AVATAR_FAILED, agent="avatar", status=events.STATUS_FAILED,
+                        channel_id=channel_id, metadata={"error": f"{type(e).__name__}: {e}"})
+    else:
+        events.emit(events.AVATAR_SKIPPED, agent="avatar", status=events.STATUS_COMPLETED,
+                    channel_id=channel_id, metadata={"reason": "avatar not enabled"})
+
     # ── Stage 7: Compositor
     events.emit(events.RENDER_STARTED, agent="compositor", status=events.STATUS_RUNNING, channel_id=channel_id)
     render_started = time.monotonic()
@@ -417,6 +449,7 @@ def run(
             image_paths=images,
             word_timestamps=word_clips_specs,
             section_timeline=timeline,
+            presenter_path=presenter_path,
         )
     costs.slug = slug
     costs.add(RENDER_SECONDS, time.monotonic() - render_started, stage="render")

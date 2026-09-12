@@ -17,10 +17,17 @@ from modules.avatar import (
     HiggsfieldAvatarProvider,
     UnsafeAvatarRequest,
     avatar_provider,
+    maybe_generate_presenter,
+    presenter_layout,
+    resolve_avatar_config,
     synthetic_only_guard,
 )
 
 _ENV_KEYS = ("HIGGSFIELD_API_KEY", "HIGGSFIELD_API_BASE", "HIGGSFIELD_AVATAR_ENDPOINT")
+_AVATAR_ENV_KEYS = (
+    "NIGHTSHIFT_AVATAR", "NIGHTSHIFT_AVATAR_ENABLED", "NIGHTSHIFT_AVATAR_PROVIDER",
+    "NIGHTSHIFT_AVATAR_CHARACTER_PROMPT", "NIGHTSHIFT_AVATAR_CHARACTER_REF",
+)
 
 
 class SyntheticOnlyGuardTestCase(unittest.TestCase):
@@ -114,6 +121,124 @@ class HiggsfieldProviderTestCase(unittest.TestCase):
         post.assert_called_once()
         get.assert_called()
         dl.assert_called_once()
+
+
+class _FakeSeries:
+    def __init__(self, visual_style=""):
+        self.visual_style = visual_style
+
+
+class _FakeCtx:
+    def __init__(self, avatar=None):
+        if avatar is not None:
+            self.avatar = avatar
+
+
+class ResolveAvatarConfigTestCase(unittest.TestCase):
+    def setUp(self):
+        # A clean slate so ambient env can't turn the presenter on unexpectedly.
+        self._patcher = patch.dict(os.environ, {k: "" for k in _AVATAR_ENV_KEYS}, clear=False)
+        self._patcher.start()
+        self.addCleanup(self._patcher.stop)
+        for k in _AVATAR_ENV_KEYS:
+            os.environ.pop(k, None)
+
+    def test_off_by_default(self):
+        # Nothing configured: the run stays faceless.
+        self.assertFalse(resolve_avatar_config().enabled)
+        self.assertFalse(resolve_avatar_config(_FakeCtx(), _FakeSeries("neon owl")).enabled)
+
+    def test_enabled_via_env(self):
+        with patch.dict(os.environ, {"NIGHTSHIFT_AVATAR_ENABLED": "true"}):
+            self.assertTrue(resolve_avatar_config().enabled)
+
+    def test_channel_mapping_overrides_env(self):
+        with patch.dict(os.environ, {"NIGHTSHIFT_AVATAR_ENABLED": "true"}):
+            cfg = resolve_avatar_config(_FakeCtx(avatar={"enabled": False}))
+        self.assertFalse(cfg.enabled)  # per-channel setting wins
+
+    def test_series_visual_style_seeds_prompt_when_enabled(self):
+        with patch.dict(os.environ, {"NIGHTSHIFT_AVATAR_ENABLED": "true"}):
+            cfg = resolve_avatar_config(_FakeCtx(), _FakeSeries("a stylized 3D fox host"))
+        self.assertEqual(cfg.character_prompt, "a stylized 3D fox host")
+
+    def test_explicit_prompt_not_overwritten_by_series(self):
+        env = {"NIGHTSHIFT_AVATAR_ENABLED": "true", "NIGHTSHIFT_AVATAR_CHARACTER_PROMPT": "a cartoon owl"}
+        with patch.dict(os.environ, env):
+            cfg = resolve_avatar_config(_FakeCtx(), _FakeSeries("a fox"))
+        self.assertEqual(cfg.character_prompt, "a cartoon owl")
+
+    def test_series_ignored_when_disabled(self):
+        # A visual style must not turn the presenter on by itself.
+        cfg = resolve_avatar_config(_FakeCtx(), _FakeSeries("a fox"))
+        self.assertFalse(cfg.enabled)
+        self.assertEqual(cfg.character_prompt, "")
+
+    def test_json_env_parses(self):
+        with patch.dict(os.environ, {"NIGHTSHIFT_AVATAR": '{"enabled": true, "provider": "higgsfield"}'}):
+            self.assertTrue(resolve_avatar_config().enabled)
+
+    def test_malformed_json_env_is_ignored(self):
+        with patch.dict(os.environ, {"NIGHTSHIFT_AVATAR": "{not json"}):
+            self.assertFalse(resolve_avatar_config().enabled)  # ignored, not fatal
+
+
+class PresenterLayoutTestCase(unittest.TestCase):
+    def test_within_bounds_bottom_right(self):
+        lay = presenter_layout(1920, 1080)
+        self.assertGreater(lay["w"], 0)
+        self.assertGreater(lay["h"], 0)
+        self.assertLessEqual(lay["x"] + lay["w"], 1920)
+        self.assertLessEqual(lay["y"] + lay["h"], 1080)
+        # Bottom-right: the inset sits past the horizontal/vertical midpoint.
+        self.assertGreater(lay["x"], 1920 // 2)
+        self.assertGreater(lay["y"], 1080 // 2)
+
+    def test_scale_is_clamped(self):
+        big = presenter_layout(1000, 1000, scale=5.0)   # absurd → clamped
+        self.assertLessEqual(big["w"], 600)
+        small = presenter_layout(1000, 1000, scale=0.0)  # zero → clamped up
+        self.assertGreaterEqual(small["w"], 50)
+
+    def test_corners_differ(self):
+        tl = presenter_layout(1920, 1080, corner="top-left")
+        br = presenter_layout(1920, 1080, corner="bottom-right")
+        self.assertLess(tl["x"], br["x"])
+        self.assertLess(tl["y"], br["y"])
+
+
+class MaybeGeneratePresenterTestCase(unittest.TestCase):
+    def test_none_when_disabled(self):
+        self.assertIsNone(
+            maybe_generate_presenter(AvatarConfig(enabled=False), "a fox", Path("/tmp/p.mp4")))
+
+    def test_enabled_but_unconfigured_raises(self):
+        # No silent fallback: an enabled provider with no credentials fails loud.
+        with patch.dict(os.environ, {k: "" for k in _ENV_KEYS}, clear=False):
+            for k in _ENV_KEYS:
+                os.environ.pop(k, None)
+            with self.assertRaises(AvatarUnavailable):
+                maybe_generate_presenter(
+                    AvatarConfig(enabled=True, provider="higgsfield", character_prompt="a fox"),
+                    "a fox", Path("/tmp/p.mp4"))
+
+    def test_happy_path_delegates_to_provider(self):
+        class FakeProvider:
+            def __init__(self):
+                self.calls = []
+
+            def generate(self, prompt, ref, out):
+                self.calls.append((prompt, ref, out))
+                return Path("/tmp/out.mp4")
+
+        fake = FakeProvider()
+        with patch("modules.avatar.avatar_provider", return_value=fake):
+            out = maybe_generate_presenter(
+                AvatarConfig(enabled=True, character_prompt="a cartoon owl", character_ref="owl-1"),
+                "", Path("/tmp/out.mp4"))
+        self.assertEqual(out, Path("/tmp/out.mp4"))
+        self.assertEqual(fake.calls[0][0], "a cartoon owl")  # prompt fell back to config
+        self.assertEqual(fake.calls[0][1], "owl-1")
 
 
 if __name__ == "__main__":
