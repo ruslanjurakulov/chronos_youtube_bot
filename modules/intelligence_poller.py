@@ -322,6 +322,39 @@ class IntelligencePoller:
 
     # -- orchestration --------------------------------------------------
 
+    def suggest_repackages(self) -> int:
+        """Flag published videos whose CTR is well below this channel's own
+        median as candidates for a new title/thumbnail, emitting one
+        `repackage.suggested` roll-up. Advisory only — it reads history and
+        reports; it never edits a live video. Runs after the metrics poll so it
+        sees the freshest CTR. Never raises: a failure here must not abort a
+        poll, and it changes nothing that publishes.
+        """
+        try:
+            from modules import event_log as events
+            from modules import repackage
+
+            videos = self.state_store.list_videos(limit=100000, channel_id=self.channel_id)
+            metrics_by_id = {}
+            for v in videos:
+                vid = v.get("video_id")
+                if not vid:
+                    continue
+                m = self.state_store.latest_metrics(vid)
+                if m is not None:
+                    metrics_by_id[vid] = m
+            candidates = repackage.find_candidates(videos, metrics_by_id)
+            events.emit(events.REPACKAGE_SUGGESTED, agent="repackage",
+                        status=events.STATUS_COMPLETED, channel_id=self.channel_id,
+                        metadata=repackage.summarize(candidates))
+            if candidates:
+                logger.info("[channel: %s] %d repackage candidate(s); worst: %s",
+                            self.channel_id, len(candidates), candidates[0].video_id)
+            return len(candidates)
+        except Exception:
+            logger.exception("Repackage suggestion pass failed; suggesting zero")
+            return 0
+
     def run_all(self, competitor_channel_ids: list | None = None) -> dict:
         """Runs all three polls and returns a small summary dict. This is
         the single function a future scheduled job (cron, GitHub Action, or
@@ -335,10 +368,14 @@ class IntelligencePoller:
 
         trending_videos = self.poll_trends()
 
+        # Advisory, after the metrics poll so it reads the freshest CTR.
+        repackage_candidates = self.suggest_repackages()
+
         return {
             "own_metrics_written": own_metrics_written,
             "competitor_channels_polled": len(competitor_results),
             "competitor_snapshots_written": self._last_competitor_snapshots_written if channel_ids else 0,
             "trending_videos_found": len(trending_videos),
             "trending_snapshots_written": self._last_trending_snapshots_written,
+            "repackage_candidates": repackage_candidates,
         }
