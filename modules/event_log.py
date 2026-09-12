@@ -52,6 +52,9 @@ JOB_FAILED = "job.failed"
 TOPIC_SELECTED = "topic.selected"
 RESEARCH_STARTED = "research.started"
 RESEARCH_COMPLETED = "research.completed"
+# Packaging is decided BEFORE the script (modules/title_planner.py): the title
+# and a thumbnail concept come first, and the script is written to deliver them.
+TITLE_PLANNED = "title.planned"
 SCRIPT_STARTED = "script.started"
 SCRIPT_COMPLETED = "script.completed"
 VOICE_STARTED = "voice.started"
