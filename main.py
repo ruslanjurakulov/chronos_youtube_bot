@@ -387,6 +387,11 @@ def run(
     # not attributed to an experiment that did not happen.
     chosen_title = (script.title_ab or "").strip() if variant == "B" else ""
     title_variant = "B" if chosen_title else "A"
+    # The single source of truth for the title this video actually ships with:
+    # the uploader publishes it (title_override falls back to script.title when
+    # empty) and the DB must record the same string, or the A/B readback ends up
+    # crediting the A title with a video that went out under the B title.
+    published_title = chosen_title or script.title
     logger.info("Thumbnails: %s | %s — shipping %s", thumb_a.name, thumb_b.name, chosen_thumb.name)
     events.emit(events.THUMBNAIL_COMPLETED, agent="thumbnail_generator", status=events.STATUS_COMPLETED, channel_id=channel_id)
 
@@ -434,7 +439,12 @@ def run(
         print(f"\n⛔ Publish blocked ({', '.join(gate.blocks)}). Video saved: {video_path}")
         events.emit(events.PUBLISH_BLOCKED, agent="publish_gate", status=events.STATUS_FAILED,
                     channel_id=channel_id, metadata=gate.to_metadata())
-    elif gate.warnings:
+    else:
+        # Every allowed pass emits PUBLISH_ALLOWED, not only the ones that
+        # carried warnings — otherwise a clean gate result leaves no record that
+        # the gate ran at all, and the event stream can't tell "passed cleanly"
+        # from "was never evaluated". The metadata carries the warnings (empty
+        # when there were none) and the checks that ran.
         events.emit(events.PUBLISH_ALLOWED, agent="publish_gate", status=events.STATUS_COMPLETED,
                     channel_id=channel_id, metadata=gate.to_metadata())
 
@@ -471,7 +481,7 @@ def run(
                 store.record_video(
                     video_id=video_id,
                     topic=topic,
-                    title=script.title,
+                    title=published_title,
                     slug=slug,
                     published_at=datetime.utcnow().isoformat(),
                     privacy=privacy,
@@ -486,7 +496,7 @@ def run(
                             metadata={"url": video_url}, store=store)
                 events.emit(events.VIDEO_PUBLISHED, video_id=video_id, agent="youtube_uploader",
                             status=events.STATUS_COMPLETED, channel_id=channel_id,
-                            metadata={"title": script.title, "url": video_url, "privacy": privacy}, store=store)
+                            metadata={"title": published_title, "url": video_url, "privacy": privacy}, store=store)
 
             # ── Review: put the finished video where a human can watch it ──
             # Every upload is private (config.YOUTUBE_PRIVACY defaults to it,
