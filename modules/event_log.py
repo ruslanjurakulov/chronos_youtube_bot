@@ -118,6 +118,10 @@ CREDENTIAL_HEALTH = "credential.health"
 # channel sets a ceiling; a data gap (unpriced costs) never triggers a block.
 BUDGET_PREFLIGHT = "budget.preflight"
 BUDGET_EXCEEDED = "budget.exceeded"
+# Spend forecast (modules/budget.py). Advisory: a straight-line projection of
+# the channel's month-end spend, flagging when the pace is on track to blow a
+# set ceiling. It forecasts for a human/Command Center — it never blocks a run.
+BUDGET_FORECAST = "budget.forecast"
 # Analytics / feedback loop
 ANALYTICS_UPDATED = "analytics.updated"
 FEEDBACK_GENERATED = "feedback.generated"

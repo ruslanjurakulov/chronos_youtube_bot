@@ -235,6 +235,9 @@ class IntelligencePollerTestCase(unittest.TestCase):
                 "competitor_snapshots_written": 0,
                 "trending_videos_found": 3,
                 "trending_snapshots_written": 0,
+                # Advisory spend forecast runs too; with no priced spend this
+                # month it projects 0.0 (a real, known number), so ready is True.
+                "spend_forecast_ready": True,
             },
         )
 

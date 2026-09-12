@@ -320,6 +320,28 @@ class IntelligencePoller:
             logger.info("Retention: %d point(s) recorded for %s", written, video_id)
         return written
 
+    def forecast_spend(self) -> bool:
+        """Project the channel's month-end spend from its month-to-date spend and
+        emit one `budget.forecast`, flagging when the pace is on track to blow a
+        set ceiling. Advisory only — it forecasts, it never blocks a run. Returns
+        True when a projection was produced. Never raises."""
+        try:
+            from modules import budget
+            from modules import event_log as events
+
+            ceiling = getattr(getattr(self.channel, "agent", None), "spend_ceiling_usd", None)
+            report = budget.forecast_month_end(
+                self.state_store, self.channel_id or "default", ceiling)
+            events.emit(events.BUDGET_FORECAST, agent="budget", status=events.STATUS_COMPLETED,
+                        channel_id=self.channel_id, metadata=report.to_dict())
+            if report.projected_exceeds:
+                logger.warning("[channel: %s] Spend pace projects $%.2f vs ceiling $%.2f this month",
+                               self.channel_id, report.projected_usd, report.ceiling_usd)
+            return report.projected_usd is not None
+        except Exception:
+            logger.exception("Spend-forecast pass failed; forecasting nothing")
+            return False
+
     # -- orchestration --------------------------------------------------
 
     def run_all(self, competitor_channel_ids: list | None = None) -> dict:
@@ -335,10 +357,14 @@ class IntelligencePoller:
 
         trending_videos = self.poll_trends()
 
+        # Advisory spend forecast, after the metrics poll.
+        spend_forecast_ready = self.forecast_spend()
+
         return {
             "own_metrics_written": own_metrics_written,
             "competitor_channels_polled": len(competitor_results),
             "competitor_snapshots_written": self._last_competitor_snapshots_written if channel_ids else 0,
             "trending_videos_found": len(trending_videos),
             "trending_snapshots_written": self._last_trending_snapshots_written,
+            "spend_forecast_ready": spend_forecast_ready,
         }
