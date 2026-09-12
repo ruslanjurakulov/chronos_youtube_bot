@@ -415,6 +415,11 @@ def run(
     logger.info("Video: %s", video_path)
     events.emit(events.RENDER_COMPLETED, agent="compositor", status=events.STATUS_COMPLETED,
                 channel_id=channel_id, metadata={"video_path": str(video_path)})
+    # The video exists on disk now. If this topic came off the content-planner
+    # queue, record that it reached "rendered" — true whether or not the upload
+    # below succeeds, so a blocked or failed-upload run leaves an honest
+    # "rendered", never a false "published".
+    topic_mgr.mark_queue_entry_rendered()
 
     # ── Stage 8: Upload
     # The video is already on disk by this point, so no upload failure may cost
@@ -497,6 +502,11 @@ def run(
                 events.emit(events.VIDEO_PUBLISHED, video_id=video_id, agent="youtube_uploader",
                             status=events.STATUS_COMPLETED, channel_id=channel_id,
                             metadata={"title": published_title, "url": video_url, "privacy": privacy}, store=store)
+
+            # The upload actually succeeded — advance this run's queue entry (if
+            # any) to "published". Only here, at real upload success, never at
+            # pick time.
+            topic_mgr.mark_queue_entry_published()
 
             # ── Review: put the finished video where a human can watch it ──
             # Every upload is private (config.YOUTUBE_PRIVACY defaults to it,

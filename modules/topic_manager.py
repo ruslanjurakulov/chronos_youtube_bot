@@ -32,6 +32,12 @@ class TopicManager:
         TOPIC_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
         self.channel = channel
         self.channel_id = str(channel.channel_id) if channel is not None else None
+        # The content-planner entry this run picked, if the topic came off the
+        # queue (None when Gemini generated it fresh). Held so the run can mark
+        # it rendered / published at the real moments, rather than the queue
+        # marking it "published" the instant it was picked. See
+        # _try_queued_topic and mark_queue_entry_* below.
+        self._reserved_entry = None
         self.history = self._load()
         self.client = make_client()
         self.originality = OriginalityEngine()
@@ -188,15 +194,15 @@ class TopicManager:
         candidate would: real duplicate topics don't get a pass just because
         they came from the queue.
 
-        A queued entry that's accepted is marked "published" in the planner
-        immediately (optimistic — this happens at *pick* time, not at actual
-        upload success). This is a deliberate simplification: threading the
-        entry id through the rest of main.py's run just to mark it at the
-        real moment of publish would be a much larger, more invasive change
-        for a queue of non-scarce suggestions — if a run fails downstream,
-        the same topic can simply be re-suggested or re-enqueued later.
-        A hard-blocked duplicate is marked "skipped" (not left queued
-        forever) and topic selection falls through to Gemini generation.
+        A queued entry that's accepted is **reserved** in the planner, not
+        marked published: the entry is only claimed by this run, and it is
+        advanced to "rendered" and then "published" at the real moments those
+        things happen (see mark_queue_entry_rendered / mark_queue_entry_published,
+        which main.py calls). This is what closes the "marked published the
+        instant it was picked" gap — a run that fails downstream leaves the
+        entry honestly at "reserved" or "rendered", never a false "published".
+        A hard-blocked duplicate is marked "skipped" (not left queued forever)
+        and topic selection falls through to Gemini generation.
 
         Returns None (falls through to Gemini generation) if the planner is
         unavailable, the queue is empty, or the queued topic is hard-blocked.
@@ -223,9 +229,35 @@ class TopicManager:
                 entry.topic, result.closest_match,
             )
 
-        self.content_planner.mark_published(entry.entry_id)
-        logger.info("Using queued topic from content planner: '%s' (source=%s)", entry.topic, entry.source)
+        self.content_planner.reserve(entry.entry_id)
+        self._reserved_entry = entry
+        logger.info("Reserved queued topic from content planner: '%s' (entry %s, source=%s)",
+                    entry.topic, entry.entry_id, entry.source)
         return entry.topic
+
+    def mark_queue_entry_rendered(self) -> None:
+        """Advance this run's reserved queue entry to "rendered" — its video
+        now exists on disk. No-op when the topic did not come off the queue, or
+        when the planner is unavailable. Never raises: a bookkeeping update must
+        not turn a run that produced a video into a failed one."""
+        self._advance_queue_entry("mark_rendered", "rendered")
+
+    def mark_queue_entry_published(self) -> None:
+        """Advance this run's reserved queue entry to "published" — its upload
+        actually succeeded. No-op when the topic did not come off the queue.
+        Never raises (same reason as mark_queue_entry_rendered)."""
+        self._advance_queue_entry("mark_published", "published")
+
+    def _advance_queue_entry(self, method_name: str, status: str) -> None:
+        if self._reserved_entry is None or self.content_planner is None:
+            return
+        try:
+            getattr(self.content_planner, method_name)(self._reserved_entry.entry_id)
+        except Exception as e:
+            logger.warning(
+                "Could not advance queue entry %s to '%s' (%s: %s) — the run itself is unaffected",
+                self._reserved_entry.entry_id, status, type(e).__name__, e,
+            )
 
     def pick_topic(self, niche: str = "history mysteries") -> str:
         """Pick a topic for the next video.

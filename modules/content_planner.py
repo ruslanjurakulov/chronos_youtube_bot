@@ -17,10 +17,14 @@ attempt next?" ``ContentPlanner`` is a simple FIFO queue of candidate topics
 — things worth making a video about — collected from wherever they come
 from (a manual add, a `ContentOpportunity` produced by
 ``content_opportunity.ContentOpportunityEngine``, a Gemini brainstorm pick,
-etc.), each carrying a lightweight ``queued`` / ``published`` / ``skipped``
-status. It is deliberately NOT a state machine — there is no enforced
-sequence of stages here, just a durable list with dedup and a "give me the
-next thing to work on" accessor. Once a topic is pulled off this queue, it
+etc.), each carrying a lightweight lifecycle status:
+``queued`` → ``reserved`` (a run claimed it) → ``rendered`` (its video is on
+disk) → ``published`` (upload succeeded), with ``skipped`` for a hard-blocked
+duplicate. It is deliberately NOT a strict state machine — nothing here
+*enforces* the ordering, and callers advance an entry as far as their run
+actually got — just a durable list with dedup, a "give me the next thing to
+work on" accessor, and honest status: a run advances an entry to ``published``
+only on a real upload success, never the moment the topic is picked. Once a topic is pulled off this queue, it
 is expected to be handed to ``PipelineStateMachine.start_run()`` (or
 equivalent) to go through the real approval chain; wiring that hand-off up
 in ``topic_manager.py`` / ``main.py`` is a deliberate follow-up and is NOT
@@ -99,7 +103,14 @@ class CalendarEntry:
     added_at: str
     source: str
     rationale: str = ""
-    status: str = "queued"  # "queued" | "published" | "skipped"
+    # Lifecycle: "queued" → "reserved" (a run claimed it and is attempting it)
+    # → "rendered" (its video exists on disk) → "published" (upload succeeded).
+    # "skipped" is the dead end for a hard-blocked duplicate. An entry ends at
+    # the furthest state its run actually reached: a run that renders but cannot
+    # upload leaves "rendered" (a real video awaiting a human), never a false
+    # "published". A run that dies before rendering leaves "reserved" — visibly
+    # stuck, which is the honest record, not silently marked done.
+    status: str = "queued"  # queued | reserved | rendered | published | skipped
     channel_id: str = DEFAULT_CHANNEL_ID
 
     def to_dict(self) -> dict:
@@ -225,16 +236,37 @@ class ContentPlanner:
             return None
         return min(queued, key=lambda e: e.added_at)
 
-    def mark_published(self, entry_id: str) -> CalendarEntry:
-        """Mark `entry_id` as "published". Raises ValueError for an unknown id."""
+    def _set_status(self, entry_id: str, status: str) -> CalendarEntry:
         entries = self._load_all()
         entry = entries.get(entry_id)
         if entry is None:
             raise ValueError(f"No such calendar entry: {entry_id!r}")
-        entry.status = "published"
+        entry.status = status
         entries[entry_id] = entry
         self._save_all(entries)
         return entry
+
+    def reserve(self, entry_id: str) -> CalendarEntry:
+        """Claim `entry_id` for a run that is about to attempt it: status
+        "reserved". This is what `next_topic` + `reserve` replace the old
+        pick-time `mark_published` with — the entry is not "done" the moment it
+        is chosen, only claimed. `next_topic` returns "queued" entries only, so
+        a reserved entry is never handed to a second run. Raises ValueError for
+        an unknown id."""
+        return self._set_status(entry_id, "reserved")
+
+    def mark_rendered(self, entry_id: str) -> CalendarEntry:
+        """Mark `entry_id` as "rendered": its video exists on disk. Reached
+        whether or not the upload later succeeds, so a video that is rendered
+        but blocked or fails to upload is honestly "rendered", not "published".
+        Raises ValueError for an unknown id."""
+        return self._set_status(entry_id, "rendered")
+
+    def mark_published(self, entry_id: str) -> CalendarEntry:
+        """Mark `entry_id` as "published" — the upload actually succeeded. Called
+        at real upload success, never at pick time. Raises ValueError for an
+        unknown id."""
+        return self._set_status(entry_id, "published")
 
     def mark_skipped(self, entry_id: str, reason: str = "") -> CalendarEntry:
         """Mark `entry_id` as "skipped", appending `reason` (if given) to its
