@@ -96,6 +96,11 @@ PUBLISH_SCORE = "publish.score"
 SHORT_STARTED = "short.started"
 SHORT_COMPLETED = "short.completed"
 SHORT_FAILED = "short.failed"
+# Run checkpoint / resume (modules/run_checkpoint.py). `run.resumed` records a
+# run that reused a crashed run's saved artifacts (today: the script, skipping
+# the paid Gemini generation). Advisory bookkeeping — it never changes what is
+# produced, only what gets re-paid-for.
+RUN_RESUMED = "run.resumed"
 # Channels (Phase 5). Lifecycle only — the per-stage events above already
 # carry a channel_id, so there is no channel.job.* duplicate of job.*.
 CHANNEL_CREATED = "channel.created"
@@ -121,6 +126,13 @@ FEEDBACK_APPLIED = "feedback.applied"
 # video: `playlist.failed` never means the run failed — the video is published.
 PLAYLIST_ADDED = "playlist.added"
 PLAYLIST_FAILED = "playlist.failed"
+# Engagement comment (modules/pinned_comment.py). The channel's own first comment
+# — an on-topic question — posted right after a video publishes; the creator pins
+# it in one tap (the Data API can't pin). Best-effort and downstream of a live
+# video: `comment.failed`/`comment.skipped` never mean the run failed.
+COMMENT_POSTED = "comment.posted"
+COMMENT_SKIPPED = "comment.skipped"
+COMMENT_FAILED = "comment.failed"
 # Re-package underperformers (modules/repackage.py). Advisory: flags published
 # videos whose CTR is well below the channel's own median as candidates for a
 # new title/thumbnail. It never edits a live video — like publish.score it

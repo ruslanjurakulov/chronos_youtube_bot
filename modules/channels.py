@@ -181,6 +181,14 @@ class AgentConfig:
     # (see modules/budget.py). It stops spending, never the publish gate, and a
     # data gap (unpriced costs) never blocks. Stored in this blob — no migration.
     spend_ceiling_usd: Optional[float] = None
+    # Whether, right after a video publishes, the channel posts an engagement
+    # question as its own first comment (the creator pins it in one tap — the
+    # Data API can't pin, see modules/pinned_comment.py). A comment thread is the
+    # cheapest reliable engagement lever on YouTube. Defaults True; it only ever
+    # runs after a real publish, degrades to a no-op without the force-ssl scope,
+    # and never turns a published run into a failed one. Stored in this blob — no
+    # migration. Set False to stop the channel commenting on its own videos.
+    pinned_comment: bool = True
 
     def to_dict(self) -> dict:
         return {
@@ -197,6 +205,7 @@ class AgentConfig:
             "shorts": dict(self.shorts),
             "auto_publish": self.auto_publish,
             "spend_ceiling_usd": self.spend_ceiling_usd,
+            "pinned_comment": self.pinned_comment,
         }
 
     @staticmethod
@@ -226,6 +235,9 @@ class AgentConfig:
             # explicit false holds uploads.
             auto_publish=(False if d.get("auto_publish") is False else True),
             spend_ceiling_usd=_as_optional_float(d.get("spend_ceiling_usd")),
+            # Like auto_publish: absent → True, and only an explicit false stops
+            # the channel from posting its engagement comment.
+            pinned_comment=(False if d.get("pinned_comment") is False else True),
         )
 
 

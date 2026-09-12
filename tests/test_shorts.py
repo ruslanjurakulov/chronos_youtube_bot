@@ -95,9 +95,30 @@ class ShortMetadataTestCase(unittest.TestCase):
         text = shorts.short_description("A Title", "https://youtu.be/abc")
         self.assertIn("https://youtu.be/abc", text)
 
+    def test_the_link_is_above_the_fold(self):
+        # YouTube collapses a description after ~3 lines, so the funnel link must
+        # be on the very first line where it is one tap away, not buried.
+        text = shorts.short_description("A Title", "https://youtu.be/abc")
+        first_line = text.splitlines()[0]
+        self.assertIn("https://youtu.be/abc", first_line)
+
+    def test_the_description_has_a_call_to_action(self):
+        text = shorts.short_description("A Title", "https://youtu.be/abc").lower()
+        self.assertIn("full", text)  # "Full video" / "full story"
+
+    def test_the_hook_is_woven_in_when_given(self):
+        text = shorts.short_description("A Title", "https://youtu.be/abc",
+                                        hook="A stunning fact you never knew")
+        self.assertIn("A stunning fact you never knew", text)
+
+    def test_hashtags_tag_it_as_a_short(self):
+        self.assertIn("#Shorts", shorts.short_description("A Title", "https://youtu.be/abc"))
+        self.assertIn("#Shorts", shorts.short_description("A Title", None))
+
     def test_no_url_means_no_broken_link(self):
         text = shorts.short_description("A Title", None)
         self.assertNotIn("Full video", text)
+        self.assertNotIn("http", text)
 
 
 class ShortsStateTestCase(unittest.TestCase):
