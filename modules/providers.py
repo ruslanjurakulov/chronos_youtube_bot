@@ -111,3 +111,113 @@ def research_provider() -> ResearchProvider:
     """The default research provider. A factory so a future config can swap the
     implementation without call sites changing."""
     return GeminiResearchProvider()
+
+
+# ---------------------------------------------------------------------------
+# Concrete adapters over the existing capability modules.
+#
+# Each wraps a richer, stateful module (AudioMixer, YouTubeUploader,
+# AnalyticsClient) behind the thin Protocol above. They import their module
+# LAZILY and accept the wrapped object by injection, so importing this file
+# stays cheap and a test can pass a fake without pulling edge_tts / pydub /
+# the Google API client. They add no behaviour of their own — every call
+# delegates to the real module, so the seam can never drift from what the
+# pipeline actually does.
+# ---------------------------------------------------------------------------
+
+
+class AudioMixerVoiceProvider:
+    """VoiceProvider over modules/audio_mixer.AudioMixer.
+
+    Delegates one text to the mixer's real per-segment TTS — the same voice a
+    production run uses, including the channel's ElevenLabs/Edge configuration.
+    Narration only: the SFX/music bed is AudioMixer.build()'s job, a different
+    concern from "synthesize this text", which is what the contract asks for.
+    """
+
+    def __init__(self, mixer=None, *, slug: str = "voice", channel=None, voice_role: str = "main"):
+        self._mixer = mixer
+        self._slug = slug
+        self._channel = channel
+        self._voice_role = voice_role
+
+    def _get_mixer(self):
+        if self._mixer is None:
+            from modules.audio_mixer import AudioMixer
+
+            self._mixer = AudioMixer(self._slug, channel=self._channel)
+        return self._mixer
+
+    def synthesize(self, text: str, out_path: Path) -> Path:
+        return Path(self._get_mixer().synthesize_text(text, Path(out_path), voice_role=self._voice_role))
+
+
+class YouTubeUploaderPublishingProvider:
+    """PublishingProvider over modules/youtube_uploader.YouTubeUploader.
+
+    Passes the video and script straight through to the real uploader; keyword
+    arguments (thumbnail_path, privacy, title_override, captions_path,
+    section_timeline, …) flow through unchanged, so nothing the uploader can do
+    is hidden behind the seam.
+    """
+
+    def __init__(self, uploader=None, *, channel=None):
+        self._uploader = uploader
+        self._channel = channel
+
+    def _get_uploader(self):
+        if self._uploader is None:
+            from modules.youtube_uploader import YouTubeUploader
+
+            self._uploader = YouTubeUploader(self._channel)
+        return self._uploader
+
+    def upload(self, video_path: Path, script: object, **kwargs) -> dict:
+        return self._get_uploader().upload(Path(video_path), script, **kwargs)
+
+
+class AnalyticsClientAnalyticsProvider:
+    """AnalyticsProvider over modules/analytics_client.AnalyticsClient.
+
+    fetch_metrics reads the video's core metrics over a trailing window
+    (default 28 days, ending today UTC). An absent metric stays absent — the
+    underlying client returns {} rather than a guessed zero, and this adapter
+    preserves that: a missing number must never become a fabricated one.
+    """
+
+    def __init__(self, client=None, *, channel=None, lookback_days: int = 28):
+        self._client = client
+        self._channel = channel
+        self._lookback_days = lookback_days
+
+    def _get_client(self):
+        if self._client is None:
+            from modules.analytics_client import AnalyticsClient
+
+            self._client = AnalyticsClient(self._channel)
+        return self._client
+
+    def fetch_metrics(self, video_id: str) -> dict:
+        from datetime import date, timedelta
+
+        end = date.today()
+        start = end - timedelta(days=max(1, self._lookback_days))
+        return self._get_client().video_performance(
+            video_id, start.isoformat(), end.isoformat()
+        )
+
+
+def voice_provider(channel=None, *, slug: str = "voice") -> VoiceProvider:
+    """The default voice provider (a factory, so a future TTS can be swapped in
+    without call sites changing)."""
+    return AudioMixerVoiceProvider(slug=slug, channel=channel)
+
+
+def publishing_provider(channel=None) -> PublishingProvider:
+    """The default publishing provider."""
+    return YouTubeUploaderPublishingProvider(channel=channel)
+
+
+def analytics_provider(channel=None, *, lookback_days: int = 28) -> AnalyticsProvider:
+    """The default analytics provider."""
+    return AnalyticsClientAnalyticsProvider(channel=channel, lookback_days=lookback_days)

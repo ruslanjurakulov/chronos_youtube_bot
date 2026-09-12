@@ -3,6 +3,7 @@
 import asyncio
 import hashlib
 import logging
+import shutil
 from pathlib import Path
 
 import edge_tts
@@ -196,6 +197,21 @@ class AudioMixer:
             voice = self.main_edge_voice if voice_role == "main" else EDGE_TTS_SECONDARY_VOICE
             asyncio.run(self._tts_edge(text, voice, out))
         return out
+
+    def synthesize_text(self, text: str, out_path: Path, voice_role: str = "main") -> Path:
+        """Render one narration segment for `text` to `out_path`, using this
+        channel's configured voice — the same per-segment TTS path build() uses.
+
+        Narration only: no SFX or music bed (that is build()'s job). This is the
+        clean public seam modules/providers.VoiceProvider wraps, so a caller can
+        synthesize a line without reaching into _render_segment or reconstructing
+        the mixer's cache layout."""
+        src = self._render_segment(text, voice_role)
+        out_path = Path(out_path)
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        if Path(src).resolve() != out_path.resolve():
+            shutil.copyfile(src, out_path)
+        return out_path
 
     def render_narration(self, script: Script) -> tuple[AudioSegment, list[dict]]:
         """
