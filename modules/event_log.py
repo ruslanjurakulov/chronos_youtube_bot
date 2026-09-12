@@ -71,6 +71,10 @@ VIDEO_PUBLISHED = "video.published"
 # vocabulary that records something the pipeline REFUSED to do.
 PUBLISH_BLOCKED = "publish.blocked"
 PUBLISH_ALLOWED = "publish.allowed"
+# Advisory pre-publish intelligence (modules/publish_score.py). Records a
+# quality/prediction score for a human to read; it never gates, blocks, or
+# permits anything — the gate above is the only thing that decides publishing.
+PUBLISH_SCORE = "publish.score"
 # Shorts. A short only ever exists downstream of a long video that published,
 # so `short.failed` never means the run failed — the video is already out.
 SHORT_STARTED = "short.started"

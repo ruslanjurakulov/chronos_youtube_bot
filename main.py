@@ -28,6 +28,7 @@ Path("output").mkdir(exist_ok=True)
 from config import OUTPUT_DIR, VIDEO_HEIGHT, VIDEO_WIDTH, YOUTUBE_CATEGORY_ID, YOUTUBE_PRIVACY
 from modules import event_log as events
 from modules import publish_gate
+from modules import publish_score
 from modules.ab_testing import choose_variant, variant_performance
 from modules.audio_mixer import AudioMixer, VoiceUnavailable, verify_voice
 from modules.channels import ChannelContext, resolve_channel
@@ -443,6 +444,27 @@ def run(
         fact_results=fact_results,
         channel=ctx,
     )
+
+    # Advisory pre-publish intelligence — a quality/prediction score for a human
+    # to read. It is emitted alongside the gate but is NOT part of it: it never
+    # blocks, permits, or changes what publishes. Wrapped so a scoring failure
+    # can never turn a run that produced a video into a failed one. Prediction
+    # dimensions read "not enough data" until the history signals are wired in a
+    # follow-up; the content dimensions score the real script now.
+    try:
+        p_score = publish_score.evaluate(publish_score.inputs_from_script(script))
+        events.emit(events.PUBLISH_SCORE, agent="publish_score", status=events.STATUS_COMPLETED,
+                    channel_id=channel_id, metadata=p_score.to_metadata())
+        logger.info(
+            "[channel: %s] Publish score: %s (%s) from %d/%d dimensions",
+            channel_id, p_score.overall, p_score.verdict, p_score.dims_scored, p_score.dims_total,
+        )
+    except Exception as e:
+        logger.warning(
+            "Publish score failed (%s: %s) — advisory only, the run is unaffected",
+            type(e).__name__, e,
+        )
+
     if not gate.allowed:
         logger.error(
             "[channel: %s] PUBLISH BLOCKED: %s — video kept at %s for review",
