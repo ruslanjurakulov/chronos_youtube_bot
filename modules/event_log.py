@@ -133,6 +133,10 @@ PLAYLIST_FAILED = "playlist.failed"
 COMMENT_POSTED = "comment.posted"
 COMMENT_SKIPPED = "comment.skipped"
 COMMENT_FAILED = "comment.failed"
+# Watch-next link (modules/watch_next.py). A "▶ WATCH NEXT" link into another of
+# the channel's videos, added to the description (the API can't set end screens).
+# Best-effort description text: it never changes what publishes or when.
+WATCH_NEXT_LINKED = "watchnext.linked"
 # Niche RPM intelligence (modules/niche_rpm.py). Advisory: a ranking of niches
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
