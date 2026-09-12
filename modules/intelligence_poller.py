@@ -322,6 +322,38 @@ class IntelligencePoller:
 
     # -- orchestration --------------------------------------------------
 
+    def suggest_publish_time(self) -> bool:
+        """Recommend the publish hour (UTC) and weekday from when this channel's
+        best-performing videos went out, emitting one `publish.timing`. Advisory
+        only — it never reschedules or holds a run. Runs after the metrics poll
+        so it reads the freshest views. Returns True when a recommendation was
+        produced. Never raises: a failure here must not abort a poll.
+        """
+        try:
+            from modules import event_log as events
+            from modules import publish_timing
+
+            videos = self.state_store.list_videos(limit=100000, channel_id=self.channel_id)
+            metrics_by_id = {}
+            for v in videos:
+                vid = v.get("video_id")
+                if not vid:
+                    continue
+                m = self.state_store.latest_metrics(vid)
+                if m is not None:
+                    metrics_by_id[vid] = m
+            report = publish_timing.analyze(videos, metrics_by_id)
+            events.emit(events.PUBLISH_TIMING, agent="publish_timing",
+                        status=events.STATUS_COMPLETED, channel_id=self.channel_id,
+                        metadata=publish_timing.summarize(report))
+            if report.has_recommendation:
+                logger.info("[channel: %s] Best publish slot: %sh UTC, %s",
+                            self.channel_id, report.best_hour_utc, report.best_weekday_name or "?")
+            return report.has_recommendation
+        except Exception:
+            logger.exception("Publish-time suggestion pass failed; recommending nothing")
+            return False
+
     def run_all(self, competitor_channel_ids: list | None = None) -> dict:
         """Runs all three polls and returns a small summary dict. This is
         the single function a future scheduled job (cron, GitHub Action, or
@@ -335,10 +367,14 @@ class IntelligencePoller:
 
         trending_videos = self.poll_trends()
 
+        # Advisory, after the metrics poll so it reads the freshest views.
+        publish_timing_ready = self.suggest_publish_time()
+
         return {
             "own_metrics_written": own_metrics_written,
             "competitor_channels_polled": len(competitor_results),
             "competitor_snapshots_written": self._last_competitor_snapshots_written if channel_ids else 0,
             "trending_videos_found": len(trending_videos),
             "trending_snapshots_written": self._last_trending_snapshots_written,
+            "publish_timing_ready": publish_timing_ready,
         }
