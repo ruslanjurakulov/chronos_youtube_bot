@@ -58,6 +58,7 @@ from modules.series import (
     resolve_series, style_keywords,
 )
 from modules.state_store import StateStore
+from modules import strategy
 from modules.subtitle_generator import SubtitleGenerator
 from modules.thumbnail_generator import ThumbnailGenerator
 from modules import title_formulas
@@ -117,6 +118,30 @@ def _title_seeds(channel_id: str, topic: str) -> tuple:
         logger.warning("Title-formula seeding failed (%s: %s) — planning without seeds",
                        type(e).__name__, e)
         return ()
+
+
+def _channel_strategy_note(channel_id: str) -> str:
+    """A channel-lifecycle strategy note for the script prompt, from how many
+    videos this channel has published and how old it is (see modules/strategy.py).
+    Advisory prompt text; any failure returns "" so the prompt is unchanged."""
+    try:
+        with StateStore() as store:
+            videos = store.list_videos(limit=100000, channel_id=channel_id)
+        count = len(videos)
+        age_days = None
+        stamps = [str(v.get("published_at") or "") for v in videos if v.get("published_at")]
+        if stamps:
+            oldest = min(stamps)
+            try:
+                dt = datetime.fromisoformat(oldest.replace("Z", "+00:00"))
+                now = datetime.now(dt.tzinfo) if dt.tzinfo else datetime.utcnow()
+                age_days = max(0.0, (now - dt).total_seconds() / 86400.0)
+            except (ValueError, TypeError):
+                age_days = None
+        return strategy.adaptive_strategy(count, age_days)
+    except Exception as e:
+        logger.warning("Strategy note failed (%s: %s) — writing without it", type(e).__name__, e)
+        return ""
 
 
 def _publish_short(
@@ -432,8 +457,13 @@ def run(
                               "thumbnail_concept": title_plan.thumbnail_concept})
         events.emit(events.SCRIPT_STARTED, agent="script_engine", status=events.STATUS_RUNNING,
                     channel_id=channel_id, metadata={"topic": topic, "working_title": title_plan.chosen})
+        # Adapt the writing to the channel's lifecycle stage — a launch channel
+        # is written for broad appeal, an established one for depth. Advisory
+        # prompt text; empty for a channel we can't measure (see modules/strategy.py).
+        strategy_note = _channel_strategy_note(channel_id)
         script = engine.generate(topic, research_brief=research_brief,
-                                 working_title=title_plan.chosen)
+                                 working_title=title_plan.chosen,
+                                 strategy_note=strategy_note)
         costs.add_gemini_usage(engine.last_response, stage="script")
 
     slug = slugify(topic)
