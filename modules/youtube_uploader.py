@@ -402,6 +402,7 @@ class YouTubeUploader:
         description_override: str | None = None,
         captions_path: Path | None = None,
         section_timeline: list[dict] | None = None,
+        description_suffix: str | None = None,
     ) -> dict:
         """Upload one video.
 
@@ -418,6 +419,12 @@ class YouTubeUploader:
         Both are optional and both default to the behaviour every caller had
         before they existed.
 
+        `description_suffix` is an extra block appended after the description and
+        chapters — a "Watch next" link into another of the channel's videos (see
+        modules/watch_next.py), the closest the Data API allows to an end screen,
+        which it cannot set. Appended only if it fits under YouTube's limit and
+        isn't already present; None keeps the description exactly as before.
+
         Quota: videos.insert is ~1600 units of the 10,000/day; a caption track
         adds ~400. Chapters are description text and cost nothing.
         """
@@ -429,6 +436,9 @@ class YouTubeUploader:
             description = compose_description(
                 description, build_chapters(section_timeline, script.sections)
             )
+        if description_suffix:
+            from modules import watch_next
+            description = watch_next.append_watch_next(description, description_suffix)
 
         body = {
             "snippet": {

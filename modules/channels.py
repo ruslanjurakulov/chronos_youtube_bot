@@ -189,6 +189,12 @@ class AgentConfig:
     # and never turns a published run into a failed one. Stored in this blob — no
     # migration. Set False to stop the channel commenting on its own videos.
     pinned_comment: bool = True
+    # Whether the description carries a "▶ WATCH NEXT" link into another of the
+    # channel's videos (the closest the Data API allows to an end screen, which
+    # it cannot set — see modules/watch_next.py). Pure description text, no cost
+    # or privacy impact. Defaults True; stored in this blob — no migration. Set
+    # False to ship descriptions without the watch-next link.
+    watch_next: bool = True
 
     def to_dict(self) -> dict:
         return {
@@ -206,6 +212,7 @@ class AgentConfig:
             "auto_publish": self.auto_publish,
             "spend_ceiling_usd": self.spend_ceiling_usd,
             "pinned_comment": self.pinned_comment,
+            "watch_next": self.watch_next,
         }
 
     @staticmethod
@@ -238,6 +245,8 @@ class AgentConfig:
             # Like auto_publish: absent → True, and only an explicit false stops
             # the channel from posting its engagement comment.
             pinned_comment=(False if d.get("pinned_comment") is False else True),
+            # Same convention: absent → True, only an explicit false drops it.
+            watch_next=(False if d.get("watch_next") is False else True),
         )
 
 
