@@ -146,6 +146,11 @@ PUBLISH_TIMING = "publish.timing"
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
 NICHE_RPM = "niche.rpm"
+# Quota allocation (modules/quota_allocator.py). Advisory: the recommended split
+# of a day's upload budget across channels by measured performance, with a
+# reserved baseline per channel. It recommends for a scheduler/human — it never
+# schedules or publishes anything itself.
+QUOTA_ALLOCATED = "quota.allocated"
 
 # Status vocabulary (free-form, but these are the common ones).
 STATUS_RUNNING = "running"
