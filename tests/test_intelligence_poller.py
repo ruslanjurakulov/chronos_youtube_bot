@@ -238,6 +238,9 @@ class IntelligencePollerTestCase(unittest.TestCase):
                 # Advisory repackage pass runs too; with one measured video there
                 # is no channel baseline, so it flags nothing.
                 "repackage_candidates": 0,
+                # Advisory publish-time pass runs too; one video clears no slot's
+                # sample threshold, so no recommendation.
+                "publish_timing_ready": False,
             },
         )
 

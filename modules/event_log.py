@@ -138,6 +138,10 @@ COMMENT_FAILED = "comment.failed"
 # new title/thumbnail. It never edits a live video — like publish.score it
 # informs a human/Command Center, it does not act.
 REPACKAGE_SUGGESTED = "repackage.suggested"
+# Publish-time optimizer (modules/publish_timing.py). Advisory: the hour (UTC)
+# and weekday this channel's best-performing videos were published, for the
+# scheduler/human to use. It never reschedules or holds a run on its own.
+PUBLISH_TIMING = "publish.timing"
 # Niche RPM intelligence (modules/niche_rpm.py). Advisory: a ranking of niches
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
