@@ -29,6 +29,7 @@ const SECONDARY: { href: string; key: NavKey }[] = [
   { href: "/accounts", key: "accounts" },
   { href: "/series", key: "series" },
   { href: "/intelligence-map", key: "intelligence" },
+  { href: "/intelligence", key: "advisory" },
   { href: "/agents", key: "agents" },
   { href: "/jobs", key: "jobs" },
   { href: "/topics", key: "topics" },
