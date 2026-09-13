@@ -154,6 +154,12 @@ PUBLISH_TIMING = "publish.timing"
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
 NICHE_RPM = "niche.rpm"
+# vidIQ research & scoring (modules/vidiq.py). Advisory: `vidiq.research` records
+# a ranking of keyword opportunities; `vidiq.scored` a ranking of candidate
+# titles by vidIQ's title score. Research and scoring ONLY — it never selects a
+# topic, edits a title, gates a publish, or runs a second pipeline; it informs.
+VIDIQ_RESEARCH = "vidiq.research"
+VIDIQ_SCORED = "vidiq.scored"
 # Viral Remix (modules/remix.py). `remix.planned` records an eligible, rights-clean
 # remix plan (a NEW transformative work, still gated); `remix.blocked` records a
 # source refused for lacking an asserted rights basis. Off unless a channel opts in;
