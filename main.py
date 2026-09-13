@@ -49,6 +49,7 @@ from modules.fact_checker import fact_check_claims
 from modules.media_fetcher import MediaFetcher
 from modules import pinned_comment
 from modules import playlist
+from modules import watch_next
 from modules.pipeline_stages import PipelineStage, PipelineStateMachine
 from modules.research_engine import research_topic
 from modules import run_checkpoint
@@ -719,6 +720,27 @@ def run(
             # gate is unchanged — this is the same unconditional upload it has
             # always been, now simply aimed at the right channel.
             uploader = YouTubeUploader(channel=ctx)
+            # Watch-next: point the description at another of the channel's
+            # videos (the closest the Data API allows to an end screen, which it
+            # cannot set — see modules/watch_next.py). Best-effort description
+            # text; a lookup failure just omits the link, and off when the channel
+            # set watch_next=false.
+            watch_next_suffix = None
+            if getattr(ctx.agent, "watch_next", True):
+                try:
+                    with StateStore() as _wn_store:
+                        _next = watch_next.pick_next_video(
+                            _wn_store.list_videos(limit=1000, channel_id=channel_id),
+                            series_id=(series_obj.series_id if series_obj else None))
+                    if _next:
+                        watch_next_suffix = watch_next.watch_next_block(
+                            _next.get("video_id", ""), _next.get("title", ""))
+                        events.emit(events.WATCH_NEXT_LINKED, agent="watch_next",
+                                    status=events.STATUS_COMPLETED, channel_id=channel_id,
+                                    metadata={"next_video_id": _next.get("video_id")})
+                except Exception as e:
+                    logger.warning("Watch-next lookup failed (%s: %s) — no link this run",
+                                   type(e).__name__, e)
             uploaded = uploader.upload(
                 video_path, script, thumbnail_path=chosen_thumb, privacy=privacy,
                 title_override=chosen_title or None,
@@ -728,6 +750,7 @@ def run(
                 # when — see modules/youtube_uploader.py.
                 captions_path=srt_path,
                 section_timeline=timeline,
+                description_suffix=watch_next_suffix,
             )
             video_id, video_url = uploaded["id"], uploaded["url"]
             # Recorded only on a successful upload — a failed attempt may have
