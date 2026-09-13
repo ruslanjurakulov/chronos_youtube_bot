@@ -159,6 +159,10 @@ NICHE_RPM = "niche.rpm"
 # reserved baseline per channel. It recommends for a scheduler/human — it never
 # schedules or publishes anything itself.
 QUOTA_ALLOCATED = "quota.allocated"
+# State durability (modules/durability.py). Advisory: whether the ephemeral
+# local history is safely mirrored to Supabase, and when a JSON backup was
+# written. It never deletes or overwrites history — it reports and backs up.
+DURABILITY_CHECK = "durability.check"
 
 # Status vocabulary (free-form, but these are the common ones).
 STATUS_RUNNING = "running"
