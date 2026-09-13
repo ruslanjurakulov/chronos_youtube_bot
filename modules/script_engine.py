@@ -406,6 +406,7 @@ class ScriptEngine:
         topic: str,
         research_brief: "ResearchBrief | None" = None,
         working_title: str | None = None,
+        strategy_note: str = "",
     ) -> Script:
         """Generate a script for `topic`.
 
@@ -413,9 +414,14 @@ class ScriptEngine:
         modules/title_planner.py): the script is written to deliver on that exact
         promise, and the produced Script's `title` is set to it so the video
         ships under the title it was planned for. None keeps today's behaviour —
-        the title comes from the model."""
+        the title comes from the model.
+
+        `strategy_note`, when given, is a channel-lifecycle guidance paragraph
+        (see modules/strategy.py) appended to the prompt — launch channels are
+        written for broad appeal, established ones for depth. "" keeps the prompt
+        exactly as before."""
         prompt = self._build_prompt(topic, research_brief, channel=self.channel,
-                                    working_title=working_title)
+                                    working_title=working_title, strategy_note=strategy_note)
         performance_context = self._performance_context()
         if performance_context:
             prompt += f"\n\n{performance_context}"
@@ -441,7 +447,7 @@ class ScriptEngine:
     @staticmethod
     def _build_prompt(
         topic: str, research_brief: "ResearchBrief | None" = None, channel=None,
-        working_title: str | None = None,
+        working_title: str | None = None, strategy_note: str = "",
     ) -> str:
         """Assemble the user-side prompt.
 
@@ -476,6 +482,11 @@ class ScriptEngine:
                     f"footage in this style:\n{agent.visual_style_prompt}\n"
                 )
             prompt += "\n"
+
+        # Channel-lifecycle strategy note (modules/strategy.py). Appended, never
+        # a replacement — empty keeps the prompt exactly as it was.
+        if strategy_note:
+            prompt += f"\n{strategy_note}\n"
 
         if working_title:
             prompt += (
