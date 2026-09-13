@@ -195,6 +195,13 @@ class AgentConfig:
     # or privacy impact. Defaults True; stored in this blob — no migration. Set
     # False to ship descriptions without the watch-next link.
     watch_next: bool = True
+    # Whether this channel may build Viral Remix videos (re-edit its own catalogue,
+    # or transformative commentary over a source with an ASSERTED rights basis —
+    # see modules/remix.py). New and legally sensitive, so it is OFF unless a
+    # channel explicitly opts in (only an explicit true turns it on). It never
+    # weakens the publish gate: a remix is still a video and still faces the gate.
+    # Stored in this blob — no migration.
+    remix_enabled: bool = False
 
     def to_dict(self) -> dict:
         return {
@@ -213,6 +220,7 @@ class AgentConfig:
             "spend_ceiling_usd": self.spend_ceiling_usd,
             "pinned_comment": self.pinned_comment,
             "watch_next": self.watch_next,
+            "remix_enabled": self.remix_enabled,
         }
 
     @staticmethod
@@ -247,6 +255,9 @@ class AgentConfig:
             pinned_comment=(False if d.get("pinned_comment") is False else True),
             # Same convention: absent → True, only an explicit false drops it.
             watch_next=(False if d.get("watch_next") is False else True),
+            # Opposite default to the growth flags: Viral Remix is new and legally
+            # sensitive, so absent → False and ONLY an explicit true opts a channel in.
+            remix_enabled=(True if d.get("remix_enabled") is True else False),
         )
 
 
