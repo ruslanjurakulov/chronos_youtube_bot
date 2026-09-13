@@ -142,6 +142,10 @@ REPACKAGE_SUGGESTED = "repackage.suggested"
 # the channel's videos, added to the description (the API can't set end screens).
 # Best-effort description text: it never changes what publishes or when.
 WATCH_NEXT_LINKED = "watchnext.linked"
+# Publish-time optimizer (modules/publish_timing.py). Advisory: the hour (UTC)
+# and weekday this channel's best-performing videos were published, for the
+# scheduler/human to use. It never reschedules or holds a run on its own.
+PUBLISH_TIMING = "publish.timing"
 # Niche RPM intelligence (modules/niche_rpm.py). Advisory: a ranking of niches
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
