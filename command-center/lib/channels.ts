@@ -56,6 +56,7 @@ export const SECTIONS = [
   "channels",
   "accounts",
   "intelligence-map",
+  "intelligence",
   "agents",
   "jobs",
   "topics",
