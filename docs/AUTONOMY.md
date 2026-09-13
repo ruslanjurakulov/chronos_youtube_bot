@@ -1,6 +1,6 @@
-# Chronos Autonomy (Phase 4)
+# Nightshift Autonomy (Phase 4)
 
-What Chronos actually does on its own, what it does **not**, and exactly what
+What Nightshift actually does on its own, what it does **not**, and exactly what
 implementing real autonomy controls would require.
 
 Like Phase 3 this layer is **read-only and derived**. It adds no tables, no

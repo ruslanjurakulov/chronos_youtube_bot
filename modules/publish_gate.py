@@ -10,7 +10,7 @@ one channel that was a survivable trade. At several channels publishing daily it
 is not: a single policy strike or a duplicate-content pattern can cost a channel
 permanently, and nobody is watching each upload.
 
-So this module blocks. It is the one place in Chronos that can prevent a
+So this module blocks. It is the one place in Nightshift that can prevent a
 publish, and it only ever moves in the restrictive direction:
 
 * It can stop an upload that would previously have happened.

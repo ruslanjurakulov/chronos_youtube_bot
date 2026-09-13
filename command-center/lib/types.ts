@@ -6,7 +6,7 @@
 
 export interface VideoRow {
   video_id: string;
-  /** Which Chronos channel published it. Backfilled to "default" by migration 0001. */
+  /** Which Nightshift channel published it. Backfilled to "default" by migration 0001. */
   channel_id: string;
   topic: string | null;
   title: string | null;

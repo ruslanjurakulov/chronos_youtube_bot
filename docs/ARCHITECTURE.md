@@ -1,6 +1,6 @@
-# Chronos History Lab — Architecture
+# Nightshift History Lab — Architecture
 
-Chronos History Lab is an autonomous YouTube-automation bot for a
+Nightshift History Lab is an autonomous YouTube-automation bot for a
 "history mysteries" channel. It has two distinct halves:
 
 1. **A per-video generation pipeline** — picks a topic, researches it, writes a

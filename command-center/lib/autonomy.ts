@@ -84,7 +84,7 @@ export interface AutonomousAction {
 }
 
 /**
- * Actions Chronos took on its own, straight from the agent-attributed event
+ * Actions Nightshift took on its own, straight from the agent-attributed event
  * stream. Events with no agent are infrastructure noise and are left out.
  */
 export function autonomousActions(events: SystemEventRow[], limit = 100): AutonomousAction[] {

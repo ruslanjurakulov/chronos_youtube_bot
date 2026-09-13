@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Connect one Chronos channel to YouTube — the OAuth step, run by a human.
+"""Connect one Nightshift channel to YouTube — the OAuth step, run by a human.
 
     python tools/connect_channel.py --channel extinct-world
 
@@ -97,7 +97,7 @@ def connect(channel_id: str | None, *, list_only: bool = False) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Connect a Chronos channel to YouTube")
+    parser = argparse.ArgumentParser(description="Connect a Nightshift channel to YouTube")
     parser.add_argument("--channel", default=None, help="Channel id (default: the default channel)")
     parser.add_argument("--list", action="store_true", help="List channels and their connection status")
     args = parser.parse_args()

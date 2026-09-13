@@ -2,7 +2,7 @@
 """Emit the channels a scheduled run should cover, as a GitHub Actions matrix.
 
     python tools/list_channels.py --due-hour 15
-    -> {"include": [{"channel_id": "default", "name": "Chronos", "niche": "..."}]}
+    -> {"include": [{"channel_id": "default", "name": "Nightshift", "niche": "..."}]}
 
 The daily workflow calls this once, then fans out one job per returned channel
 with ``fail-fast: false``, so a credential failure on one channel cannot cancel

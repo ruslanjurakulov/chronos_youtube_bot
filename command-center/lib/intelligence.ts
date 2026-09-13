@@ -44,7 +44,7 @@ export type CoreState =
 const ACTIVE_MS = 5 * 60 * 1000;
 
 /**
- * The Chronos Core's state, from the newest real event and the realtime
+ * The Nightshift Core's state, from the newest real event and the realtime
  * connection. Between polls the system genuinely is idle, so idle is the
  * honest resting state — not a placeholder.
  */

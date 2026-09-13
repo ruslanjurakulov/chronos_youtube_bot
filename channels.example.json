@@ -24,7 +24,7 @@
   "channels": [
     {
       "channel_id": "default",
-      "name": "Chronos",
+      "name": "Nightshift",
       "niche": "history mysteries",
       "status": "ACTIVE",
       "agent_config": {
@@ -39,7 +39,7 @@
     },
     {
       "channel_id": "chronos-finance",
-      "name": "Chronos Finance",
+      "name": "Nightshift Finance",
       "niche": "Finance & Investing",
       "status": "PAUSED",
       "agent_config": {

@@ -1,4 +1,4 @@
-# Chronos Intelligence Layer (Phase 3)
+# Nightshift Intelligence Layer (Phase 3)
 
 How the Command Center turns the bot's existing output into a visible
 OBSERVE → ANALYZE → LEARN → DECIDE → ACT → MEASURE → IMPROVE loop.
@@ -85,7 +85,7 @@ trend cannot come from it. It is instead derived from the dated
 date compared with the one before it. With fewer than two dated analyses there
 is no trend and the state is `STABLE`, not a guess. The UI states this.
 
-## Chronos Memory
+## Nightshift Memory
 
 `/memory`. A memory is only created when real evidence supports it:
 
@@ -112,7 +112,7 @@ Also on `/memory`. Derived, evidence-backed, with a recommended action:
 On each video's detail page: decision → generation → published → metrics →
 learning signals → topic score. A step is lit **only** when a real event or row
 backs it, so an incomplete chain shows exactly how far the loop actually got.
-This is what answers "how did this video's result change what Chronos does
+This is what answers "how did this video's result change what Nightshift does
 next?".
 
 ## Deliberately not implemented (and why)

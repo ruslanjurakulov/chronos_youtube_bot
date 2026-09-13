@@ -1,6 +1,6 @@
-"""Channel model — the configuration one Chronos channel runs under.
+"""Channel model — the configuration one Nightshift channel runs under.
 
-Chronos began as a single-channel bot: every generator read its settings from
+Nightshift began as a single-channel bot: every generator read its settings from
 module-level constants in ``config.py``, which read the process environment
 once at import time. That works for exactly one channel. This module adds the
 missing noun — a *channel* — without taking those constants away.
@@ -461,7 +461,7 @@ def legacy_default_channel() -> ChannelContext:
     """
     return ChannelContext(
         channel_id=DEFAULT_CHANNEL_ID,
-        name=os.getenv("CHRONOS_DEFAULT_CHANNEL_NAME", "Chronos"),
+        name=os.getenv("CHRONOS_DEFAULT_CHANNEL_NAME", "Nightshift"),
         niche=os.getenv("CHRONOS_DEFAULT_CHANNEL_NICHE", "history mysteries"),
         status=STATUS_ACTIVE,
         agent=AgentConfig(),

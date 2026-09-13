@@ -1,6 +1,6 @@
 """Phase 6: cost, A/B, retention and the pre-publish gate.
 
-The gate tests are the important ones here. It is the only component in Chronos
+The gate tests are the important ones here. It is the only component in Nightshift
 that can stop a publish, so what it must never do matters more than what it
 does: it must never allow something that was previously blocked, and it must
 never block because one of its own checkers broke.

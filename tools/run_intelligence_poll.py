@@ -335,7 +335,7 @@ def mirror_to_supabase() -> dict:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Chronos intelligence poll")
+    parser = argparse.ArgumentParser(description="Nightshift intelligence poll")
     parser.add_argument("--skip-comments", action="store_true", help="Skip the comment fetch/classify pass")
     parser.add_argument("--skip-planning", action="store_true", help="Skip feeding suggestions into the content planner queue")
     parser.add_argument("--skip-feedback", action="store_true", help="Skip the feedback-loop scoring pass")

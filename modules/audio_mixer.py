@@ -134,7 +134,7 @@ class AudioMixer:
     """Builds one video's audio.
 
     An optional ``channel`` supplies that channel's TTS provider and narrator
-    voice, so Extinct World and Chronos Finance can sound different without two
+    voice, so Extinct World and Nightshift Finance can sound different without two
     mixers existing. Without one, the values come from ``config.py`` exactly as
     before. The secondary voice is a fixed contrast voice in both cases — it is
     a dramatic device inside the script format, not a channel identity.

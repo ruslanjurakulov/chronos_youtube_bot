@@ -59,7 +59,7 @@ class ShortsConfig:
     """Whether this channel makes Shorts, and how long they run.
 
     Off unless the channel explicitly turns it on. Every other per-channel flag
-    in Chronos defaults to the safe direction; here the safe direction is *not*
+    in Nightshift defaults to the safe direction; here the safe direction is *not*
     spending another 1600 quota units per day without being asked.
     """
 

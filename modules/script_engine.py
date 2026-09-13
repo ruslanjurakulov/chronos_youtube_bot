@@ -454,7 +454,7 @@ class ScriptEngine:
         A channel contributes its language, duration and strategy text. The
         channel's own instructions are APPENDED to the shared retention rules in
         SCRIPT_SYSTEM_PROMPT rather than replacing them — hook, open loops and
-        cue structure are what makes a Chronos video a Chronos video, on every
+        cue structure are what makes a Nightshift video a Nightshift video, on every
         channel. Its visual style is included because the section `keywords`
         this prompt asks for are what the stock-footage search runs on, so the
         style has to reach the writer to reach the screen.

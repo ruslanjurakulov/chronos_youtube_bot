@@ -1,5 +1,5 @@
 /**
- * Chronos Memory, topic intelligence and opportunities — Phase 3.
+ * Nightshift Memory, topic intelligence and opportunities — Phase 3.
  *
  * All of it is derived from real rows (topic_performance, feedback_signals,
  * demand_signals, videos). Nothing is stored separately and nothing is
@@ -252,7 +252,7 @@ export interface Opportunity {
 export const DEMAND_MIN_MENTIONS = 3;
 
 /**
- * What Chronos can currently see worth acting on. Every opportunity carries
+ * What Nightshift can currently see worth acting on. Every opportunity carries
  * the real evidence behind it; anything without evidence simply isn't listed.
  */
 export function deriveOpportunities(

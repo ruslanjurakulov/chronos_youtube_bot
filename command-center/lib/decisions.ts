@@ -210,7 +210,7 @@ export interface TraceStep {
 }
 
 /**
- * The chain that answers "how did this video's result change what Chronos does
+ * The chain that answers "how did this video's result change what Nightshift does
  * next?" — decision -> generation -> publish -> metrics -> learning signals ->
  * topic score. Each step is `done` only when a real row/event backs it.
  */

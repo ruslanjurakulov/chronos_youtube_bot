@@ -1,6 +1,6 @@
 # Supabase setup — the Command Center data backbone
 
-The Chronos bot runs fully local by default: its state lives in
+The Nightshift bot runs fully local by default: its state lives in
 `history/chronos.db`, which on the scheduled GitHub Actions runners exists only
 for the life of one job. To power the real-time **Command Center** (the separate
 Next.js app on Vercel) with **real** data, the bot mirrors that state into a

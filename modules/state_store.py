@@ -193,7 +193,7 @@ _COLUMN_MIGRATIONS = (
     ("videos", "channel_id", "TEXT NOT NULL DEFAULT 'default'"),
     ("feedback_signals", "channel_id", "TEXT NOT NULL DEFAULT 'default'"),
     # NOTE the name: competitor_snapshots.channel_id already exists and means
-    # the *competitor's* YouTube channel. The Chronos channel that is watching
+    # the *competitor's* YouTube channel. The Nightshift channel that is watching
     # them needs its own column, hence the prefix.
     ("competitor_snapshots", "chronos_channel_id", "TEXT NOT NULL DEFAULT 'default'"),
     ("demand_signals", "channel_id", "TEXT NOT NULL DEFAULT 'default'"),
