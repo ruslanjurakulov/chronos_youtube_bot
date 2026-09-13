@@ -38,5 +38,11 @@ jobs:
 
       - name: Check pending approvals
         env:
+          # Notifier.send() fans out to whichever transports are configured.
+          # Slack via a webhook; Telegram when the bot token + chat id are set.
+          # An unset transport is silently skipped, so leaving any of these
+          # empty simply means that channel gets no nudge.
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python tools/check_pending_approvals.py
