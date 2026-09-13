@@ -146,6 +146,11 @@ PUBLISH_TIMING = "publish.timing"
 # by measured performance for a human/scheduler to consult. It never changes
 # niche selection on its own — like publish.score, it informs, it does not gate.
 NICHE_RPM = "niche.rpm"
+# Quota allocation (modules/quota_allocator.py). Advisory: the recommended split
+# of a day's upload budget across channels by measured performance, with a
+# reserved baseline per channel. It recommends for a scheduler/human — it never
+# schedules or publishes anything itself.
+QUOTA_ALLOCATED = "quota.allocated"
 # State durability (modules/durability.py). Advisory: whether the ephemeral
 # local history is safely mirrored to Supabase, and when a JSON backup was
 # written. It never deletes or overwrites history — it reports and backs up.
