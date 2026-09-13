@@ -192,7 +192,7 @@ def print_secrets(reveal: bool):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Chronos setup preflight")
+    ap = argparse.ArgumentParser(description="Nightshift setup preflight")
     ap.add_argument("--reveal", action="store_true",
                     help="print full secret values for pasting into GitHub Secrets")
     args = ap.parse_args()

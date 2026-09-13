@@ -25,7 +25,7 @@ const OPP_ACTION: Record<OpportunityKind, keyof Dictionary["intel"]> = {
   audience_demand: "oppActionCover",
 };
 
-/** Chronos Memory and Opportunities. Both lists are empty until real evidence
+/** Nightshift Memory and Opportunities. Both lists are empty until real evidence
  *  exists — there is no seeded or illustrative content. */
 export function MemoryView({
   memories,

@@ -1,6 +1,6 @@
-# Chronos Command Center
+# Nightshift Command Center
 
-Real-time monitoring & control plane for the Chronos content-automation bot.
+Real-time monitoring & control plane for the Nightshift content-automation bot.
 Next.js (App Router) on Vercel, reading a Supabase Postgres project the bot
 mirrors its state into. **Real data only** — anything the backend hasn't
 produced shows `N/A` or `NOT CONFIGURED`, never invented numbers.

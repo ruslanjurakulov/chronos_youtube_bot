@@ -30,7 +30,7 @@ from modules.channels import (
 def finance() -> ChannelContext:
     return ChannelContext(
         channel_id=validate_channel_id("chronos-finance"),
-        name="Chronos Finance",
+        name="Nightshift Finance",
         niche="Finance & Investing",
         status="ACTIVE",
         agent=AgentConfig(

@@ -1,6 +1,6 @@
 # Multi-channel architecture (Phase 5)
 
-Chronos runs several independent YouTube channels from one Command Center. This
+Nightshift runs several independent YouTube channels from one Command Center. This
 document describes what a channel *is*, what is scoped to it and what stays
 global, how credentials are kept out of the browser, and exactly what a
 single-channel deployment does and does not have to change.
@@ -284,7 +284,7 @@ until the job's timeout.
 ### Adding a channel's token secret to the workflow
 
 Actions secrets cannot be enumerated at runtime, so each channel's token secret
-is listed explicitly in the `Run Chronos bot` step's `env:` — one line per
+is listed explicitly in the `Run Nightshift bot` step's `env:` — one line per
 channel:
 
 ```yaml
@@ -367,7 +367,7 @@ How it holds together:
   events stay visible.
 - **Channels page** (`/channels`) shows each channel's configuration, credential
   status and per-channel health, plus a cross-channel comparison. Health is per
-  channel on purpose — one channel's expired token must not make all of Chronos
+  channel on purpose — one channel's expired token must not make all of Nightshift
   read unhealthy — and with no evidence the tone is *idle*, never a green tick.
 - **Add Channel** (`/channels/new`) creates the channel **PAUSED**, always. A
   human activates it after connecting YouTube.

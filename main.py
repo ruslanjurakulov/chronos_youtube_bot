@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Chronos YouTube Bot — Full Pipeline
+Nightshift YouTube Bot — Full Pipeline
   1. Topic Manager       → picks fresh viral topic
   2. Script Engine       → Gemini Hook + Story + Open Loops + SFX/Music cues
   3. Audio Mixer         → TTS multi-voice + SFX + dynamic music
@@ -279,7 +279,7 @@ def run(
     visual_style = effective_visual_style(None, series_obj)
     voice_style = effective_voice_style(None, series_obj)
     cadence = effective_cadence(series_obj)
-    logger.info("=== Chronos YouTube Bot starting [channel: %s] ===", channel_id)
+    logger.info("=== Nightshift YouTube Bot starting [channel: %s] ===", channel_id)
     if series_obj and (visual_style or voice_style or cadence):
         logger.info("Series style — visual: %r | voice: %r | cadence: %s",
                     visual_style, voice_style, cadence)
@@ -855,7 +855,7 @@ def run(
                                type(e).__name__, e)
         except Exception as e:
             # Channel-tagged so one channel's credential failure is visibly
-            # that channel's, and does not read as a Chronos-wide outage.
+            # that channel's, and does not read as a Nightshift-wide outage.
             logger.error("[channel: %s] YouTube upload failed (%s): %s", channel_id, type(e).__name__, e)
             print(f"\n✓ Video saved, upload failed: {video_path}")
             events.emit(events.UPLOAD_FAILED, agent="youtube_uploader", status=events.STATUS_FAILED,
@@ -935,7 +935,7 @@ def list_channels():
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Chronos YouTube Bot")
+    parser = argparse.ArgumentParser(description="Nightshift YouTube Bot")
     parser.add_argument("--channel", default=None,
                         help="Channel id to run (default: the 'default' channel — "
                              "see modules/channels.py and docs/MULTI_CHANNEL.md)")

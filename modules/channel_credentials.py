@@ -284,7 +284,7 @@ def token_diagnosis(token_file: Optional[Path], required_scopes: Iterable[str] =
     if missing_fields:
         return (
             f"{path.name} is missing {', '.join(missing_fields)}. A token with no "
-            "refresh_token cannot be renewed: revoke Chronos at "
+            "refresh_token cannot be renewed: revoke Nightshift at "
             "myaccount.google.com/permissions and connect the channel again"
         )
 

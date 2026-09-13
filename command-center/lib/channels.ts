@@ -227,7 +227,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  * Health for one channel, derived only from what the backend actually recorded.
  *
  * Deliberately per channel: one channel's expired token is that channel's
- * problem, and must not make the whole of Chronos read as unhealthy. Where
+ * problem, and must not make the whole of Nightshift read as unhealthy. Where
  * there is no evidence either way the tone is "idle", never a green tick —
  * "we have not heard from this subsystem" is not the same as "it is fine".
  */

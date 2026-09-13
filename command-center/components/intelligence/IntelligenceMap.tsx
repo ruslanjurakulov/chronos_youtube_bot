@@ -85,7 +85,7 @@ function matches(node: NodeKey, ev: string): boolean {
   }
 }
 
-/** How Chronos intelligence flows. Each node lights up when a matching real
+/** How Nightshift intelligence flows. Each node lights up when a matching real
  *  event landed in the last 24h; edges animate out of an active source. No
  *  activity anywhere means the map is honestly quiet, not faked into motion. */
 export function IntelligenceMap({
