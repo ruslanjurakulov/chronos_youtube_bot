@@ -5,6 +5,7 @@ import {
   parsePublishTiming,
   parseRepackage,
   parseSpendForecast,
+  parseVidiqResearch,
 } from "@/lib/advisory";
 import type { SystemEventRow } from "@/lib/types";
 
@@ -160,6 +161,7 @@ describe("parseDurability", () => {
 describe("deriveAdvisory", () => {
   it("returns all-null for an empty stream", () => {
     const a = deriveAdvisory([]);
+    expect(a.vidiq).toBeNull();
     expect(a.spend).toBeNull();
     expect(a.timing).toBeNull();
     expect(a.repackage).toBeNull();
@@ -184,5 +186,31 @@ describe("deriveAdvisory", () => {
     const a = deriveAdvisory([ev("budget.forecast", "t", null)]);
     expect(a.spend).not.toBeNull();
     expect(a.spend?.projectedUsd).toBeNull();
+  });
+});
+
+describe("parseVidiqResearch", () => {
+  it("returns null with no event", () => {
+    expect(parseVidiqResearch(null)).toBeNull();
+  });
+
+  it("reads the ranked head and best term, keeping unknown opportunity null", () => {
+    const r = parseVidiqResearch(
+      ev("vidiq.research", "t", {
+        keywords_scored: 3,
+        best: "roman empire",
+        top: [
+          { term: "roman empire", opportunity: 0.72 },
+          { term: "roman roads", opportunity: 0.09 },
+          { term: "bad", opportunity: null },
+          { not_a_term: true },
+        ],
+      }),
+    );
+    expect(r?.keywordsScored).toBe(3);
+    expect(r?.best).toBe("roman empire");
+    // rows without a term are dropped; a null opportunity is kept as null
+    expect(r?.top.map((k) => k.term)).toEqual(["roman empire", "roman roads", "bad"]);
+    expect(r?.top[2].opportunity).toBeNull();
   });
 });

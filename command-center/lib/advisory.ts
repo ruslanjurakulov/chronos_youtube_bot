@@ -23,6 +23,7 @@ export const EVENT_BUDGET_FORECAST = "budget.forecast";
 export const EVENT_PUBLISH_TIMING = "publish.timing";
 export const EVENT_REPACKAGE_SUGGESTED = "repackage.suggested";
 export const EVENT_DURABILITY_CHECK = "durability.check";
+export const EVENT_VIDIQ_RESEARCH = "vidiq.research";
 
 // -- value coercion: unknown JSON in, typed-or-null out ---------------------
 
@@ -177,11 +178,49 @@ export function parseDurability(e: SystemEventRow | null): DurabilitySummary | n
   };
 }
 
+export interface VidiqKeyword {
+  term: string;
+  /** vidIQ opportunity score, 0..1, or null when it couldn't be computed. */
+  opportunity: number | null;
+}
+
+export interface VidiqResearch {
+  ts: string;
+  /** How many keywords vidIQ could actually score (never a fabricated count). */
+  keywordsScored: number | null;
+  /** The highest-opportunity term, or null when nothing was scorable. */
+  best: string | null;
+  /** The ranked head of the list, best first. */
+  top: VidiqKeyword[];
+}
+
+export function parseVidiqResearch(e: SystemEventRow | null): VidiqResearch | null {
+  if (!e) return null;
+  const m = asRecord(e.metadata) ?? {};
+  const rawTop = Array.isArray(m.top) ? m.top : [];
+  const top: VidiqKeyword[] = rawTop
+    .map((row) => {
+      const r = asRecord(row);
+      if (!r) return null;
+      const term = strOrNull(r.term);
+      if (!term) return null;
+      return { term, opportunity: numOrNull(r.opportunity) };
+    })
+    .filter((k): k is VidiqKeyword => k !== null);
+  return {
+    ts: e.ts,
+    keywordsScored: numOrNull(m.keywords_scored),
+    best: strOrNull(m.best),
+    top,
+  };
+}
+
 export interface AdvisoryIntelligence {
   spend: SpendForecast | null;
   timing: PublishTiming | null;
   repackage: RepackageSummary | null;
   durability: DurabilitySummary | null;
+  vidiq: VidiqResearch | null;
 }
 
 /**
@@ -195,5 +234,6 @@ export function deriveAdvisory(events: SystemEventRow[]): AdvisoryIntelligence {
     timing: parsePublishTiming(latestEvent(events, EVENT_PUBLISH_TIMING)),
     repackage: parseRepackage(latestEvent(events, EVENT_REPACKAGE_SUGGESTED)),
     durability: parseDurability(latestEvent(events, EVENT_DURABILITY_CHECK)),
+    vidiq: parseVidiqResearch(latestEvent(events, EVENT_VIDIQ_RESEARCH)),
   };
 }
