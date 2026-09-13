@@ -115,3 +115,83 @@ def month_start_iso(now: Optional[datetime] = None) -> str:
     monthly ceiling."""
     now = now or datetime.now(timezone.utc)
     return now.replace(day=1, hour=0, minute=0, second=0, microsecond=0).isoformat()
+
+
+def _days_in_month(now: datetime) -> int:
+    """Calendar days in `now`'s month."""
+    if now.month == 12:
+        nxt = now.replace(year=now.year + 1, month=1, day=1)
+    else:
+        nxt = now.replace(month=now.month + 1, day=1)
+    return (nxt.date() - now.replace(day=1).date()).days
+
+
+def project_spend(spent_usd: float, elapsed_days: float, days_in_month: float) -> Optional[float]:
+    """Straight-line projection of month-end spend from spend so far.
+
+    `spent / elapsed * total` — the simplest honest forecast. Returns None when
+    it can't be computed (no elapsed time yet) rather than a fabricated number;
+    the caller is also given the elapsed days so it can weigh how thin the basis
+    is (a projection off day one is a guess, and reads as one)."""
+    try:
+        if elapsed_days <= 0 or days_in_month <= 0:
+            return None
+        return round(float(spent_usd) / float(elapsed_days) * float(days_in_month), 6)
+    except (TypeError, ValueError, ZeroDivisionError):
+        return None
+
+
+@dataclass(frozen=True)
+class SpendForecast:
+    channel_id: str
+    spent_usd: float                    # month-to-date PRICED spend (a floor)
+    elapsed_days: int
+    days_in_month: int
+    projected_usd: Optional[float]      # straight-line month-end, or None
+    ceiling_usd: Optional[float]
+    has_unpriced: bool
+
+    @property
+    def projected_exceeds(self) -> bool:
+        """True only when a ceiling is set AND the projection is known and meets
+        or passes it. An unknown projection never counts as exceeding — a
+        forecast is advisory and must not raise a false alarm on thin data."""
+        return (
+            self.ceiling_usd is not None
+            and self.projected_usd is not None
+            and self.projected_usd >= self.ceiling_usd
+        )
+
+    def to_dict(self) -> dict:
+        return {
+            "channel_id": self.channel_id,
+            "spent_usd": self.spent_usd,
+            "elapsed_days": self.elapsed_days,
+            "days_in_month": self.days_in_month,
+            "projected_usd": self.projected_usd,
+            "ceiling_usd": self.ceiling_usd,
+            "projected_exceeds": self.projected_exceeds,
+            "has_unpriced": self.has_unpriced,
+        }
+
+
+def forecast_month_end(store, channel_id: str, ceiling_usd: Optional[float] = None,
+                       *, now: Optional[datetime] = None) -> SpendForecast:
+    """Project this channel's month-end USD spend from its month-to-date spend.
+
+    Advisory: it forecasts for a human/Command Center and, when a ceiling is
+    set, flags whether the current pace is on track to blow it — it never blocks
+    a run (that is `check_budget`/`should_block_run`). Never raises."""
+    now = now or datetime.now(timezone.utc)
+    spent, priced, unpriced = channel_spend_usd(store, channel_id, since_iso=month_start_iso(now))
+    dim = _days_in_month(now)
+    elapsed = now.day  # day 1 → 1 elapsed day; a simple, honest denominator
+    return SpendForecast(
+        channel_id=channel_id,
+        spent_usd=spent,
+        elapsed_days=elapsed,
+        days_in_month=dim,
+        projected_usd=project_spend(spent, elapsed, dim),
+        ceiling_usd=(float(ceiling_usd) if ceiling_usd is not None else None),
+        has_unpriced=unpriced > 0,
+    )

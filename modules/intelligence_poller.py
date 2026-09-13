@@ -320,6 +320,28 @@ class IntelligencePoller:
             logger.info("Retention: %d point(s) recorded for %s", written, video_id)
         return written
 
+    def forecast_spend(self) -> bool:
+        """Project the channel's month-end spend from its month-to-date spend and
+        emit one `budget.forecast`, flagging when the pace is on track to blow a
+        set ceiling. Advisory only — it forecasts, it never blocks a run. Returns
+        True when a projection was produced. Never raises."""
+        try:
+            from modules import budget
+            from modules import event_log as events
+
+            ceiling = getattr(getattr(self.channel, "agent", None), "spend_ceiling_usd", None)
+            report = budget.forecast_month_end(
+                self.state_store, self.channel_id or "default", ceiling)
+            events.emit(events.BUDGET_FORECAST, agent="budget", status=events.STATUS_COMPLETED,
+                        channel_id=self.channel_id, metadata=report.to_dict())
+            if report.projected_exceeds:
+                logger.warning("[channel: %s] Spend pace projects $%.2f vs ceiling $%.2f this month",
+                               self.channel_id, report.projected_usd, report.ceiling_usd)
+            return report.projected_usd is not None
+        except Exception:
+            logger.exception("Spend-forecast pass failed; forecasting nothing")
+            return False
+
     def _videos_with_metrics(self):
         """The channel's videos plus a {video_id: latest_metrics} map. Shared by
         the advisory passes below so each doesn't re-read the store separately."""
@@ -393,6 +415,7 @@ class IntelligencePoller:
 
         # Advisory passes, after the metrics poll so they read the freshest data.
         repackage_candidates = self.suggest_repackages()
+        spend_forecast_ready = self.forecast_spend()
         publish_timing_ready = self.suggest_publish_time()
 
         return {
@@ -402,5 +425,6 @@ class IntelligencePoller:
             "trending_videos_found": len(trending_videos),
             "trending_snapshots_written": self._last_trending_snapshots_written,
             "repackage_candidates": repackage_candidates,
+            "spend_forecast_ready": spend_forecast_ready,
             "publish_timing_ready": publish_timing_ready,
         }
