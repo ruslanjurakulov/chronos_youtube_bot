@@ -241,6 +241,9 @@ class IntelligencePollerTestCase(unittest.TestCase):
                 # Advisory spend forecast runs too; with no priced spend this
                 # month it projects 0.0 (a real, known number), so ready is True.
                 "spend_forecast_ready": True,
+                # Advisory publish-time pass runs too; one video clears no slot's
+                # sample threshold, so no recommendation.
+                "publish_timing_ready": False,
             },
         )
 
