@@ -138,6 +138,10 @@ COMMENT_FAILED = "comment.failed"
 # new title/thumbnail. It never edits a live video — like publish.score it
 # informs a human/Command Center, it does not act.
 REPACKAGE_SUGGESTED = "repackage.suggested"
+# Watch-next link (modules/watch_next.py). A "▶ WATCH NEXT" link into another of
+# the channel's videos, added to the description (the API can't set end screens).
+# Best-effort description text: it never changes what publishes or when.
+WATCH_NEXT_LINKED = "watchnext.linked"
 # Publish-time optimizer (modules/publish_timing.py). Advisory: the hour (UTC)
 # and weekday this channel's best-performing videos were published, for the
 # scheduler/human to use. It never reschedules or holds a run on its own.
